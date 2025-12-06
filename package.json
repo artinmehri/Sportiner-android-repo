@@ -1,0 +1,8 @@
+{
+  "name": "sportiner2.0-monorepo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/B34rad/sportiner2.0-monorepo.git",
+  "author": "behradbarati <b3hradb@gmail.com>",
+  "license": "MIT"
+}
