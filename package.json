@@ -4,5 +4,11 @@
   "main": "index.js",
   "repository": "https://github.com/B34rad/sportiner2.0-monorepo.git",
   "author": "behradbarati <b3hradb@gmail.com>",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-native": "^5.0.0",
+    "prettier": "^3.7.4"
+  }
 }
