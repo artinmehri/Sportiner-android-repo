@@ -6,9 +6,16 @@
   "author": "behradbarati <b3hradb@gmail.com>",
   "license": "MIT",
   "devDependencies": {
+    "@types/react": "~19.1.10",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-native": "^5.0.0",
-    "prettier": "^3.7.4"
+    "prettier": "^3.7.4",
+    "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "expo": "^54.0.29",
+    "react-dom": "19.1.0",
+    "react-native-web": "^0.21.0"
   }
 }
