@@ -1,41 +1,20 @@
 {
   "name": "sportiner2.0-monorepo",
-  "version": "1.0.0",
-  "main": "index.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/B34rad/sportiner2.0-monorepo.git"
-  },
-  "author": "behradbarati <b3hradb@gmail.com>",
-  "license": "MIT",
-  "devDependencies": {
-    "@types/react": "~19.1.10",
-    "eslint": "^9.39.1",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-native": "^5.0.0",
-    "nodemon": "^3.1.11",
-    "prettier": "^3.7.4",
-    "typescript": "~5.9.2"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.87.1",
-    "body-parser": "^2.2.1",
-    "dotenv": "^17.2.3",
-    "expo": "^54.0.29",
-    "express": "^5.2.1",
-    "pg": "^8.16.3",
-    "react-dom": "19.1.0",
-    "react-native-web": "^0.21.0"
-  },
+  "private": true,
+  "packageManager": "pnpm@9",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "pnpm -r dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
   },
-  "keywords": [],
-  "bugs": {
-    "url": "https://github.com/B34rad/sportiner2.0-monorepo/issues"
-  },
-  "homepage": "https://github.com/B34rad/sportiner2.0-monorepo#readme",
-  "description": ""
+  "devDependencies": {
+    "typescript": "~5.9.2",
+    "eslint": "^9.39.1",
+    "prettier": "^3.7.4",
+    "eslint-config-prettier": "^10.1.8",
+    "@types/react": "~19.1.10",
+    "eslint-plugin-react-native": "^5.0.0",
+    "nodemon": "^3.1.11"
+  }
 }

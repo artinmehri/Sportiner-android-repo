@@ -1,14 +1,9 @@
 {
-  "name": "backend",
+  "name": "@sportiner/backend",
   "version": "1.0.0",
   "description": "Sportiner2.0 backend",
   "main": "index.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/B34rad/sportiner2.0-monorepo.git"
-  },
-  "author": "Behrad Barati <b3hradb@gmail.com>",
-  "license": "MIT",
+  "private": true,
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
@@ -27,10 +22,5 @@
     "eslint-plugin-react-native": "^5.0.0",
     "nodemon": "^3.1.11",
     "prettier": "^3.7.4"
-  },
-  "keywords": [],
-  "bugs": {
-    "url": "https://github.com/B34rad/sportiner2.0-monorepo/issues"
-  },
-  "homepage": "https://github.com/B34rad/sportiner2.0-monorepo#readme"
+  }
 }
