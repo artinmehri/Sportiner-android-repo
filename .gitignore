@@ -1,8 +1,20 @@
+# dependencies
 node_modules/
+
+# env
 .env
+.env.*
+
+# OS
 .DS_Store
-/package-lock.json
-/yarn.lock
-dist
-.expo
-.pnpm-store
+
+# package manager leftovers
+package-lock.json
+yarn.lock
+
+# builds
+dist/
+.expo/
+
+# pnpm
+.pnpm-store/
