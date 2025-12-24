@@ -12,9 +12,10 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, "node_modules"),
 ];
 
-// Watch shared package
+// Watch shared package and workspace node_modules
 config.watchFolders = [
   path.resolve(workspaceRoot, "packages/shared"),
+  path.resolve(workspaceRoot, "node_modules"),
 ];
 
 // Block backend
