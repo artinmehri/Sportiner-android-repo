@@ -14,54 +14,81 @@ import { useState } from "react";
 
 type Event = {
  title: string;
- date: string;
- location: string;
+ level: "Beginner" | "Intermediate" | "Advanced";
+ distance: string;
+ address: string;
+ time: string;
+ venue: string;
+ cost: string;
  avatar: string;
+ primaryCta: string;
+ secondaryCta: string;
+ spotsFilled?: number;
+ spotsTotal?: number;
+ hasGreenBackground?: boolean;
 };
 
-
-type Section = {
- sport: string;
- events: Event[];
-};
-
-
-const sections: Section[] = [
+const events1v1: Event[] = [
  {
-   sport: "Tennis",
-   events: [
-     {
-       title: "John’s Tennis Game",
-       date: "10/26 · 10:00 AM",
-       location: "Central Park, NY",
-       avatar:
-         "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-     },
-   ],
+   title: "John's Tennis Game",
+   level: "Intermediate",
+   distance: "500m",
+   address: "100 Steels Avenue",
+   time: "Today • 7:30",
+   venue: "Public court",
+   cost: "Free",
+   avatar:
+     "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
+   primaryCta: "Message Host",
+   secondaryCta: "Join Game",
  },
  {
-   sport: "Hockey",
-   events: [
-     {
-       title: "John’s Hockey Game",
-       date: "10/26 · 10:00 AM",
-       location: "Central Park, NY",
-       avatar:
-         "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-     },
-   ],
+   title: "Alex's Tennis Game",
+   level: "Advanced",
+   distance: "1.2km",
+   address: "1200 Steels Avenue",
+   time: "Today • 7:30",
+   venue: "Private court",
+   cost: "Free",
+   avatar:
+     "https://images.unsplash.com/photo-1505761671935-60b3a7427bad?auto=format&fit=crop&w=200&q=60",
+   primaryCta: "Message Host",
+   secondaryCta: "Request Spot",
+ },
+];
+
+const eventsGroup: Event[] = [
+ {
+   title: "Sportiner Event",
+   level: "Beginner",
+   distance: "500m",
+   address: "300 Steels Avenue",
+   time: "Today • 7:30",
+   venue: "",
+   cost: "Free",
+   avatar:
+     "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
+   primaryCta: "Message Host",
+   secondaryCta: "Join Game",
+   spotsFilled: 4,
+   spotsTotal: 6,
+   hasGreenBackground: true,
  },
  {
-   sport: "Pickleball",
-   events: [
-     {
-       title: "John’s Tennis Game",
-       date: "10/26 · 10:00 AM",
-       location: "Central Park, NY",
-       avatar:
-         "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-     },
-   ],
+   title: "Alex's Tennis Doubles",
+   level: "Advanced",
+   distance: "500m",
+   address: "300 Steels Avenue",
+   time: "Today • 10:30",
+   venue: "",
+   cost: "$10 Entry",
+   avatar:
+     "https://images.unsplash.com/photo-1505761671935-60b3a7427bad?auto=format&fit=crop&w=200&q=60",
+   primaryCta: "Message Host",
+   secondaryCta: "Request Spot",
+   spotsFilled: 2,
+   spotsTotal: 3,
+   hasGreenBackground: false,
  },
 ];
 
@@ -159,20 +186,8 @@ export default function Index() {
        </ScrollView>
 
 
-       {sections.map((section) => (
-         <View key={section.sport} style={styles.section}>
-           <Text style={styles.sectionTitle}>{section.sport}</Text>
-           <ScrollView
-             horizontal
-             showsHorizontalScrollIndicator={false}
-             contentContainerStyle={styles.cardRow}
-           >
-             {section.events.map((event) => (
-               <EventCard key={event.title} event={event} />
-             ))}
-             <View style={styles.placeholderCard} />
-           </ScrollView>
-         </View>
+       {(mode === "1-1" ? events1v1 : eventsGroup).map((event) => (
+         <EventCard key={event.title} event={event} mode={mode} />
        ))}
      </ScrollView>
 
@@ -185,30 +200,135 @@ export default function Index() {
 }
 
 
-function EventCard({ event }: { event: Event }) {
+function EventCard({ event, mode }: { event: Event; mode: "1-1" | "Group" }) {
+ const isGroupMode = mode === "Group";
+ const hasGreenBg = isGroupMode && event.hasGreenBackground;
+ const levelColor = hasGreenBg && event.level === "Beginner"
+   ? "#FFFFFF"
+   : event.level === "Advanced" 
+   ? "#19E675" 
+   : event.level === "Beginner" 
+   ? "#19E675" 
+   : "#1FC365";
+
+ const cardStyle = hasGreenBg ? styles.cardGreen : styles.card;
+ const textColor = hasGreenBg ? "#FFFFFF" : "#4B5563";
+ const titleColor = hasGreenBg ? "#FFFFFF" : "#303030";
+ const dotColor = hasGreenBg ? "#FFFFFF" : "#4B5563";
+ const spotsTextColor = isGroupMode ? "#005124" : "#4B5563";
+
  return (
-   <View style={styles.card}>
+   <View style={cardStyle}>
      <View style={styles.cardHeader}>
        <Image source={{ uri: event.avatar }} style={styles.avatar} />
-       <Text style={styles.cardTitle}>{event.title}</Text>
+       <Text style={[styles.cardTitle, { color: titleColor }]}>
+         {event.title}
+       </Text>
      </View>
-
 
      <View style={styles.infoRow}>
-       <Ionicons name="calendar-outline" size={22} color="#0D4B2A" />
-       <Text style={styles.infoText}>{event.date}</Text>
+       <Text style={[styles.level, { color: levelColor }]}>
+         {event.level}
+       </Text>
+       <Text style={[styles.dot, { color: dotColor }]}>•</Text>
+       <Text style={[styles.infoText, { color: textColor }]}>
+         {event.distance}
+       </Text>
      </View>
 
+     {isGroupMode ? (
+       <>
+         <Text style={[styles.infoText, { color: textColor }]}>
+           {event.address}
+         </Text>
+         <Text style={[styles.infoText, { color: textColor }]}>
+           {event.cost}
+         </Text>
+         <Text style={[styles.infoText, { color: textColor }]}>
+           {event.time}
+         </Text>
+         {event.spotsFilled !== undefined && event.spotsTotal !== undefined && (
+           <>
+             <Text style={[styles.infoText, { color: spotsTextColor, marginTop: 4 }]}>
+               {event.spotsFilled}/{event.spotsTotal} Spots Filled
+             </Text>
+             <View style={styles.progressBarContainer}>
+               <View
+                 style={[
+                   styles.progressBarFill,
+                   {
+                     width: `${(event.spotsFilled / event.spotsTotal) * 100}%`,
+                     backgroundColor: hasGreenBg ? "#FFFFFF" : "#19E675",
+                   },
+                 ]}
+               />
+               {event.spotsFilled < event.spotsTotal && (
+                 <View
+                   style={[
+                     styles.progressBarEmpty,
+                     {
+                       flex: 1,
+                       backgroundColor: hasGreenBg ? "rgba(255,255,255,0.3)" : "#E5E7EB",
+                     },
+                   ]}
+                 />
+               )}
+             </View>
+           </>
+         )}
+       </>
+     ) : (
+       <>
+         <Text style={[styles.infoText, { color: textColor }]}>
+           {event.address}
+         </Text>
+         <Text style={[styles.infoText, { color: textColor }]}>
+           {event.time}
+         </Text>
+         <View style={styles.infoRow}>
+           <Text style={[styles.infoText, { color: textColor }]}>
+             {event.venue}
+           </Text>
+           <Text style={[styles.dot, { color: dotColor }]}>•</Text>
+           <Text style={[styles.infoText, { color: textColor }]}>
+             {event.cost}
+           </Text>
+         </View>
+       </>
+     )}
 
-     <View style={styles.infoRow}>
-       <Ionicons name="location-outline" size={22} color="#0D4B2A" />
-       <Text style={styles.infoText}>{event.location}</Text>
+     <View style={styles.buttonRow}>
+       <TouchableOpacity
+         style={[
+           styles.secondaryButton,
+           hasGreenBg && styles.secondaryButtonGreen,
+         ]}
+       >
+         <Text
+           style={[
+             styles.secondaryButtonText,
+             hasGreenBg && styles.secondaryButtonTextGreen,
+           ]}
+         >
+           {event.primaryCta}
+         </Text>
+       </TouchableOpacity>
+       <TouchableOpacity
+         style={[
+           styles.primaryButton,
+           hasGreenBg && styles.primaryButtonGreen,
+         ]}
+       >
+         <Text
+           style={[
+             styles.primaryButtonText,
+             hasGreenBg && styles.primaryButtonTextGreen,
+           ]}
+         >
+           {event.secondaryCta}
+         </Text>
+       </TouchableOpacity>
      </View>
-
-
-     <TouchableOpacity style={styles.primaryButton}>
-       <Text style={styles.primaryButtonText}>Join Game</Text>
-     </TouchableOpacity>
    </View>
  );
 }
@@ -301,62 +421,48 @@ const styles = StyleSheet.create({
  filterTextActive: {
    color: "#005124",
  },
- section: {
-   gap: 10,
- },
- sectionTitle: {
-   fontSize: 30,
-   fontWeight: "900",
-   color: "#005124",
- },
- cardRow: {
-   flexDirection: "row",
-   gap: 12,
-   paddingRight: 4,
- },
- placeholderCard: {
-   width: 220,
-   height: 150,
-   borderRadius: 12,
-   backgroundColor: "#FFFFFF",
-   borderWidth: StyleSheet.hairlineWidth,
-   borderColor: "#E5E7EB",
-   shadowColor: "#000",
-   shadowOffset: { width: 0, height: 4 },
-   shadowOpacity: 0.05,
-   shadowRadius: 6,
-   elevation: 2,
- },
  card: {
-   width: 230,
    backgroundColor: "#FFFFFF",
    borderRadius: 12,
-   paddingVertical: 10,
-   paddingHorizontal: 12,
+   padding: 16,
+   marginBottom: 12,
    shadowColor: "#000",
    shadowOffset: { width: 0, height: 4 },
-   shadowOpacity: 0.14,
+   shadowOpacity: 0.12,
    shadowRadius: 8,
    elevation: 4,
    borderWidth: StyleSheet.hairlineWidth,
    borderColor: "#E5E7EB",
    gap: 8,
  },
+ cardGreen: {
+   backgroundColor: "#19E675",
+   borderRadius: 12,
+   padding: 16,
+   marginBottom: 12,
+   shadowColor: "#000",
+   shadowOffset: { width: 0, height: 4 },
+   shadowOpacity: 0.12,
+   shadowRadius: 8,
+   elevation: 4,
+   gap: 8,
+ },
  cardHeader: {
    flexDirection: "row",
    alignItems: "center",
-   gap: 8,
+   gap: 12,
+   marginBottom: 4,
  },
  avatar: {
-   width: 40,
-   height: 40,
-   borderRadius: 20,
+   width: 54,
+   height: 54,
+   borderRadius: 27,
  },
  cardTitle: {
    flex: 1,
-   fontSize: 16,
+   fontSize: 20,
    fontWeight: "800",
-   color: "#005124",
+   color: "#303030",
  },
  infoRow: {
    flexDirection: "row",
@@ -364,21 +470,73 @@ const styles = StyleSheet.create({
    gap: 6,
  },
  infoText: {
-   fontSize: 14,
-   color: "#005124",
-   fontWeight: "600",
+   fontSize: 16,
+   color: "#4B5563",
  },
- primaryButton: {
-   marginTop: 4,
-   backgroundColor: "#0CCF67",
-   borderRadius: 10,
-   paddingVertical: 10,
+ level: {
+   fontSize: 16,
+   fontWeight: "700",
+ },
+ dot: {
+   fontSize: 16,
+   color: "#4B5563",
+ },
+ buttonRow: {
+   flexDirection: "row",
+   gap: 12,
+   marginTop: 8,
+ },
+ secondaryButton: {
+   flex: 1,
+   backgroundColor: "#0D4B2A",
+   borderRadius: 12,
+   paddingVertical: 12,
    alignItems: "center",
  },
- primaryButtonText: {
-   color: "#0D4B2A",
+ secondaryButtonText: {
+   color: "#21C567",
    fontSize: 16,
-   fontWeight: "900",
+   fontWeight: "800",
+ },
+ primaryButton: {
+   flex: 1,
+   backgroundColor: "#0CCF67",
+   borderRadius: 12,
+   paddingVertical: 12,
+   alignItems: "center",
+ },
+ primaryButtonGreen: {
+   backgroundColor: "#FFFFFF",
+ },
+ primaryButtonText: {
+   color: "#FFFFFF",
+   fontSize: 16,
+   fontWeight: "800",
+ },
+ primaryButtonTextGreen: {
+   color: "#005124",
+ },
+ secondaryButtonGreen: {
+   backgroundColor: "#005124",
+ },
+ secondaryButtonTextGreen: {
+   color: "#FFFFFF",
+ },
+ progressBarContainer: {
+   height: 8,
+   borderRadius: 4,
+   overflow: "hidden",
+   marginTop: 4,
+   flexDirection: "row",
+   width: "100%",
+ },
+ progressBarFill: {
+   height: "100%",
+   borderRadius: 4,
+ },
+ progressBarEmpty: {
+   height: "100%",
+   borderRadius: 4,
  },
  fab: {
    position: "absolute",
