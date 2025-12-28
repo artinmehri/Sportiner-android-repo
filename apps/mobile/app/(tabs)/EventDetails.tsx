@@ -1,20 +1,35 @@
 import { Image } from 'expo-image';
-import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
-
+import { View, StyleSheet, Text, TouchableOpacity, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function HomeScreen() {
+export default function EventDetails() {
+  const router = useRouter();
+
+  const handleMessageHost = () => {
+    router.push('/(tabs)/chat');
+  };
+
+  const handleJoinEvent = () => {
+    Alert.alert('Success', 'You have successfully joined the event!');
+  };
+
   return (
     <ScrollView>
         <View style={styles.heroContainer}>
             <Image source={require('@/assets/images/tennis-court.png')} style={styles.eventImage} />
-            <Image source={require('@/assets/images/back_button.png')} style={styles.backButton} />
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="chevron-back" size={24} color="#000" />
+            </TouchableOpacity>
         </View>
         <View style={styles.gameTitleContainer}>
             <Text style={styles.gameTitle}>Alex's Tennis Doubles</Text>
         </View>
             <View style={styles.logos}>
-                {/* Example items array - replace with real data as needed */}
                 {[
                   { id: 1, name: '300 Steels Avenue ', logo: require('@/assets/images/icon.png') },
                   { id: 2, name: 'Today', logo: require('@/assets/images/icon.png') },
@@ -43,8 +58,12 @@ export default function HomeScreen() {
 
             </View>
         </View>
-        <TouchableOpacity style={styles.joinButton}>
-            <Text style={styles.matchButtonText}>Join Event</Text>
+        <TouchableOpacity style={styles.requestSpotButton} onPress={handleJoinEvent}>
+            <Text style={styles.matchButtonText}>Request Spot</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.messageHostButton} onPress={handleMessageHost}>
+            <Text style={styles.secondMatchButtonText}>Message Host</Text>
         </TouchableOpacity>
     </ScrollView>
   );
@@ -63,9 +82,20 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 70,
         left: 16,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'white',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
     },
     gameTitle: {
         fontWeight: 'bold',
@@ -110,7 +140,7 @@ const styles = StyleSheet.create({
     logos: {
         marginLeft: 10,
     },
-    joinButton: {
+    requestSpotButton: {
         backgroundColor: '#19E657',
         paddingVertical: 10,
         paddingHorizontal: 30,
@@ -121,8 +151,26 @@ const styles = StyleSheet.create({
         marginBottom: 10
 
     },
+    messageHostButton: {
+        backgroundColor: '#005124',
+        paddingVertical: 10,
+        paddingHorizontal: 30,
+        borderRadius: 10,
+        width: 300,
+        alignItems: 'center',
+        marginLeft: 50,
+        marginBottom: 10
+
+    },
     matchButtonText: {
-        color: '#000000',
+        color: '#005124',
+        fontSize: 20,
+        fontWeight: 'bold',
+        alignItems: 'center',
+
+    },
+    secondMatchButtonText: {
+        color: '#19E675',
         fontSize: 20,
         fontWeight: 'bold',
         alignItems: 'center',

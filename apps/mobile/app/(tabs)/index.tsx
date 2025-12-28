@@ -1,31 +1,32 @@
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
- View,
- Text,
- StyleSheet,
- ScrollView,
- TextInput,
- TouchableOpacity,
- Image,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
+import { useRouter } from "expo-router";
 
 
 type Event = {
- title: string;
- level: "Beginner" | "Intermediate" | "Advanced";
- distance: string;
- address: string;
- time: string;
- venue: string;
- cost: string;
- avatar: string;
- primaryCta: string;
- secondaryCta: string;
- spotsFilled?: number;
- spotsTotal?: number;
- hasGreenBackground?: boolean;
+  title: string;
+  level: "Beginner" | "Intermediate" | "Advanced";
+  distance: string;
+  address: string;
+  time: string;
+  venue: string;
+  cost: string;
+  avatar: string;
+  primaryCta: string;
+  secondaryCta: string;
+  spotsFilled?: number;
+  spotsTotal?: number;
+  hasGreenBackground?: boolean;
 };
 
 const events1v1: Event[] = [
@@ -96,6 +97,8 @@ const eventsGroup: Event[] = [
 export default function Index() {
  const [mode, setMode] = useState<"1-1" | "Group">("1-1");
  const [selectedFilter, setSelectedFilter] = useState("Today");
+ const [searchQuery, setSearchQuery] = useState("");
+ const router = useRouter();
 
 
  return (
@@ -110,6 +113,8 @@ export default function Index() {
            placeholder="Search Events Around You"
            placeholderTextColor="#5A545E"
            style={styles.searchInput}
+           value={searchQuery}
+           onChangeText={setSearchQuery}
          />
        </View>
 
@@ -186,8 +191,13 @@ export default function Index() {
        </ScrollView>
 
 
-       {(mode === "1-1" ? events1v1 : eventsGroup).map((event) => (
-         <EventCard key={event.title} event={event} mode={mode} />
+       {((mode === "1-1" ? events1v1 : eventsGroup)
+         .filter(event => 
+           searchQuery === "" || 
+           event.title.toLowerCase().includes(searchQuery.toLowerCase())
+         )
+       ).map((event) => (
+         <EventCard key={event.title} event={event} mode={mode} router={router} />
        ))}
      </ScrollView>
 
@@ -200,7 +210,7 @@ export default function Index() {
 }
 
 
-function EventCard({ event, mode }: { event: Event; mode: "1-1" | "Group" }) {
+function EventCard({ event, mode, router }: { event: Event; mode: "1-1" | "Group"; router: any }) {
  const isGroupMode = mode === "Group";
  const hasGreenBg = isGroupMode && event.hasGreenBackground;
  const levelColor = hasGreenBg && event.level === "Beginner"
@@ -218,7 +228,10 @@ function EventCard({ event, mode }: { event: Event; mode: "1-1" | "Group" }) {
  const spotsTextColor = isGroupMode ? "#005124" : "#4B5563";
 
  return (
-   <View style={cardStyle}>
+   <TouchableOpacity 
+     style={cardStyle}
+     onPress={() => router.push('/(tabs)/EventDetails')}
+   >
      <View style={styles.cardHeader}>
        <Image source={{ uri: event.avatar }} style={styles.avatar} />
        <Text style={[styles.cardTitle, { color: titleColor }]}>
@@ -303,6 +316,7 @@ function EventCard({ event, mode }: { event: Event; mode: "1-1" | "Group" }) {
            styles.secondaryButton,
            hasGreenBg && styles.secondaryButtonGreen,
          ]}
+         onPress={() => router.push('/(tabs)/chat')}
        >
          <Text
            style={[
@@ -329,7 +343,7 @@ function EventCard({ event, mode }: { event: Event; mode: "1-1" | "Group" }) {
          </Text>
        </TouchableOpacity>
      </View>
-   </View>
+   </TouchableOpacity>
  );
 }
 

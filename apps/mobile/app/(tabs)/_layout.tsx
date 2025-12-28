@@ -24,10 +24,31 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="inbox"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Inbox',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="message.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="groupchat"
+        options={{
+          title: 'Group Chat',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="EventDetails"
+        options={{
+          title: 'Details',
+          href: null,
         }}
       />
     </Tabs>
