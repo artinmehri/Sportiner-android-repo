@@ -202,9 +202,12 @@ export default function Index() {
      </ScrollView>
 
 
-     <TouchableOpacity style={styles.fab}>
-       <Ionicons name="add" size={26} color="#005124" />
-     </TouchableOpacity>
+    <TouchableOpacity 
+      style={styles.fab}
+      onPress={() => router.push('/(tabs)/CreateGame')}
+    >
+      <Ionicons name="add" size={26} color="#005124" />
+    </TouchableOpacity>
    </SafeAreaView>
  );
 }
