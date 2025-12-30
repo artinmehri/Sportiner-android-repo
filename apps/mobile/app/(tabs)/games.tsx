@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width - 32; // Full width minus padding
+const CARD_WIDTH = width - 32; 
 
 type GameStatus = {
   type: 'spots' | 'booked' | 'pending' | 'full';
@@ -90,13 +90,13 @@ export default function Games() {
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
       case 'advanced':
-        return '#19E675'; // Green
+        return '#19E675'; 
       case 'intermediate':
-        return '#FFD700'; // Yellow
+        return '#FFD700'; 
       case 'beginner':
-        return '#FF0000'; // Red
+        return '#FF0000'; 
       default:
-        return '#000000'; // Default black
+        return '#000000'; 
     }
   };
 

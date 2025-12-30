@@ -21,12 +21,10 @@ export default function CreateGame() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // The Core
   const [gameType, setGameType] = useState<GameType>('1v1');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('Beginner');
   const [joinSetting, setJoinSetting] = useState<JoinSetting>('Anyone can join');
 
-  // The Logistics
   const [date, setDate] = useState<string>('');
   const [time, setTime] = useState<string>('07:00');
   const [timeHour, setTimeHour] = useState<number>(7);
@@ -38,21 +36,20 @@ export default function CreateGame() {
   const [courtType, setCourtType] = useState<CourtType>('Public');
   const [isBooked, setIsBooked] = useState<boolean>(false);
 
-  // The Requirements
   const [numberOfPlayers, setNumberOfPlayers] = useState<number>(3);
   const [isPaid, setIsPaid] = useState<boolean>(true);
   const [paymentAmount, setPaymentAmount] = useState<string>('');
   const [gameDescription, setGameDescription] = useState<string>('');
 
-  // Modals
+
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
   const [showTimePicker, setShowTimePicker] = useState<boolean>(false);
   
-  // Date picker state
+
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
-  // Initialize selected day from date
+
   useEffect(() => {
     if (date) {
       const dateObj = new Date(date);
@@ -62,7 +59,7 @@ export default function CreateGame() {
     }
   }, [date, currentMonth]);
 
-  // Location suggestions
+
   const locationSuggestions = [
     { id: '1', name: 'Cedarvale Park' },
     { id: '2', name: 'Goulding park' },
@@ -148,7 +145,7 @@ export default function CreateGame() {
       isPaid,
       paymentAmount,
     });
-    // Navigate back or show success message
+
     router.back();
   };
 
