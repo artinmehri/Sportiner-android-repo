@@ -5,7 +5,7 @@ import { ScrollView } from 'react-native';
 
 export default function HomeScreen() {
   return (
-    <ScrollView>
+    <ScrollView style={styles.heroContainer}>
         <View style={styles.heroContainer}>
             <Image source={require('@/assets/images/tennis-court.png')} style={styles.eventImage} />
             <Image source={require('@/assets/images/back_button.png')} style={styles.backButton} />
@@ -53,6 +53,8 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
     heroContainer: {
         position: 'relative',
+        backgroundColor: '#ffffff',
+        flex: 1,
     },
     eventImage: {
         marginTop: 57,
@@ -111,7 +113,7 @@ const styles = StyleSheet.create({
         marginLeft: 10,
     },
     joinButton: {
-        backgroundColor: '#19E657',
+        backgroundColor: '#19E675',
         paddingVertical: 10,
         paddingHorizontal: 30,
         borderRadius: 10,
@@ -119,7 +121,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginLeft: 50,
         marginBottom: 10
-
     },
     matchButtonText: {
         color: '#000000',
