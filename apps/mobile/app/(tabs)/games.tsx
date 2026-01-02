@@ -10,6 +10,7 @@ import {
   Modal,
   TouchableWithoutFeedback,
   Alert,
+  Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -359,8 +360,27 @@ export default function Games() {
     setSelectedGame(null);
   };
 
-  const handleShareGame = () => {
-    Alert.alert('Share Game', 'Game sharing functionality would be implemented here');
+  const handleShareGame = async () => {
+    try {
+      const gameDetails = selectedGame 
+        ? `Join ${selectedGame.title} on Sportiner! 🎾\n\n📅 ${selectedGame.time}\n📍 ${selectedGame.address}\n⚡ ${selectedGame.level}\n💰 ${selectedGame.cost}\n\nDownload Sportiner to join the game!`
+        : 'Join my game on Sportiner! 🎾';
+      
+      const result = await Share.share({
+        message: gameDetails,
+        url: `https://sportiner.app/game/${selectedGame?.id || '123'}`,
+        title: `${selectedGame?.title || 'Tennis Game'} - Sportiner`
+      });
+      
+      if (result.action === Share.sharedAction) {
+        console.log('Game shared successfully');
+      } else if (result.action === Share.dismissedAction) {
+        console.log('Share dismissed');
+      }
+    } catch (error) {
+      console.error('Error sharing game:', error);
+      Alert.alert('Error', 'Unable to share game at this time');
+    }
     setShowMenu(false);
     setSelectedGame(null);
   };
