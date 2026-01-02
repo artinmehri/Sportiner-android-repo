@@ -31,6 +31,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="games"
+        options={{
+          title: 'Games',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gamecontroller.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="SignUp"
+        options={{
+          title: 'Sign Up',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="chat"
         options={{
           title: 'Chat',
@@ -48,6 +62,20 @@ export default function TabLayout() {
         name="EventDetails"
         options={{
           title: 'Details',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="CreateGame"
+        options={{
+          title: 'Create Game',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="GameConfirmation"
+        options={{
+          title: 'Confirmation',
           href: null,
         }}
       />

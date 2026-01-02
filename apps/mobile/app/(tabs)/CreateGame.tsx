@@ -7,10 +7,12 @@ import {
   TextInput,
   TouchableOpacity,
   Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useGames } from '@/context/GameContext';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -20,6 +22,7 @@ type CourtType = 'Public' | 'Private/Club' | 'Condo';
 export default function CreateGame() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { addGame } = useGames();
 
   const [gameType, setGameType] = useState<GameType>('1v1');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('Beginner');
@@ -130,8 +133,32 @@ export default function CreateGame() {
   };
 
   const handleCreateGame = () => {
-    // Handle game creation logic here
-    console.log('Creating game with:', {
+    if (!date) {
+      Alert.alert('Missing Information', 'Please select a date for your game');
+      return;
+    }
+    
+    if (!time) {
+      Alert.alert('Missing Information', 'Please select a time for your game');
+      return;
+    }
+    
+    if (!location.trim()) {
+      Alert.alert('Missing Information', 'Please enter a location for your game');
+      return;
+    }
+    
+    if (!gameDescription.trim()) {
+      Alert.alert('Missing Information', 'Please provide a description for your game');
+      return;
+    }
+    
+    if (isPaid && !paymentAmount.trim()) {
+      Alert.alert('Missing Information', 'Please enter a payment amount for your paid game');
+      return;
+    }
+
+    const gameData = {
       gameType,
       skillLevel,
       joinSetting,
@@ -144,9 +171,12 @@ export default function CreateGame() {
       gameDescription,
       isPaid,
       paymentAmount,
-    });
+      title: `${gameType === '1v1' ? '1v1' : 'Group'} Tennis Game`,
+    };
 
-    router.back();
+    addGame(gameData);
+
+    router.push('/(tabs)/GameConfirmation');
   };
 
   return (

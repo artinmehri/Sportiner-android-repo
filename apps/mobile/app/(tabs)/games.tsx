@@ -4,17 +4,21 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  TextInput,
   TouchableOpacity,
   Image,
   Dimensions,
+  Alert,
+  Linking,
+  Platform,
+  Share,
   Modal,
   TouchableWithoutFeedback,
-  Alert,
-  Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useGames, Game } from '@/context/GameContext';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 32; 
@@ -225,6 +229,7 @@ const pastPlayedGamesData: GameCard[] = [
 
 export default function Games() {
   const router = useRouter();
+  const { games } = useGames();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
   const hostingScrollRef = useRef<ScrollView>(null);
   const playingScrollRef = useRef<ScrollView>(null);
@@ -235,11 +240,70 @@ export default function Games() {
   const [pastHostingScrollIndex, setPastHostingScrollIndex] = useState(0);
   const [pastPlayingScrollIndex, setPastPlayingScrollIndex] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
-  const [selectedGame, setSelectedGame] = useState<GameCard | null>(null);
+  const [selectedGame, setSelectedGame] = useState<GameCard | Game | null>(null);
   const [showPlayers, setShowPlayers] = useState(false);
-  const [hostingGamesList, setHostingGamesList] = useState(hostingGames);
   const [pastHostedGames, setPastHostedGames] = useState(pastHostedGamesData);
   const [pastPlayedGames, setPastPlayedGames] = useState(pastPlayedGamesData);
+
+  const formatGameDate = (dateString: string | undefined) => {
+    if (!dateString) return 'Date TBD';
+    const date = new Date(dateString);
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+      return 'Today';
+    } else if (date.toDateString() === tomorrow.toDateString()) {
+      return 'Tomorrow';
+    } else {
+      return date.toLocaleDateString('en-US', { 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    }
+  };
+
+  const hostingGamesList: GameCard[] = games.map(game => {
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      if (date.toDateString() === today.toDateString()) {
+        return 'Today';
+      } else if (date.toDateString() === tomorrow.toDateString()) {
+        return 'Tomorrow';
+      } else {
+        return date.toLocaleDateString('en-US', { 
+          month: 'long', 
+          day: 'numeric' 
+        });
+      }
+    };
+    
+    const formatTime = (timeString: string) => {
+      const [hours, minutes] = timeString.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+      return `${displayHour} ${ampm}`;
+    };
+
+    return {
+      id: game.id,
+      title: game.title,
+      level: game.skillLevel,
+      distance: '1.0km',
+      address: game.location,
+      cost: game.isPaid ? `$${game.paymentAmount} Entry` : 'Free',
+      time: `${formatDate(game.date)} • ${formatTime(game.time)}`,
+      avatar: game.host.avatar,
+      statuses: game.statuses || [],
+      players: game.players || [],
+    };
+  });
 
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
@@ -292,11 +356,75 @@ export default function Games() {
   };
 
   const handleLeaveGame = () => {
-    if (selectedGame) {
-      setHostingGamesList(hostingGamesList.filter(game => game.id !== selectedGame.id));
-    }
+    Alert.alert('Leave Game', 'Game removal functionality coming soon');
     setShowMenu(false);
     setSelectedGame(null);
+  };
+
+  const handleOpenMaps = async (location: string) => {
+    try {
+      const encodedLocation = encodeURIComponent(location);
+      const appleMapsUrl = `maps://?q=${encodedLocation}`;
+      
+      const canOpenAppleMaps = await Linking.canOpenURL(appleMapsUrl);
+      
+      if (canOpenAppleMaps) {
+        await Linking.openURL(appleMapsUrl);
+      } else {
+        const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedLocation}`;
+        await Linking.openURL(googleMapsUrl);
+      }
+    } catch (error) {
+      console.error('Error opening maps:', error);
+      Alert.alert('Error', 'Could not open maps application');
+    }
+  };
+
+  const handleAddToCalendar = async (game: GameCard | Game) => {
+    try {
+      const title = game.title;
+      const location = 'address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court');
+      const notes = `Game Type: ${game.level || 'N/A'}\nCost: ${game.cost || 'Free'}\nJoin us for this tennis game!`;
+      
+      let eventDate: Date;
+      if ('date' in game && game.time) {
+        const dateString = game.date;
+        const timeString = game.time.split(' • ')[1] || game.time;
+        
+        if (dateString === 'Today') {
+          eventDate = new Date();
+        } else if (dateString === 'Tomorrow') {
+          eventDate = new Date();
+          eventDate.setDate(eventDate.getDate() + 1);
+        } else {
+          eventDate = new Date(dateString + ', 2026');
+        }
+        
+        if (timeString) {
+          const timeMatch = timeString.match(/(\d+)\s*(AM|PM)/i);
+          if (timeMatch) {
+            const [, hourStr, period] = timeMatch;
+            let hour = parseInt(hourStr);
+            if (period === 'PM' && hour !== 12) hour += 12;
+            if (period === 'AM' && hour === 12) hour = 0;
+            eventDate.setHours(hour, 0, 0, 0);
+          }
+        }
+      } else {
+        eventDate = new Date();
+        eventDate.setHours(eventDate.getHours() + 2); // Default to 2 hours from now
+      }
+      
+      const startDate = eventDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      const endDate = new Date(eventDate.getTime() + 2 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      
+      const calendarUrl = `webcal://?dates=${startDate}/${endDate}&title=${encodeURIComponent(title)}&location=${encodeURIComponent(location || 'Tennis Court')}&notes=${encodeURIComponent(notes)}`;
+      await Linking.openURL(calendarUrl);
+      
+    } catch (error) {
+      console.error('Error adding to calendar:', error);
+      Alert.alert('Error', 'Could not add event to calendar');
+    }
   };
 
   const handleLeavePlayingGame = () => {
@@ -481,7 +609,7 @@ export default function Games() {
                         <Image source={{ uri: game.image }} style={styles.avatar} />
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
-                          <Text style={styles.cardDate}>{game.date}</Text>
+                          <Text style={styles.cardDate}>{formatGameDate(game.date)}</Text>
                         </View>
                       </View>
                       {game.status && (
@@ -545,7 +673,7 @@ export default function Games() {
                         <Image source={{ uri: game.image }} style={styles.avatar} />
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
-                          <Text style={styles.cardDate}>{game.date}</Text>
+                          <Text style={styles.cardDate}>{formatGameDate(game.date)}</Text>
                         </View>
                       </View>
                       {game.status && (
@@ -635,10 +763,10 @@ export default function Games() {
                         <TouchableOpacity style={styles.actionButton} onPress={() => handleChatPress(game)}>
                           <Ionicons name="chatbubble-outline" size={20} color="#000" />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton}>
+                        <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
                           <Ionicons name="location-outline" size={20} color="#000" />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton}>
+                        <TouchableOpacity style={styles.actionButton} onPress={() => handleAddToCalendar(game)}>
                           <Ionicons name="calendar-outline" size={20} color="#000" />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>
@@ -712,10 +840,10 @@ export default function Games() {
                         <TouchableOpacity style={styles.actionButton} onPress={() => handleChatPress(game)}>
                           <Ionicons name="chatbubble-outline" size={20} color="#000" />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton}>
+                        <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
                           <Ionicons name="location-outline" size={20} color="#000" />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton}>
+                        <TouchableOpacity style={styles.actionButton} onPress={() => handleAddToCalendar(game)}>
                           <Ionicons name="calendar-outline" size={20} color="#000" />
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>

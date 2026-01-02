@@ -61,6 +61,14 @@ export default function GameConfirmation() {
           <Ionicons name="people" size={20} color="#FFFFFF" style={styles.buttonIcon} />
           <Text style={styles.buttonText}>Invite friends to fill spots faster</Text>
         </TouchableOpacity>
+        
+        {/* View Games button */}
+        <TouchableOpacity 
+          style={styles.viewGamesButton} 
+          onPress={() => router.push('/(tabs)/games')}
+        >
+          <Text style={styles.viewGamesButtonText}>View My Games</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -132,6 +140,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  viewGamesButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    borderWidth: 2,
+    borderColor: '#19E675',
+    marginTop: 16,
+    minWidth: 280,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  viewGamesButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#19E675',
     textAlign: 'center',
   },
 });

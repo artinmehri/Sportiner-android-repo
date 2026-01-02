@@ -7,10 +7,13 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { useRouter } from "expo-router";
+import { useGameTickets } from "@/context/GameTicketsContext";
+import { useAuth } from "@/context/AuthContext";
 
 
 type Event = {
@@ -99,6 +102,8 @@ export default function Index() {
  const [selectedFilter, setSelectedFilter] = useState("Today");
  const [searchQuery, setSearchQuery] = useState("");
  const router = useRouter();
+ const { requestJoinGame } = useGameTickets();
+ const { user } = useAuth();
 
 
  return (
@@ -117,8 +122,6 @@ export default function Index() {
            onChangeText={setSearchQuery}
          />
        </View>
-
-
        <View style={styles.segmentRow}>
          <TouchableOpacity
            style={[
@@ -197,7 +200,7 @@ export default function Index() {
            event.title.toLowerCase().includes(searchQuery.toLowerCase())
          )
        ).map((event) => (
-         <EventCard key={event.title} event={event} mode={mode} router={router} />
+         <EventCard key={event.title} event={event} mode={mode} router={router} requestJoinGame={requestJoinGame} />
        ))}
      </ScrollView>
 
@@ -213,7 +216,21 @@ export default function Index() {
 }
 
 
-function EventCard({ event, mode, router }: { event: Event; mode: "1-1" | "Group"; router: any }) {
+function EventCard({ event, mode, router, requestJoinGame }: { 
+  event: Event; 
+  mode: "1-1" | "Group"; 
+  router: any; 
+  requestJoinGame: (gameData: {
+    gameId: string;
+    gameTitle: string;
+    gameDetails?: {
+      date: string;
+      time: string;
+      location: string;
+      host: string;
+    };
+  }) => void;
+}) {
  const isGroupMode = mode === "Group";
  const hasGreenBg = isGroupMode && event.hasGreenBackground;
  const levelColor = hasGreenBg && event.level === "Beginner"
@@ -229,6 +246,27 @@ function EventCard({ event, mode, router }: { event: Event; mode: "1-1" | "Group
  const titleColor = hasGreenBg ? "#FFFFFF" : "#303030";
  const dotColor = hasGreenBg ? "#FFFFFF" : "#4B5563";
  const spotsTextColor = isGroupMode ? "#005124" : "#4B5563";
+
+ const handleJoinGame = () => {
+    const hostName = event.title.split("'s")[0];
+    
+    requestJoinGame({
+      gameId: event.title.replace(/\s+/g, '-').toLowerCase(),
+      gameTitle: event.title,
+      gameDetails: {
+        date: event.time.split(' • ')[0],
+        time: event.time.split(' • ')[1] || event.time,
+        location: event.address,
+        host: hostName,
+      },
+    });
+
+    Alert.alert(
+      'Game Request Sent',
+      `Your request to join ${event.title} has been sent. You'll receive a notification when the host responds.`,
+      [{ text: 'OK', style: 'default' }]
+    );
+  };
 
  return (
    <TouchableOpacity 
@@ -335,6 +373,7 @@ function EventCard({ event, mode, router }: { event: Event; mode: "1-1" | "Group
            styles.primaryButton,
            hasGreenBg && styles.primaryButtonGreen,
          ]}
+         onPress={handleJoinGame}
        >
          <Text
            style={[

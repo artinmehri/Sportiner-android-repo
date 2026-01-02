@@ -9,11 +9,62 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useAuth } from '@/context/AuthContext';
 
 export default function SignUp() {
   const [email, setEmail] = useState('');
+  const router = useRouter();
+  const { signUp, signInWithGoogle, signInWithFacebook, signInWithApple, isLoading } = useAuth();
+
+  const handleEmailSignUp = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    try {
+      await signUp(email);
+      Alert.alert('Success', 'Account created successfully!');
+      router.push('/(tabs)');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to create account. Please try again.');
+    }
+  };
+
+  const handleGoogleSignUp = async () => {
+    try {
+      await signInWithGoogle();
+      Alert.alert('Success', 'Signed up with Google successfully!');
+      router.push('/(tabs)');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to sign up with Google. Please try again.');
+    }
+  };
+
+  const handleFacebookSignUp = async () => {
+    try {
+      await signInWithFacebook();
+      Alert.alert('Success', 'Signed up with Facebook successfully!');
+      router.push('/(tabs)');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to sign up with Facebook. Please try again.');
+    }
+  };
+
+  const handleAppleSignUp = async () => {
+    try {
+      await signInWithApple();
+      Alert.alert('Success', 'Signed up with Apple successfully!');
+      router.push('/(tabs)');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to sign up with Apple. Please try again.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -38,8 +89,12 @@ export default function SignUp() {
             />
           </View>
 
-          <TouchableOpacity style={styles.continueButton}>
-            <Text style={styles.continueButtonText}>Continue</Text>
+          <TouchableOpacity style={styles.continueButton} onPress={handleEmailSignUp} disabled={isLoading}>
+            {isLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.continueButtonText}>Continue</Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.loginContainer}>
@@ -56,16 +111,28 @@ export default function SignUp() {
           </View>
 
           <View style={styles.socialButtonsContainer}>
-            <TouchableOpacity style={styles.socialButton}>
-              <Ionicons name="logo-google" size={24} color="#4285F4" />
+            <TouchableOpacity style={styles.socialButton} onPress={handleGoogleSignUp} disabled={isLoading}>
+              {isLoading ? (
+                <ActivityIndicator color="#4285F4" size="small" />
+              ) : (
+                <Ionicons name="logo-google" size={24} color="#4285F4" />
+              )}
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.socialButton}>
-              <Ionicons name="logo-facebook" size={24} color="#1877F2" />
+            <TouchableOpacity style={styles.socialButton} onPress={handleFacebookSignUp} disabled={isLoading}>
+              {isLoading ? (
+                <ActivityIndicator color="#1877F2" size="small" />
+              ) : (
+                <Ionicons name="logo-facebook" size={24} color="#1877F2" />
+              )}
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.socialButton}>
-              <Ionicons name="logo-apple" size={24} color="#000" />
+            <TouchableOpacity style={styles.socialButton} onPress={handleAppleSignUp} disabled={isLoading}>
+              {isLoading ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
+                <Ionicons name="logo-apple" size={24} color="#000" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
