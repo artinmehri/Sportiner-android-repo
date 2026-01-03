@@ -22,6 +22,7 @@ import {
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import ProfileDetailsScreen from './profileDetails';
 
 const { width, height } = Dimensions.get('window');
 
@@ -106,6 +107,7 @@ const ChatScreen = () => {
   const [mediaPermission, setMediaPermission] = useState<string | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
@@ -307,15 +309,17 @@ const ChatScreen = () => {
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 
-        <Image source={{ uri: 'https://picsum.photos/seed/behrad/100/100.jpg' }} style={styles.avatar} />
+        <TouchableOpacity onPress={() => setShowProfileModal(true)}>
+          <Image source={{ uri: 'https://picsum.photos/seed/behrad/100/100.jpg' }} style={styles.avatar} />
+        </TouchableOpacity>
 
-        <View style={styles.contactInfo}>
+        <TouchableOpacity onPress={() => setShowProfileModal(true)} style={styles.contactInfo}>
           <View style={styles.contactNameRow}>
             <Text style={styles.contactName}>Behrad</Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
           <Text style={styles.contactSubtitle}>Wed · 3PM @ Saint-Louis Park</Text>
-        </View>
+        </TouchableOpacity>
       </View>
       <TouchableOpacity style={styles.infoButton}>
         <Ionicons name="information-circle-outline" size={26} color="#111" />
@@ -624,6 +628,15 @@ const ChatScreen = () => {
             </View>
           </View>
         </Modal>
+
+      {/* Profile Details Modal */}
+      <Modal
+        visible={showProfileModal}
+        animationType="slide"
+        onRequestClose={() => setShowProfileModal(false)}
+      >
+        <ProfileDetailsScreen onClose={() => setShowProfileModal(false)} />
+      </Modal>
       </KeyboardAvoidingView>
     </View>
   );
@@ -828,7 +841,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   
-  // Zoom Modal Styles
   zoomContainer: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.9)',
@@ -854,7 +866,6 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   
-  // Video Player Modal Styles
   videoPlayerContainer: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.9)',

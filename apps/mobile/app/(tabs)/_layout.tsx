@@ -38,10 +38,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="SignUp"
         options={{
           title: 'Sign Up',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="arrow.down.circle.fill" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -97,6 +104,20 @@ export default function TabLayout() {
         name="GameConfirmation"
         options={{
           title: 'Confirmation',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="profileSettings"
+        options={{
+          title: 'Settings',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="profileDetails"
+        options={{
+          title: 'Profile Details',
           href: null,
         }}
       />

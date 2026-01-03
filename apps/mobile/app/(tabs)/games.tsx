@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useGames, Game } from '@/context/GameContext';
+import ProfileDetailsScreen from './profileDetails';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 32; 
@@ -242,6 +243,7 @@ export default function Games() {
   const [showMenu, setShowMenu] = useState(false);
   const [selectedGame, setSelectedGame] = useState<GameCard | Game | null>(null);
   const [showPlayers, setShowPlayers] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [pastHostedGames, setPastHostedGames] = useState(pastHostedGamesData);
   const [pastPlayedGames, setPastPlayedGames] = useState(pastPlayedGamesData);
 
@@ -953,19 +955,30 @@ export default function Games() {
                 </View>
                 <View style={styles.playersContent}>
                   {selectedGame?.players?.map((player, index) => (
-                    <View key={index} style={styles.playerItem}>
-                      <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} />
-                      <View style={styles.playerInfo}>
-                        <Text style={styles.playerName}>{player.name || 'Unknown Player'}</Text>
-                        <Text style={styles.playerSkill}>{player.skillLevel || 'Unknown Level'}</Text>
+                    <TouchableOpacity key={index} onPress={() => { setShowPlayers(false); setShowProfileModal(true); }}>
+                      <View style={styles.playerItem}>
+                        <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} />
+                        <View style={styles.playerInfo}>
+                          <Text style={styles.playerName}>{player.name || 'Unknown Player'}</Text>
+                          <Text style={styles.playerSkill}>{player.skillLevel || 'Unknown Level'}</Text>
+                        </View>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </View>
               </View>
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Profile Details Modal */}
+      <Modal
+        visible={showProfileModal}
+        animationType="slide"
+        onRequestClose={() => setShowProfileModal(false)}
+      >
+        <ProfileDetailsScreen onClose={() => setShowProfileModal(false)} />
       </Modal>
     </SafeAreaView>
   );
