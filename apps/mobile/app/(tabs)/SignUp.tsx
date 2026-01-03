@@ -1,142 +1,70 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
   StatusBar,
-  ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/context/AuthContext';
 
 export default function SignUp() {
-  const [email, setEmail] = useState('');
   const router = useRouter();
-  const { signUp, signInWithGoogle, signInWithFacebook, signInWithApple, isLoading } = useAuth();
 
-  const handleEmailSignUp = async () => {
-    if (!email) {
-      Alert.alert('Error', 'Please enter your email address');
-      return;
-    }
-
-    try {
-      await signUp(email);
-      Alert.alert('Success', 'Account created successfully!');
-      router.push('/(tabs)');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to create account. Please try again.');
-    }
+  const handleGoogleSignUp = () => {
+    console.log('Navigating to firstOnbPage with Google method');
+    router.push('/firstOnbPage?method=google');
   };
 
-  const handleGoogleSignUp = async () => {
-    try {
-      await signInWithGoogle();
-      Alert.alert('Success', 'Signed up with Google successfully!');
-      router.push('/(tabs)');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to sign up with Google. Please try again.');
-    }
+  const handleFacebookSignUp = () => {
+    console.log('Navigating to firstOnbPage with Facebook method');
+    router.push('/firstOnbPage?method=facebook');
   };
 
-  const handleFacebookSignUp = async () => {
-    try {
-      await signInWithFacebook();
-      Alert.alert('Success', 'Signed up with Facebook successfully!');
-      router.push('/(tabs)');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to sign up with Facebook. Please try again.');
-    }
+  const handleAppleSignUp = () => {
+    console.log('Navigating to firstOnbPage with Apple method');
+    router.push('/firstOnbPage?method=apple');
   };
 
-  const handleAppleSignUp = async () => {
-    try {
-      await signInWithApple();
-      Alert.alert('Success', 'Signed up with Apple successfully!');
-      router.push('/(tabs)');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to sign up with Apple. Please try again.');
-    }
+  const handleEmailSignUp = () => {
+    console.log('Navigating to firstOnbPage with Email method');
+    router.push('/firstOnbPage');
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
-        <View style={styles.content}>
-          <Text style={styles.title}>Create your Sportiner account</Text>
-          
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.emailInput}
-              placeholder="Email"
-              placeholderTextColor="#999"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          <TouchableOpacity style={styles.continueButton} onPress={handleEmailSignUp} disabled={isLoading}>
-            {isLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.continueButtonText}>Continue</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity>
-              <Text style={styles.loginLink}>Log In</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <View style={styles.socialButtonsContainer}>
-            <TouchableOpacity style={styles.socialButton} onPress={handleGoogleSignUp} disabled={isLoading}>
-              {isLoading ? (
-                <ActivityIndicator color="#4285F4" size="small" />
-              ) : (
-                <Ionicons name="logo-google" size={24} color="#4285F4" />
-              )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.socialButton} onPress={handleFacebookSignUp} disabled={isLoading}>
-              {isLoading ? (
-                <ActivityIndicator color="#1877F2" size="small" />
-              ) : (
-                <Ionicons name="logo-facebook" size={24} color="#1877F2" />
-              )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.socialButton} onPress={handleAppleSignUp} disabled={isLoading}>
-              {isLoading ? (
-                <ActivityIndicator color="#000" size="small" />
-              ) : (
-                <Ionicons name="logo-apple" size={24} color="#000" />
-              )}
-            </TouchableOpacity>
-          </View>
+      <View style={styles.inner}>
+        <View style={styles.logoCircle}>
+          <Text style={styles.logoText}>S</Text>
         </View>
-      </KeyboardAvoidingView>
+        <Text style={styles.heading}>Play with the people{'\n'}around you</Text>
+        <View style={styles.socials}>
+          <TouchableOpacity style={[styles.socialBtn, {backgroundColor: '#FFFFFF', borderColor: '#4285F4'}]} onPress={handleGoogleSignUp}>
+            <View style={styles.iconLeft}><Ionicons name="logo-google" size={24} color="#4285F4" /></View>
+            <Text style={styles.socialBtnText}>Continue with Google</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.socialBtn, {backgroundColor: '#1877F2', borderColor: '#1877F2'}]} onPress={handleFacebookSignUp}>
+            <View style={styles.iconLeft}><Ionicons name="logo-facebook" size={24} color="#FFFFFF" /></View>
+            <Text style={[styles.socialBtnText, {color: '#FFFFFF'}]}>Continue with Facebook</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.socialBtn, {backgroundColor: '#000000', borderColor: '#000000'}]} onPress={handleAppleSignUp}>
+            <View style={styles.iconLeft}><Ionicons name="logo-apple" size={24} color="#FFFFFF" /></View>
+            <Text style={[styles.socialBtnText, {color: '#FFFFFF'}]}>Continue with Apple</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.orRow}>
+          <View style={styles.orLine} />
+          <Text style={styles.orText}>OR</Text>
+          <View style={styles.orLine} />
+        </View>
+        <TouchableOpacity style={styles.emailBtn} onPress={handleEmailSignUp}>
+          <Ionicons name="mail-outline" size={24} color="#19E675" style={{marginRight:8}} />
+          <Text style={styles.emailBtnText}>Continue with Email</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -146,85 +74,87 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  content: {
+  inner: {
     flex: 1,
-    paddingHorizontal: 24,
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 24,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+  logoCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#19E675',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+  },
+  logoText: {
+    fontSize: 56,
+    fontWeight: '700',
+    color: '#222',
+  },
+  heading: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#222',
     textAlign: 'center',
-    marginBottom: 50,
-    color: '#111',
+    marginBottom: 44,
   },
-  inputContainer: {
-    marginBottom: 24,
+  socials: {
+    width: '100%',
+    marginBottom: 36,
   },
-  emailInput: {
-    height: 56,
+  socialBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: '#222',
+    borderRadius: 24,
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    fontSize: 16,
+    marginBottom: 16,
     backgroundColor: '#fff',
   },
-  continueButton: {
-    height: 48,
-    backgroundColor: '#19E675',
-    borderRadius: 8,
-    justifyContent: 'center',
+  iconLeft: {
+    width: 32,
     alignItems: 'center',
-    marginBottom: 24,
-  },
-  continueButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  loginContainer: {
-    flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 32,
+    marginRight: 8,
   },
-  loginText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  loginLink: {
-    fontSize: 14,
-    color: '#007AFF',
+  socialBtnText: {
+    fontSize: 18,
     fontWeight: '600',
+    color: '#222',
   },
-  dividerContainer: {
+  orRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    width: '100%',
     marginBottom: 32,
   },
-  divider: {
+  orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#ddd',
+    backgroundColor: '#E5E5E5',
   },
-  dividerText: {
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#666',
+  orText: {
+    marginHorizontal: 12,
+    fontSize: 16,
+    color: '#888',
+    fontWeight: '600',
   },
-  socialButtonsContainer: {
+  emailBtn: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  socialButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    alignSelf: 'center',
+    marginTop: 0,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  emailBtnText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#19E675',
   },
 });

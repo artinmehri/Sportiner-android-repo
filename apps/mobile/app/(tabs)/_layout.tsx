@@ -59,6 +59,27 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="thirdOnbPage"
+        options={{
+          title: 'Playing Times',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="secondOnbPage"
+        options={{
+          title: 'Tennis Level',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="firstOnbPage"
+        options={{
+          title: 'Onboarding',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="EventDetails"
         options={{
           title: 'Details',
