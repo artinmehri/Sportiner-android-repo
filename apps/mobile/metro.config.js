@@ -23,4 +23,9 @@ config.resolver.blockList = [
   /\/backend\/.*/,
 ];
 
+// Configure path alias for @/
+config.resolver.alias = {
+  '@': path.resolve(projectRoot),
+};
+
 module.exports = config;
