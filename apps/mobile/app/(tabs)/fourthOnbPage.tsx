@@ -17,12 +17,8 @@ export default function FourthOnbPage() {
   
 
 
-  const handleBack = () => {
-    router.push('/secondOnbPage');
-  };
-
   const handleContinue = () => {
-    router.push('/'); 
+    router.push('/SignUp'); 
   };
 
 
@@ -37,18 +33,22 @@ export default function FourthOnbPage() {
         <View style={styles.titleSection}>
           <Text style={styles.title}>Game On</Text>
           <Text style={styles.title2}>Artin</Text>
-          <Text style={styles.subtitle}>Ready for you first game?</Text>
+          <Text style={styles.subtitle}>Ready for your first game?</Text>
         </View>
       </ScrollView>
 
     <View style={styles.card}>
     <View style={styles.checkmarkIconContainer}>
-        <Ionicons style={styles.checkMark} name="checkmark" size={100} color="#ffffff" />
-        <View style={styles.checkmarkTextContainer}>
+      <Ionicons style={styles.checkMark} name="checkmark" size={100} color="#ffffff" />
+      <View style={styles.checkmarkTextContainer}>
         <Text style={styles.checkmarkText}>Locked</Text>
      </View>
-  
     </View>
+    <Text style={styles.cardText}>
+  Play <Text style={styles.orangeText}>1 Game</Text> in the first{' '}
+  <Text style={styles.blueText}>7 days</Text> to earn a{' '}
+  <Text style={styles.greenText}>reliability</Text> badge!
+</Text>
     
 
     </View>
@@ -89,7 +89,6 @@ const styles = StyleSheet.create({
     fontSize: 40,
     color: '#000000',
     textAlign: 'center',
-    marginBottom: 5,
   },
   title2: {
     fontFamily: 'Lexend-Bold',
@@ -100,7 +99,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 20,
     color: '#666',
     textAlign: 'center',
   },
@@ -112,10 +111,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
-    marginTop: 33,
+    marginTop: 39,
   },
   checkMark: {
-    marginTop: 20
+    marginTop: 30
   },
   checkmarkTextContainer: {
     width: 120,
@@ -129,16 +128,31 @@ const styles = StyleSheet.create({
   },
   checkmarkText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#ffffff',
     textAlign: 'center',
   },
-  gameTextContainer: {
+  cardText: {
+    marginTop: 45,
+    fontSize: 15,
+    color: '#000000',
+    textAlign: 'center',
+    fontFamily: 'Lexend-Bold',
+    fontWeight: '900',  // or '800' - heaviest weight
   },
-  gameText: {
+  orangeText: {
+    color: '#FFAD3A'
+  },
+  blueText: {
+    color: '#1A73E8'
+
+  },
+  greenText: {
+    color: '#19E675'
+
   },
   card: {
-    width: 339,
+    width: 350,
     height: 318,
     backgroundColor: '#FFFFFF',
     borderRadius: 30,
