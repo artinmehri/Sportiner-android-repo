@@ -6,7 +6,6 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
-  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -29,13 +28,13 @@ export default function FourthOnbPage() {
       <View style={styles.header}>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
         <View style={styles.titleSection}>
           <Text style={styles.title}>Game On</Text>
           <Text style={styles.title2}>Artin</Text>
           <Text style={styles.subtitle}>Ready for your first game?</Text>
         </View>
-      </ScrollView>
+      </View>
 
     <View style={styles.card}>
     <View style={styles.checkmarkIconContainer}>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,26 +9,80 @@ import {
   StatusBar,
   ScrollView,
   Button,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 
 
-export default function CongratsGame({ data }: { data: ShareCardData }) {
-  const router = useRouter();
-  const viewShotRef = useRef<ViewShot>(null);
-  
-  type ShareCardDate = {
+  type ShareCardData = {
     name: string;
     profileImage: string;
     daysToComplete: number;
     level: number;
   }
+
+export default function CongratsGame() {
+  const router = useRouter();
+  const viewShotRef = useRef<ViewShot>(null);
+  const params = useLocalSearchParams<{
+    name?: string;
+    profileImage?: string;
+    daysToComplete?: string;
+    level?: string;
+  }>();
+
+  // Create data object from params with defaults
+  const data: ShareCardData = {
+    name: params.name || 'User',
+    profileImage: params.profileImage || '',
+    daysToComplete: params.daysToComplete ? parseInt(params.daysToComplete) : 2,
+    level: params.level ? parseInt(params.level) : 3.5,
+  };
+
+  // Animation values
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const starBounceAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Star bounce animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(starBounceAnim, {
+          toValue: -8,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(starBounceAnim, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
 
   // When user taps "Share this Story"
   const captureCard = async () => {
@@ -45,161 +99,504 @@ export default function CongratsGame({ data }: { data: ShareCardData }) {
   }
 
   const handleContinue = () => {
-    router.push('/SignUp'); 
+    router.push('/'); 
   };
 
 
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      <View style={styles.header}>
-      </View>
+      <StatusBar barStyle="light-content" />
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollViewContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Top gradient overlay */}
+        <LinearGradient
+          colors={['rgba(19, 236, 73, 0.1)', 'transparent', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.topGradient}
+        />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.titleSection}>
-          <MaskedView
-            maskElement={<Text style={styles.title}>Challenge Complete</Text>}
-          >
-            <LinearGradient
-              colors={['#DFE619', '#C9E623', '#19E675']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+        <View style={styles.topSection}>
+          <View style={styles.titleSection}>
+            <MaskedView
+              maskElement={<Text style={styles.title}>Challenge Complete! 🏆</Text>}
             >
-              <Text style={[styles.title, { opacity: 0 }]}>Challenge Complete</Text>
-            </LinearGradient>
-          </MaskedView>
+              <LinearGradient
+                colors={['#C3E623', '#19E675']}
+                start={{ x: 1, y: 3 }}
+                end={{ x: 0, y: 1 }}
+              >
+                <Text style={[styles.title, { opacity: 0 }]}>Challenge Complete! 🏆</Text>
+              </LinearGradient>
+            </MaskedView>
+          </View>
+
+          <Animated.View 
+            style={[
+              styles.checkmarkIconContainer,
+              {
+                transform: [{ scale: pulseAnim }],
+              }
+            ]}
+          >
+            <Ionicons name="shield-checkmark" size={40} color="#13ec49" />
+            <Animated.View
+              style={[
+                styles.starIcon,
+                {
+                  transform: [{ translateY: starBounceAnim }],
+                }
+              ]}
+            >
+              <Ionicons name="star" size={24} color="#d4f936" />
+            </Animated.View>
+          </Animated.View>
+
+          <Text style={styles.subtitle}>Reliability Status Unlocked</Text>
         </View>
+
+        <View style={styles.cardWrapper}>
+    <ViewShot ref={viewShotRef}>
+      <View style={styles.shareCardContainer}>
+        {/* Background gradient overlay */}
+        <LinearGradient
+          colors={['rgba(19, 236, 73, 0.1)', 'transparent', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.cardGradientOverlay}
+        />
+        
+        {/* Decorative blur circles */}
+        <View style={styles.decorativeCircle1} />
+        <View style={styles.decorativeCircle2} />
+        <View style={styles.decorativeCircle3} />
+
+        <View style={styles.shareCardContent}>
+          {/* Header */}
+          <View style={styles.shareCardHeader}>
+            <View style={styles.brandContainer}>
+              <Ionicons name="tennisball-outline" size={16} color="#13ec49" />
+              <Text style={styles.brandText}>Sportiner</Text>
+            </View>
+            <View style={styles.verifiedBadge}>
+              <Text style={styles.verifiedText}>#VERIFIED</Text>
+            </View>
+          </View>
+
+          {/* Profile Image */}
+          <View style={styles.profileImageContainer}>
+            {data.profileImage ? (
+              <Image
+                source={{ uri: data.profileImage }}
+                style={styles.profileImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.profileImage, styles.profileImagePlaceholder]}>
+                <Ionicons name="person" size={100} color="#13ec49" />
+              </View>
+            )}
+            <View style={styles.newStatusBadge}>
+              <Text style={styles.newStatusText}>NEW STATUS</Text>
+            </View>
+          </View>
+
+          {/* Main Text */}
+          <View style={styles.nameSection}>
+            <Text style={styles.nameText}>{data.name.toUpperCase()}</Text>
+            <Text style={styles.nameText}>IS NOW</Text>
+            <MaskedView
+              maskElement={<Text style={styles.nameText}>VERIFIED.</Text>}
+            >
+              <LinearGradient
+                colors={['#13ec49', '#d4f936', '#13ec49']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Text style={[styles.nameText, { opacity: 0 }]}>VERIFIED.</Text>
+              </LinearGradient>
+            </MaskedView>
+          </View>
+
+          {/* Stats Grid */}
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>First Match</Text>
+              <View style={styles.statValueRow}>
+                <Text style={styles.statValue}>Done</Text>
+                <Ionicons name="checkmark-circle" size={20} color="#13ec49" />
+              </View>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Skill Level</Text>
+              <Text style={styles.statValue}>
+                {data.level} <Text style={styles.statValueSmall}>INT</Text>
+              </Text>
+            </View>
+            <View style={[styles.statCard, styles.statCardWide]}>
+              <View style={styles.statCardContent}>
+                <View>
+                  <Text style={styles.statLabel}>Total Time</Text>
+                  <Text style={styles.statValueTime}>{data.daysToComplete} Days to Complete</Text>
+                </View>
+                <View style={styles.timerIconContainer}>
+                  <Ionicons name="timer-outline" size={20} color="#13ec49" />
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Footer */}
+          <View style={styles.cardFooter}>
+            <Text style={styles.cardId}>ID: 8829-XP</Text>
+            <View style={styles.decorativeBars}>
+              <View style={[styles.decorativeBar, styles.bar1]} />
+              <View style={[styles.decorativeBar, styles.bar2]} />
+              <View style={[styles.decorativeBar, styles.bar3]} />
+              <View style={[styles.decorativeBar, styles.bar4]} />
+            </View>
+          </View>
+        </View>
+      </View>
+        </ViewShot>
+
+        {/* Share Button */}
+        <TouchableOpacity style={styles.shareButton} onPress={captureCard}>
+          <Ionicons name="share-outline" size={24} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Bottom Button */}
+      <View style={styles.bottomButtonContainer}>
+        <TouchableOpacity style={styles.findMatchButton} onPress={handleContinue}>
+          <Text style={styles.findMatchButtonText}>Find Your Next Match</Text>
+          <View style={styles.findMatchButtonIcon}>
+            <Ionicons name="arrow-forward" size={20} color="#102215" />
+          </View>
+        </TouchableOpacity>
+      </View>
       </ScrollView>
-
-  <View style={styles.reliabilityCheck}>
-    <View style={styles.checkmarkIconContainer}>
-      <Ionicons name="checkmark" size={39} color="#000000" />
-    </View>
-    <Text style={styles.subtitle} numberOfLines={1}>Reliability status unlocked!</Text>
-  </View>
-
-
-
-
-  <ViewShot ref={viewShotRef}> (captures everything inside)
-    <View> 
- 
-    export default function ShareCard({ data }: { data: ShareCardData }) {
-  return (
-    <LinearGradient
-      colors={['#2A1F0A', '#3A2F12', '#1C1C1C']}
-      style={styles.container}
-    >
-
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.brand}>SPORTINER</Text>
-        <Text style={styles.verified}>VERIFIED</Text>
-      </View>
-
-      {/* Profile Image */}
-      <Image
-        source={{ uri: data.profileImage }}
-        style={styles.image}
-      />
-
-      {/* Main Text */}
-      <Text style={styles.name}>{data.name.toUpperCase()}</Text>
-      <Text style={styles.line}>
-        IS NOW <Text style={styles.green}>VERIFIED</Text>
-      </Text>
-
-      {/* Stats */}
-      <View style={styles.stats}>
-        <View>
-          <Text style={styles.label}>TOTAL TIME</Text>
-          <Text style={styles.value}>{data.daysToComplete} Days</Text>
-        </View>
-        <View>
-          <Text style={styles.label}>LEVEL</Text>
-          <Text style={styles.value}>{data.level}</Text>
-        </View>
-      </View>
-
-    </LinearGradient>
-  </View>
-  );
-
-
-    </View>
-  </ViewShot>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-   container: {
-    width: 1080,
-    height: 1920,
-    padding: 60,
-    justifyContent: 'space-between',
-    borderRadius: 60,
+  cardWrapper: {
+    width: '100%',
+    height: 790,
+    maxWidth: 360,
+    aspectRatio: 9 / 16,
+    alignSelf: 'center',
+    marginVertical: 20,
+    position: 'relative',
   },
-
-  header: {
+  shareCardContainer: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
+    backgroundColor: '#1a1f1b',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  cardGradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    opacity: 0.1,
+  },
+  decorativeCircle1: {
+    position: 'absolute',
+    top: -80,
+    left: -80,
+    width: 256,
+    height: 256,
+    borderRadius: 128,
+    backgroundColor: 'rgba(19, 236, 73, 0.2)',
+    opacity: 0.3,
+  },
+  decorativeCircle2: {
+    position: 'absolute',
+    top: '50%',
+    right: -80,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(212, 249, 54, 0.2)',
+    opacity: 0.3,
+  },
+  decorativeCircle3: {
+    position: 'absolute',
+    bottom: 0,
+    left: 40,
+    width: 256,
+    height: 256,
+    borderRadius: 128,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    opacity: 0.3,
+  },
+  shareCardContent: {
+    flex: 1,
+    padding: 24,
+    zIndex: 10,
+  },
+  shareCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
-
-  brand: {
-    color: '#A3FF12',
-    fontWeight: '800',
-    letterSpacing: 2,
+  brandContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    opacity: 0.8,
   },
-
-  verified: {
-    color: '#E5E7EB',
-    fontSize: 12,
+  brandText: {
+    color: '#13ec49',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 3.2,
+    textTransform: 'uppercase',
   },
-
-  image: {
+  verifiedBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  verifiedText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  profileImageContainer: {
     width: '100%',
-    height: 500,
-    borderRadius: 40,
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 24,
+    borderWidth: 4,
+    borderColor: '#000',
+    transform: [{ rotate: '-2deg' }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 16,
   },
-
-  name: {
-    color: '#FFFFFF',
-    fontSize: 40,
-    fontWeight: '900',
-    letterSpacing: -1,
+  profileImage: {
+    width: '100%',
+    height: '100%',
   },
-
-  line: {
+  profileImagePlaceholder: {
+    backgroundColor: '#1a1f1b',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  newStatusBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: '#13ec49',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 9999,
+    transform: [{ rotate: '3deg' }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  newStatusText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  nameSection: {
+    marginBottom: 24,
+    gap: 4,
+  },
+  nameText: {
     color: '#FFFFFF',
     fontSize: 36,
     fontWeight: '800',
+    lineHeight: 40,
+    letterSpacing: -1,
   },
-
-  green: {
-    color: '#19E675',
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 'auto',
   },
-
-  stats: {
+  statCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    flex: 1,
+    minWidth: '45%',
+  },
+  statCardWide: {
+    minWidth: '100%',
+    marginTop: 0,
+  },
+  statCardContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
-
-  label: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    letterSpacing: 1,
+  statLabel: {
+    color: 'rgba(156, 163, 175, 1)',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginBottom: 4,
   },
-
-  value: {
+  statValue: {
     color: '#FFFFFF',
     fontSize: 20,
+    fontWeight: '800',
+  },
+  statValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statValueSmall: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: 'rgba(209, 213, 219, 1)',
+  },
+  statValueTime: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '700',
+  },
+  timerIconContainer: {
+    backgroundColor: 'rgba(19, 236, 73, 0.2)',
+    padding: 8,
+    borderRadius: 9999,
+  },
+  cardFooter: {
+    marginTop: 27,
+    marginBottom: 30,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  cardId: {
+    color: 'rgba(107, 114, 128, 1)',
+    fontSize: 10,
+    fontFamily: 'monospace',
+  },
+  decorativeBars: {
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'flex-end',
+  },
+  decorativeBar: {
+    width: 4,
+    backgroundColor: '#13ec49',
+    borderRadius: 2,
+  },
+  bar1: {
+    height: 16,
+  },
+  bar2: {
+    height: 24,
+    backgroundColor: '#d4f936',
+  },
+  bar3: {
+    height: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  bar4: {
+    height: 20,
+    backgroundColor: 'rgba(19, 236, 73, 0.5)',
+  },
+  shareButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    width: 330,
+    height: 48,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignSelf: 'center',
+    alignItems: 'center',
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  bottomButtonContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    paddingBottom: 32,
+    width: '100%',
+  },
+  findMatchButton: {
+    width: '100%',
+    height: 64,
+    backgroundColor: '#13ec49',
+    borderRadius: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    shadowColor: '#13ec49',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 8,
+  },
+  findMatchButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    color: '#102215',
+  },
+  findMatchButtonIcon: {
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollViewContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingBottom: 20,
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    zIndex: 0,
   },
   header: {
     flexDirection: 'row',
@@ -209,39 +606,56 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 20,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
+  topSection: {
+    paddingTop: 40,
+    paddingHorizontal: 24,
+    paddingBottom: 8,
+    alignItems: 'center',
+    zIndex: 10,
+    position: 'relative',
   },
   titleSection: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 16,
   },
   title: {
-    fontFamily: 'Lexend-Bold',
-    fontWeight: '900',  // or '800' - heaviest weight
-    fontSize: 40,
+    fontWeight: '800',
+    fontSize: 30,
     color: '#000000',
     textAlign: 'center',
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 15,
-    color: '#666',
+    fontSize: 12,
+    color: '#333',
     textAlign: 'center',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 4,
+    marginTop: 12,
+    marginBottom: 12
   },
   checkmarkIconContainer: {
-    width: 70,
-    height: 70,
-    borderRadius: 100,
-    backgroundColor: '#19E675',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#005124',
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
-    marginTop: -70,
-    marginBottom: 10
+    borderWidth: 1,
+    borderColor: 'rgba(19, 236, 73, 0.3)',
+    shadowColor: '#13ec49',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 8,
+    marginVertical: 8,
+    position: 'relative',
   },
-  reliabilityCheck: {
-    marginBottom: 130
+  starIcon: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
   },
   cardText: {
     marginTop: 45,
