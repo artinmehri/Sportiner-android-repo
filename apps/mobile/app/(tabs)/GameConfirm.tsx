@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StatusBar,
   Image,
   Share,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 export default function GameConfirmation() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [showGameCreatedModal, setShowGameCreatedModal] = useState(false);
+
+  useEffect(() => {
+    setShowGameCreatedModal(true);
+  }, []);
 
   const handleInviteFriends = async () => {
     try {
@@ -37,39 +43,50 @@ export default function GameConfirmation() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
-      <View style={styles.container}>
-        {/* Title with emoji */}
-        <Text style={styles.title}>Congrats 🎉</Text>
-        
-        {/* Green checkmark circle */}
-        <View style={styles.checkmarkContainer}>
-          <Image 
-            source={require('../../assets/images/checkmark.png')} 
-            style={styles.checkmarkImage}
-            resizeMode="contain"
-          />
-        </View>
-        
-        {/* Confirmation text */}
-        <Text style={styles.confirmationText}>GAME CREATED!</Text>
-        
-        {/* Invite friends button */}
+      {/* Game Created Modal */}
+      <Modal
+        visible={showGameCreatedModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowGameCreatedModal(false)}
+      >
         <TouchableOpacity 
-          style={styles.inviteButton} 
-          onPress={handleInviteFriends}
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowGameCreatedModal(false)}
         >
-          <Ionicons name="people" size={20} color="#FFFFFF" style={styles.buttonIcon} />
-          <Text style={styles.buttonText}>Invite friends to fill spots faster</Text>
+          <View style={styles.feedbackModal}>
+            <View style={styles.feedbackContent}>
+              <View style={styles.feedbackIconContainer}>
+                <View style={styles.checkmarkCircle}>
+                  <Ionicons name="checkmark" size={30} color="#ffffff" />
+                </View>
+              </View>
+              <Text style={styles.feedbackTitle}>Game Created</Text>
+              
+              {/* Invite friends button */}
+              <TouchableOpacity 
+                style={styles.inviteButton} 
+                onPress={handleInviteFriends}
+              >
+                <Ionicons name="people" size={20} color="#FFFFFF" style={styles.buttonIcon} />
+                <Text style={styles.buttonText}>Invite friends to fill spots faster</Text>
+              </TouchableOpacity>
+              
+              {/* View Games button */}
+              <TouchableOpacity 
+                style={styles.viewGamesButton} 
+                onPress={() => {
+                  setShowGameCreatedModal(false);
+                  router.push('/(tabs)/games');
+                }}
+              >
+                <Text style={styles.viewGamesButtonText}>View My Games</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </TouchableOpacity>
-        
-        {/* View Games button */}
-        <TouchableOpacity 
-          style={styles.viewGamesButton} 
-          onPress={() => router.push('/(tabs)/games')}
-        >
-          <Text style={styles.viewGamesButtonText}>View My Games</Text>
-        </TouchableOpacity>
-      </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -79,44 +96,49 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  container: {
+  modalOverlay: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingBottom: 50,
   },
-  title: {
-    fontSize: 32,
+  feedbackModal: {
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  feedbackContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  feedbackIconContainer: {
+    marginBottom: 15,
+  },
+  feedbackTitle: {
+    fontSize: 24,
     fontWeight: '700',
-    color: '#000000',
-    marginBottom: 40,
+    color: '#19E675',
     textAlign: 'center',
-  },
-  checkmarkContainer: {
-    marginBottom: 32,
+    marginBottom: 20,
   },
   checkmarkCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: '#19E675',
-    alignItems: 'center',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#19E675',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  checkmarkImage: {
-    width: 120,
-    height: 120,
-  },
-  confirmationText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#19E675',
-    marginBottom: 48,
-    textAlign: 'center',
-    letterSpacing: 1,
+    alignItems: 'center',
+    marginBottom: 15,
   },
   inviteButton: {
     backgroundColor: '#19E675',
@@ -132,6 +154,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    marginBottom: 16,
   },
   buttonIcon: {
     marginRight: 12,
@@ -149,7 +172,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     borderWidth: 2,
     borderColor: '#19E675',
-    marginTop: 16,
     minWidth: 280,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

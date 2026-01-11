@@ -69,7 +69,7 @@ export default function ThirdOnbPage() {
 
   const handleContinue = () => {
     console.log('Selected schedule:', schedule);
-    router.push('/'); 
+    router.push('/fourthOnbPage'); 
   };
 
   const toggleTimeSlot = (day: string, timeSlot: TimeSlot) => {

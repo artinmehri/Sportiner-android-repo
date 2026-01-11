@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
@@ -101,6 +102,7 @@ export default function Index() {
  const [mode, setMode] = useState<"1-1" | "Group">("1-1");
  const [selectedFilter, setSelectedFilter] = useState("Today");
  const [searchQuery, setSearchQuery] = useState("");
+ const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
  const { user } = useAuth();
@@ -200,7 +202,7 @@ export default function Index() {
            event.title.toLowerCase().includes(searchQuery.toLowerCase())
          )
        ).map((event) => (
-         <EventCard key={event.title} event={event} mode={mode} router={router} requestJoinGame={requestJoinGame} />
+         <EventCard key={event.title} event={event} mode={mode} router={router} requestJoinGame={requestJoinGame} setShowJoinedGameModal={setShowJoinedGameModal} />
        ))}
      </ScrollView>
 
@@ -211,12 +213,37 @@ export default function Index() {
     >
       <Ionicons name="add" size={26} color="#005124" />
     </TouchableOpacity>
+
+    {/* Joined Game Modal */}
+    <Modal
+      visible={showJoinedGameModal}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={() => setShowJoinedGameModal(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowJoinedGameModal(false)}
+      >
+        <View style={styles.feedbackModal}>
+          <View style={styles.feedbackContent}>
+            <View style={styles.feedbackIconContainer}>
+              <View style={styles.checkmarkCircle}>
+                <Ionicons name="checkmark" size={30} color="#ffffff" />
+              </View>
+            </View>
+            <Text style={styles.feedbackTitle}>Joined Game</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Modal>
    </SafeAreaView>
  );
 }
 
 
-function EventCard({ event, mode, router, requestJoinGame }: { 
+function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModal }: { 
   event: Event; 
   mode: "1-1" | "Group"; 
   router: any; 
@@ -230,6 +257,7 @@ function EventCard({ event, mode, router, requestJoinGame }: {
       host: string;
     };
   }) => void;
+  setShowJoinedGameModal: (show: boolean) => void;
 }) {
  const isGroupMode = mode === "Group";
  const hasGreenBg = isGroupMode && event.hasGreenBackground;
@@ -261,11 +289,7 @@ function EventCard({ event, mode, router, requestJoinGame }: {
       },
     });
 
-    Alert.alert(
-      'Game Request Sent',
-      `Your request to join ${event.title} has been sent. You'll receive a notification when the host responds.`,
-      [{ text: 'OK', style: 'default' }]
-    );
+    setShowJoinedGameModal(true);
   };
 
  return (
@@ -609,5 +633,48 @@ const styles = StyleSheet.create({
    shadowOpacity: 0.14,
    shadowRadius: 8,
    elevation: 5,
+ },
+ modalOverlay: {
+   flex: 1,
+   backgroundColor: 'rgba(0, 0, 0, 0.5)',
+   justifyContent: 'flex-end',
+   alignItems: 'center',
+   paddingBottom: 50,
+ },
+ feedbackModal: {
+   justifyContent: 'flex-end',
+   alignItems: 'center',
+ },
+ feedbackContent: {
+   backgroundColor: '#ffffff',
+   borderRadius: 20,
+   padding: 30,
+   alignItems: 'center',
+   shadowColor: '#000',
+   shadowOffset: {
+     width: 0,
+     height: 4,
+   },
+   shadowOpacity: 0.25,
+   shadowRadius: 10,
+   elevation: 10,
+ },
+ feedbackIconContainer: {
+   marginBottom: 15,
+ },
+ feedbackTitle: {
+   fontSize: 24,
+   fontWeight: '700',
+   color: '#19E675',
+   textAlign: 'center',
+ },
+ checkmarkCircle: {
+   width: 60,
+   height: 60,
+   borderRadius: 30,
+   backgroundColor: '#19E675',
+   justifyContent: 'center',
+   alignItems: 'center',
+   marginBottom: 15,
  },
 });

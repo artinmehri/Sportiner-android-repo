@@ -121,6 +121,27 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="fourthOnbPage"
+        options={{
+          title: 'Fourth Onboarding',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="fifthOnbPage"
+        options={{
+          title: 'Fifth Onboarding',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="GameConfirm"
+        options={{
+          title: 'Game Confirmation',
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

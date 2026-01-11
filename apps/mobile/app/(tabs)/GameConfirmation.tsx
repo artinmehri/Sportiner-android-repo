@@ -20,7 +20,7 @@ export default function GameConfirmation() {
     try {
       const result = await Share.share({
         message: 'Join my game on Sportiner! 🎾',
-        url: 'https://sportiner.app/game/123', // will be replaced with actual game url later dw
+        url: 'https://sportiner.app/game/123', 
       });
       
       if (result.action === Share.sharedAction) {

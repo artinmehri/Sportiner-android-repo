@@ -17,7 +17,7 @@ export default function FourthOnbPage() {
 
 
   const handleContinue = () => {
-    router.push('/SignUp'); 
+    router.push('/fifthOnbPage'); 
   };
 
 
@@ -84,14 +84,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: 'Lexend-Bold',
-    fontWeight: '900',  // or '800' - heaviest weight
+    fontWeight: '900',  
     fontSize: 40,
     color: '#000000',
     textAlign: 'center',
   },
   title2: {
     fontFamily: 'Lexend-Bold',
-    fontWeight: '900',  // or '800' - heaviest weight
+    fontWeight: '900',  
     fontSize: 40,
     color: '#19E675',
     textAlign: 'center',
@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     textAlign: 'center',
     fontFamily: 'Lexend-Bold',
-    fontWeight: '900',  // or '800' - heaviest weight
+    fontWeight: '900', 
   },
   orangeText: {
     color: '#FFAD3A'
@@ -161,13 +161,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     marginTop: 270,
 
-    // iOS shadows
+
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     
-    // Android shadow
+  
     elevation: 8,
   },
   footer: {

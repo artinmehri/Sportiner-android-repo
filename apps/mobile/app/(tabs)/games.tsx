@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useGames, Game } from '@/context/GameContext';
 import ProfileDetailsScreen from './profileDetails';
 
@@ -231,6 +231,7 @@ const pastPlayedGamesData: GameCard[] = [
 export default function Games() {
   const router = useRouter();
   const { games } = useGames();
+  const { feedbackSubmitted } = useLocalSearchParams<{ feedbackSubmitted?: string }>();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
   const hostingScrollRef = useRef<ScrollView>(null);
   const playingScrollRef = useRef<ScrollView>(null);
@@ -244,8 +245,16 @@ export default function Games() {
   const [selectedGame, setSelectedGame] = useState<GameCard | Game | null>(null);
   const [showPlayers, setShowPlayers] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [pastHostedGames, setPastHostedGames] = useState(pastHostedGamesData);
   const [pastPlayedGames, setPastPlayedGames] = useState(pastPlayedGamesData);
+
+  useEffect(() => {
+    if (feedbackSubmitted === 'true') {
+      setShowFeedbackModal(true);
+      router.replace('/games');
+    }
+  }, [feedbackSubmitted]);
 
   const formatGameDate = (dateString: string | undefined) => {
     if (!dateString) return 'Date TBD';
@@ -980,6 +989,31 @@ export default function Games() {
       >
         <ProfileDetailsScreen onClose={() => setShowProfileModal(false)} />
       </Modal>
+
+      {/* Feedback Modal */}
+      <Modal
+        visible={showFeedbackModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowFeedbackModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowFeedbackModal(false)}
+        >
+          <View style={styles.feedbackModal}>
+            <View style={styles.feedbackContent}>
+              <View style={styles.feedbackIconContainer}>
+                <View style={styles.checkmarkCircle}>
+                  <Ionicons name="checkmark" size={30} color="#ffffff" />
+                </View>
+              </View>
+              <Text style={styles.feedbackTitle}>Feedback Submitted</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1334,5 +1368,43 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#666',
   },
+  feedbackModal: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingBottom: 50,
+  },
+  feedbackContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  feedbackIconContainer: {
+    marginBottom: 15,
+  },
+  feedbackTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#19E675',
+    textAlign: 'center',
+  },
+  checkmarkCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#19E675',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
 });
-
