@@ -41,7 +41,7 @@ const MatchVerif = () => {
 
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    router.push('/games?feedbackSubmitted=true');
+    router.replace('/games?feedbackSubmitted=true');
   };
 
   return (
@@ -77,13 +77,13 @@ const MatchVerif = () => {
             <View style={styles.buttonRow}>
               <TouchableOpacity 
                 style={[styles.optionButton, wasOnTime === 'no' && styles.selectedNo]}
-                onPress={() => setWasOnTime('no')}
+                onPress={() => setWasOnTime(wasOnTime === 'no' ? null : 'no')}
               >
                 <Text style={[styles.optionText, wasOnTime === 'no' && styles.selectedNoText]}>No X</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.optionButton, wasOnTime === 'yes' && styles.selectedYes]}
-                onPress={() => setWasOnTime('yes')}
+                onPress={() => setWasOnTime(wasOnTime === 'yes' ? null : 'yes')}
               >
                 <Text style={[styles.optionText, wasOnTime === 'yes' && styles.selectedYesText]}>Yes ✓</Text>
               </TouchableOpacity>
@@ -96,13 +96,13 @@ const MatchVerif = () => {
             <View style={styles.buttonRow}>
               <TouchableOpacity 
                 style={[styles.optionButton, wouldPlayAgain === 'no' && styles.selectedNo]}
-                onPress={() => setWouldPlayAgain('no')}
+                onPress={() => setWouldPlayAgain(wouldPlayAgain === 'no' ? null : 'no')}
               >
                 <Text style={[styles.optionText, wouldPlayAgain === 'no' && styles.selectedNoText]}>No X</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.optionButton, wouldPlayAgain === 'yes' && styles.selectedYes]}
-                onPress={() => setWouldPlayAgain('yes')}
+                onPress={() => setWouldPlayAgain(wouldPlayAgain === 'yes' ? null : 'yes')}
               >
                 <Text style={[styles.optionText, wouldPlayAgain === 'yes' && styles.selectedYesText]}>Yes ✓</Text>
               </TouchableOpacity>
@@ -115,21 +115,21 @@ const MatchVerif = () => {
             <View style={styles.ratingButtons}>
               <TouchableOpacity 
                 style={[styles.ratingButton, accuracyRating === 'stronger' && styles.selectedRating]}
-                onPress={() => setAccuracyRating('stronger')}
+                onPress={() => setAccuracyRating(accuracyRating === 'stronger' ? null : 'stronger')}
               >
                 <Ionicons name="trending-up" size={16} color="#6B7280" />
                 <Text style={styles.ratingText}>Stronger</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.ratingButton, accuracyRating === 'spot-on' && styles.selectedRating]}
-                onPress={() => setAccuracyRating('spot-on')}
+                onPress={() => setAccuracyRating(accuracyRating === 'spot-on' ? null : 'spot-on')}
               >
                 <Ionicons name="star" size={16} color="#6B7280" />
                 <Text style={styles.ratingText}>Spot on</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.ratingButton, accuracyRating === 'weaker' && styles.selectedRating]}
-                onPress={() => setAccuracyRating('weaker')}
+                onPress={() => setAccuracyRating(accuracyRating === 'weaker' ? null : 'weaker')}
               >
                 <Ionicons name="trending-down" size={16} color="#6B7280" />
                 <Text style={styles.ratingText}>Weaker</Text>
@@ -144,7 +144,7 @@ const MatchVerif = () => {
           <View style={styles.winnerCards}>
             <TouchableOpacity 
               style={[styles.winnerCard, winner === 'you' && styles.selectedWinner]}
-              onPress={() => setWinner('you')}
+              onPress={() => setWinner(winner === 'you' ? null : 'you')}
             >
               <Image 
                 source={{ uri: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=900&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8bW91bnRhaW5zfGVufDB8fDB8fHww' }} 
@@ -154,7 +154,7 @@ const MatchVerif = () => {
             </TouchableOpacity>
             <TouchableOpacity 
               style={[styles.winnerCard, winner === 'artin' && styles.selectedWinner]}
-              onPress={() => setWinner('artin')}
+              onPress={() => setWinner(winner === 'artin' ? null : 'artin')}
             >
               <Image 
                 source={{ uri: 'https://plus.unsplash.com/premium_photo-1661883496453-0c211b05a121?w=900&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OXx8dGhlJTIwc3RhcnN8ZW58MHx8MHx8fDA%3D' }} 
@@ -269,12 +269,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   selectedNo: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: 'transparent',
     borderColor: '#EF4444',
   },
   selectedYes: {
-    backgroundColor: '#19E675',
-    borderColor: '#10B981',
+    backgroundColor: 'transparent',
+    borderColor: '#19E675',
   },
   optionText: {
     fontSize: 16,
@@ -306,8 +306,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   selectedRating: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#D1D5DB',
+    backgroundColor: 'transparent',
+    borderColor: '#19E675',
   },
   ratingText: {
     fontSize: 14,

@@ -20,6 +20,10 @@ const FifthOnbPage = () => {
   
   const handleJoinGame = () => {
     setShowJoinedGameModal(true);
+    
+    setTimeout(() => {
+      setShowJoinedGameModal(false);
+    }, 2500);
   };
   
   const handleBrowseGames = () => {

@@ -84,6 +84,9 @@ export default function ProfileScreen() {
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
+          <View style={styles.statIconContainer}>
+            <Ionicons name="tennisball-outline" size={16} color="white" />
+          </View>
           <Text style={styles.statValue}>12</Text>
           <Text style={styles.statLabel}>Games Played</Text>
         </View>

@@ -290,6 +290,10 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
     });
 
     setShowJoinedGameModal(true);
+    
+    setTimeout(() => {
+      setShowJoinedGameModal(false);
+    }, 2500);
   };
 
  return (

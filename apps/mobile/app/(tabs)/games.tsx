@@ -241,18 +241,28 @@ export default function Games() {
   const [playingScrollIndex, setPlayingScrollIndex] = useState(0);
   const [pastHostingScrollIndex, setPastHostingScrollIndex] = useState(0);
   const [pastPlayingScrollIndex, setPastPlayingScrollIndex] = useState(0);
-  const [showMenu, setShowMenu] = useState(false);
   const [selectedGame, setSelectedGame] = useState<GameCard | Game | null>(null);
   const [showPlayers, setShowPlayers] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [pastHostedGames, setPastHostedGames] = useState(pastHostedGamesData);
   const [pastPlayedGames, setPastPlayedGames] = useState(pastPlayedGamesData);
+  const feedbackShownRef = useRef(false);
 
   useEffect(() => {
-    if (feedbackSubmitted === 'true') {
-      setShowFeedbackModal(true);
+    if (feedbackSubmitted === 'true' && !feedbackShownRef.current) {
+      feedbackShownRef.current = true;
+      
+     
       router.replace('/games');
+      
+
+      setShowFeedbackModal(true);
+      
+      setTimeout(() => {
+        setShowFeedbackModal(false);
+      }, 2500);
     }
   }, [feedbackSubmitted]);
 

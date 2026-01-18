@@ -20,6 +20,13 @@ export default function GameConfirmation() {
 
   useEffect(() => {
     setShowGameCreatedModal(true);
+    
+ 
+    const timer = setTimeout(() => {
+      setShowGameCreatedModal(false);
+    }, 2500);
+    
+    return () => clearTimeout(timer);
   }, []);
 
   const handleInviteFriends = async () => {

@@ -29,7 +29,7 @@ export default function FirstOnbPage() {
   const params = useLocalSearchParams<{ method?: AuthMethod; email?: string }>();
   const authMethod = params.method || 'email';
 
-  const ageGroups = ['15-18', '18-25', '26-35', '36-50', '50+'];
+  const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
 
   const handleBack = () => {
     router.push('/SignUp');

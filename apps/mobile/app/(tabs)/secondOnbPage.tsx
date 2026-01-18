@@ -39,6 +39,7 @@ const tennisLevels: TennisLevel[] = [
 export default function SecondOnbPage() {
   const [selectedIndex, setSelectedIndex] = useState(0); 
   const thumbPosition = useRef(new Animated.Value((selectedIndex / (tennisLevels.length - 1)) * sliderWidth)).current;
+  const dragOffset = useRef(new Animated.Value(0)).current;
   const router = useRouter();
 
   const handleBack = () => {
@@ -62,30 +63,36 @@ export default function SecondOnbPage() {
     Animated.spring(thumbPosition, {
       toValue: snapPosition,
       useNativeDriver: false,
-      tension: 200,
-      friction: 15,
+      tension: 50, 
+      friction: 1000,  
     }).start();
+    
+    dragOffset.setValue(snapPosition);
+    thumbPosition.setValue(0);
   };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 10;
+        return Math.abs(gestureState.dx) > 5;
       },
       onPanResponderGrant: () => {
         thumbPosition.stopAnimation();
-        thumbPosition.setOffset((thumbPosition as any)._value);
+        const currentValue = (dragOffset as any)._value + (thumbPosition as any)._value;
+        dragOffset.setValue(currentValue);
+        thumbPosition.setValue(0);
       },
       onPanResponderMove: (_, gestureState) => {
-        const newPosition = (thumbPosition as any)._value + gestureState.dx;
+    
+        const newPosition = gestureState.dx * 1.0; 
         const clampedPosition = Math.max(0, Math.min(sliderWidth, newPosition));
         thumbPosition.setValue(clampedPosition);
       },
       onPanResponderRelease: () => {
-        thumbPosition.flattenOffset();
-        const currentPosition = (thumbPosition as any)._value;
+        const currentPosition = (dragOffset as any)._value + (thumbPosition as any)._value;
         updateIndexFromPosition(currentPosition);
+        dragOffset.setValue(0);
       },
     })
   ).current;
@@ -93,28 +100,47 @@ export default function SecondOnbPage() {
   const handleDotPress = (index: number) => {
     setSelectedIndex(index);
     const position = (index / (tennisLevels.length - 1)) * sliderWidth;
-    Animated.spring(thumbPosition, {
-      toValue: position,
-      useNativeDriver: false,
-      tension: 200,
-      friction: 15,
-    }).start();
+    dragOffset.setValue(position);
+    thumbPosition.setValue(0);
   };
 
   const currentLevel = tennisLevels[selectedIndex];
   const progressWidth = (selectedIndex / (tennisLevels.length - 1)) * sliderWidth;
 
+  const renderIntervalSections = () => {
+    const intervalWidth = sliderWidth / (tennisLevels.length - 1);
+    
+    return tennisLevels.map((_, index) => {
+      const isLast = index === tennisLevels.length - 1;
+      const left = index * intervalWidth;
+      const width = isLast ? intervalWidth : intervalWidth;
+      
+      return (
+        <TouchableOpacity
+          key={index}
+          style={[
+            styles.intervalSection,
+            {
+              left: left,
+              width: width,
+            }
+          ]}
+          onPress={() => handleDotPress(index)}
+        />
+      );
+    });
+  };
+
   const renderDots = () => {
     return tennisLevels.map((_, index) => {
       const isActive = index <= selectedIndex;
       return (
-        <TouchableOpacity
+        <View
           key={index}
           style={[
             styles.dot,
             isActive && styles.dotActive,
           ]}
-          onPress={() => handleDotPress(index)}
         />
       );
     });
@@ -149,9 +175,15 @@ export default function SecondOnbPage() {
           <View style={styles.sliderTrack}>
             <View style={[styles.sliderProgress, { width: progressWidth }]} />
           </View>
+          <View style={styles.dotsContainer}>{renderIntervalSections()}</View>
           <View style={styles.dotsContainer}>{renderDots()}</View>
           <Animated.View
-            style={[styles.sliderThumb, { left: thumbPosition }]}
+            style={[
+              styles.sliderThumb, 
+              { 
+                left: Animated.add(dragOffset, thumbPosition)
+              }
+            ]}
             {...panResponder.panHandlers}
           />
         </View>
@@ -268,6 +300,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     width: sliderWidth,
     justifyContent: 'space-between',
+  },
+  intervalSection: {
+    position: 'absolute',
+    top: 0,
+    height: 40,
+    backgroundColor: 'transparent',
   },
   sliderThumb: {
     position: 'absolute',
