@@ -21,6 +21,7 @@ import {
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
 
 const { width, height } = Dimensions.get('window');
 
@@ -131,6 +132,7 @@ const GroupChatScreen = () => {
   const [mediaPermission, setMediaPermission] = useState<string | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
+  const [swipeReplyMessage, setSwipeReplyMessage] = useState<Message | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
@@ -274,13 +276,52 @@ const GroupChatScreen = () => {
     });
   };
 
+  const handleSwipeReply = (message: Message) => {
+    setSwipeReplyMessage(message);
+    handleReply(message);
+    
+
+    setTimeout(() => {
+      setSwipeReplyMessage(null);
+    }, 1000);
+  };
+
+  const onGestureEvent = (message: Message) => {
+    return (event: any) => {
+      const { translationX, state } = event.nativeEvent;
+      
+      if (state === State.ACTIVE) {
+       
+        if (translationX > 40) {
+          setSwipeReplyMessage(message);
+        }
+      } else if (state === State.END) {
+        if (translationX > 80) { 
+          handleSwipeReply(message);
+        } else {
+          setSwipeReplyMessage(null); 
+        }
+      } else if (state === State.CANCELLED) {
+        setSwipeReplyMessage(null); 
+      }
+    };
+  };
+
   const closeContextMenu = () => {
-    setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+   
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+    });
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender === 'me';
     const repliedMessage = item.replyTo ? messages.find(m => m.id === item.replyTo) : null;
+    const isSwipeReplying = swipeReplyMessage?.id === item.id;
     
     return (
       <View style={styles.messageContainer}>
@@ -294,24 +335,38 @@ const GroupChatScreen = () => {
             </View>
           </View>
         )}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onLongPress={(e) => handleLongPress(item, e)}
-          style={[
-            styles.messageBubble,
-            isMe ? styles.sentMessage : styles.receivedMessage,
-            !isMe && styles.receivedMessageWithAvatar,
-          ]}
+        <PanGestureHandler 
+          onGestureEvent={onGestureEvent(item)}
+          onHandlerStateChange={onGestureEvent(item)}
         >
-          {repliedMessage && (
-            <View style={styles.messageReplyPreview}>
-              <Text style={styles.messageReplyText}>
-                {repliedMessage.senderName}: "{repliedMessage.text}"
-              </Text>
-            </View>
-          )}
-          <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.text}</Text>
-        </TouchableOpacity>
+          <View>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onLongPress={(e) => handleLongPress(item, e)}
+              style={[
+                styles.messageBubble,
+                isMe ? styles.sentMessage : styles.receivedMessage,
+                !isMe && styles.receivedMessageWithAvatar,
+                isSwipeReplying && styles.swipeReplyingMessage,
+              ]}
+            >
+              {isSwipeReplying && (
+                <View style={styles.swipeReplyIndicator}>
+                  <Ionicons name="arrow-undo" size={16} color="#22C55E" />
+                  <Text style={styles.swipeReplyText}>Reply</Text>
+                </View>
+              )}
+              {repliedMessage && (
+                <View style={styles.messageReplyPreview}>
+                  <Text style={styles.messageReplyText}>
+                    {repliedMessage.senderName}: "{repliedMessage.text}"
+                  </Text>
+                </View>
+              )}
+              <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.text}</Text>
+            </TouchableOpacity>
+          </View>
+        </PanGestureHandler>
       </View>
     );
   };
@@ -441,17 +496,23 @@ const GroupChatScreen = () => {
   const renderContextMenu = () => {
     if (!showContextMenu.visible || !showContextMenu.message) return null;
     
+  
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    
     const message = showContextMenu.message;
     const menuItems = [
-      { id: 'reply', icon: 'reply', label: 'Reply' },
-      { id: 'copy', icon: 'copy', label: 'Copy' },
-      ...(message.sender === 'me' ? [{ id: 'edit', icon: 'edit', label: 'Edit' }] : []),
-      { id: 'delete', icon: 'trash-2', label: 'Delete' },
-      { id: 'pin', icon: 'pin', label: 'Pin' },
+      { id: 'copy', icon: 'copy-outline', iconSet: 'Ionicons', label: 'Copy', color: '#6B7280' },
+      ...(message.sender === 'me' ? [{ id: 'edit', icon: 'create-outline', iconSet: 'Ionicons', label: 'Edit', color: '#3B82F6' }] : []),
+      { id: 'delete', icon: 'trash-outline', iconSet: 'Ionicons', label: 'Delete', color: '#EF4444' },
+      { id: 'pin', icon: 'pin-outline', iconSet: 'Ionicons', label: 'Pin', color: '#F59E0B' },
     ];
     
-    const menuWidth = 200;
-    const menuHeight = 240;
+    const menuWidth = 250;
+    const menuHeight = 48 * menuItems.length + 16;
     const padding = 10;
     
     let left = showContextMenu.position.x - menuWidth / 2;
@@ -463,52 +524,59 @@ const GroupChatScreen = () => {
     
     return (
       <TouchableWithoutFeedback onPress={closeContextMenu}>
-        <View style={styles.contextMenuOverlay}>
-          <View style={[styles.contextMenu, { left, top }]}>
-            {menuItems.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.contextMenuItem}
-                onPress={() => {
-                  if (item.id === 'reply') {
-                    handleReply(message);
-                  } else if (item.id === 'edit') {
-                    handleEdit(message);
-                  } else if (item.id === 'copy') {
-                    Alert.alert('Copied to clipboard', message.text);
-                  } else if (item.id === 'delete') {
-                    Alert.alert(
-                      'Delete message',
-                      'Are you sure you want to delete this message?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Delete',
-                          style: 'destructive',
-                          onPress: () => {
-                            setMessages(messages.filter(m => m.id !== message.id));
-                          },
-                        },
-                      ]
-                    );
-                  } else if (item.id === 'pin') {
-                    Alert.alert('Message pinned');
-                  }
-                  setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
-                }}
-              >
-                <Feather name={item.icon as any} size={20} color="#000" style={styles.contextMenuIcon} />
-                <Text style={styles.contextMenuText}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+        <Animated.View 
+          style={styles.contextMenuOverlay}
+        >
+          <Animated.View style={[styles.contextMenu, { left: Number(left), top: Number(top) }]}>
+            <Animated.View style={{ opacity: slideAnim }}>
+              {menuItems.map((item) => {
+                const IconComponent = item.iconSet === 'Ionicons' ? Ionicons : Feather;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.contextMenuItem}
+                    onPress={() => {
+                      if (item.id === 'edit') {
+                        handleEdit(message);
+                      } else if (item.id === 'copy') {
+                        Alert.alert('Copied to clipboard', message.text);
+                      } else if (item.id === 'delete') {
+                        Alert.alert(
+                          'Delete message',
+                          'Are you sure you want to delete this message?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: () => {
+                                setMessages(messages.filter(m => m.id !== message.id));
+                              },
+                            },
+                          ]
+                        );
+                      } else if (item.id === 'pin') {
+                        Alert.alert('Message pinned');
+                      }
+                      setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+                    }}
+                  >
+                    <View style={[styles.contextMenuIconContainer, { backgroundColor: item.color + '20' }]}>
+                      <IconComponent name={item.icon as any} size={18} color={item.color} />
+                    </View>
+                    <Text style={styles.contextMenuText}>{item.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </Animated.View>
+          </Animated.View>
+        </Animated.View>
       </TouchableWithoutFeedback>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       {renderHeader()}
       
@@ -529,13 +597,23 @@ const GroupChatScreen = () => {
             ]}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
             onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={50}
+            initialNumToRender={15}
+            windowSize={10}
+            getItemLayout={(data, index) => ({
+              length: 100, 
+              offset: 100 * index,
+              index,
+            })}
           />
         </TouchableWithoutFeedback>
         
         {renderInput()}
         {renderContextMenu()}
       </KeyboardAvoidingView>
-    </View>
+    </GestureHandlerRootView>
   );
 };
 
@@ -847,12 +925,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
+  contextMenuIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
   contextMenuIcon: {
-    marginRight: 10,
+  
   },
   contextMenuText: {
     fontSize: 15,
     color: '#111',
+    fontWeight: '500',
+  },
+  swipeReplyingMessage: {
+    transform: [{ scale: 0.98 }],
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  swipeReplyIndicator: {
+    position: 'absolute',
+    top: -25,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#22C55E',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  swipeReplyText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

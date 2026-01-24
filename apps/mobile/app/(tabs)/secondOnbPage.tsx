@@ -38,8 +38,8 @@ const tennisLevels: TennisLevel[] = [
 
 export default function SecondOnbPage() {
   const [selectedIndex, setSelectedIndex] = useState(0); 
-  const thumbPosition = useRef(new Animated.Value((selectedIndex / (tennisLevels.length - 1)) * sliderWidth)).current;
-  const dragOffset = useRef(new Animated.Value(0)).current;
+  const thumbPosition = useRef(new Animated.Value(0)).current;
+  const [currentThumbValue, setCurrentThumbValue] = useState(0);
   const router = useRouter();
 
   const handleBack = () => {
@@ -54,45 +54,38 @@ export default function SecondOnbPage() {
   const updateIndexFromPosition = (position: number) => {
     const clampedPosition = Math.max(0, Math.min(sliderWidth, position));
     const index = Math.round((clampedPosition / sliderWidth) * (tennisLevels.length - 1));
-    const snapPosition = (index / (tennisLevels.length - 1)) * sliderWidth;
-    
-    if (index !== selectedIndex) {
-      setSelectedIndex(index);
-    }
-    
-    Animated.spring(thumbPosition, {
-      toValue: snapPosition,
-      useNativeDriver: false,
-      tension: 50, 
-      friction: 1000,  
-    }).start();
-    
-    dragOffset.setValue(snapPosition);
-    thumbPosition.setValue(0);
+    setSelectedIndex(index);
   };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 5;
+        return Math.abs(gestureState.dx) > 3;
       },
       onPanResponderGrant: () => {
         thumbPosition.stopAnimation();
-        const currentValue = (dragOffset as any)._value + (thumbPosition as any)._value;
-        dragOffset.setValue(currentValue);
-        thumbPosition.setValue(0);
+      
+        thumbPosition.addListener(({ value }) => {
+          setCurrentThumbValue(value);
+          thumbPosition.removeAllListeners();
+        });
       },
       onPanResponderMove: (_, gestureState) => {
     
-        const newPosition = gestureState.dx * 1.0; 
+        const newPosition = currentThumbValue + gestureState.dx;
         const clampedPosition = Math.max(0, Math.min(sliderWidth, newPosition));
+        
         thumbPosition.setValue(clampedPosition);
+        setCurrentThumbValue(clampedPosition); 
+        updateIndexFromPosition(clampedPosition);
       },
       onPanResponderRelease: () => {
-        const currentPosition = (dragOffset as any)._value + (thumbPosition as any)._value;
-        updateIndexFromPosition(currentPosition);
-        dragOffset.setValue(0);
+     
+        thumbPosition.addListener(({ value }) => {
+          setCurrentThumbValue(value); 
+          thumbPosition.removeAllListeners();
+        });
       },
     })
   ).current;
@@ -100,8 +93,13 @@ export default function SecondOnbPage() {
   const handleDotPress = (index: number) => {
     setSelectedIndex(index);
     const position = (index / (tennisLevels.length - 1)) * sliderWidth;
-    dragOffset.setValue(position);
-    thumbPosition.setValue(0);
+    setCurrentThumbValue(position);
+    Animated.spring(thumbPosition, {
+      toValue: position,
+      useNativeDriver: false,
+      tension: 50, 
+      friction: 8,
+    }).start();
   };
 
   const currentLevel = tennisLevels[selectedIndex];
@@ -181,7 +179,7 @@ export default function SecondOnbPage() {
             style={[
               styles.sliderThumb, 
               { 
-                left: Animated.add(dragOffset, thumbPosition)
+                left: thumbPosition
               }
             ]}
             {...panResponder.panHandlers}

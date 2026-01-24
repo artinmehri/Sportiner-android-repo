@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, SafeAreaView, StatusBar, ScrollView, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
 
 export default function ProfileDetailsScreen({ onClose }: { onClose: () => void }) {
