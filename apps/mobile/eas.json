@@ -1,0 +1,36 @@
+{
+  "cli": {
+    "version": ">= 16.28.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "testflight": {
+      "distribution": "store",
+      "ios": {
+        "buildConfiguration": "Release",
+        "cache": {
+          "key": "testflight-cache"
+        },
+        "resourceClass": "m-medium"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "somayehdanandeh@gmail.com",
+        "ascAppId": "6758223656"
+      }
+    }
+  }
+}

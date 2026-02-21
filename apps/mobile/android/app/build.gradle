@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.sportiner2.x0'
+    namespace 'com.sportiner.app'
     defaultConfig {
-        applicationId 'com.anonymous.sportiner2.x0'
+        applicationId 'com.sportiner.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

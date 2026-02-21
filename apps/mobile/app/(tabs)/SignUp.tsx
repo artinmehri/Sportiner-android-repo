@@ -1,17 +1,18 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  StatusBar,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { Image, Text, StyleSheet, StatusBar, TouchableOpacity, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
+import { SafeAreaFrameContext } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import GoogleIcon from '@/scripts/GoogleIcon'
 
-export default function SignUp() {
+
+const SignUp = () => {
   const router = useRouter();
+  // ref
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const snapPoints = useMemo(() => ['34%', '40%'], []);
 
   const handleGoogleSignUp = () => {
     console.log('Navigating to firstOnbPage with Google method');
@@ -33,41 +34,56 @@ export default function SignUp() {
     router.push('/firstOnbPage');
   };
 
+  // renders
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      <View style={styles.inner}>
-        <View style={styles.logoCircle}>
-          <Text style={styles.logoText}>S</Text>
-        </View>
-        <Text style={styles.heading}>Play with the people{'\n'}around you</Text>
-        <View style={styles.socials}>
-          <TouchableOpacity style={[styles.socialBtn, {backgroundColor: '#FFFFFF', borderColor: '#4285F4'}]} onPress={handleGoogleSignUp}>
-            <View style={styles.iconLeft}><Ionicons name="logo-google" size={24} color="#4285F4" /></View>
-            <Text style={styles.socialBtnText}>Continue with Google</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.socialBtn, {backgroundColor: '#1877F2', borderColor: '#1877F2'}]} onPress={handleFacebookSignUp}>
-            <View style={styles.iconLeft}><Ionicons name="logo-facebook" size={24} color="#FFFFFF" /></View>
-            <Text style={[styles.socialBtnText, {color: '#FFFFFF'}]}>Continue with Facebook</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.socialBtn, {backgroundColor: '#000000', borderColor: '#000000'}]} onPress={handleAppleSignUp}>
-            <View style={styles.iconLeft}><Ionicons name="logo-apple" size={24} color="#FFFFFF" /></View>
-            <Text style={[styles.socialBtnText, {color: '#FFFFFF'}]}>Continue with Apple</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.orRow}>
-          <View style={styles.orLine} />
-          <Text style={styles.orText}>OR</Text>
-          <View style={styles.orLine} />
-        </View>
-        <TouchableOpacity style={styles.emailBtn} onPress={handleEmailSignUp}>
-          <Ionicons name="mail-outline" size={24} color="#19E675" style={{marginRight:8}} />
-          <Text style={styles.emailBtnText}>Continue with Email</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+    <GestureHandlerRootView style={styles.inner}>
+      <SafeAreaFrameContext value={null}>
+          <StatusBar barStyle="dark-content" />
+            <Image
+            style={styles.frameImage}
+            source={require('@/assets/images/Frame.png')}
+            ></Image>
+
+        <BottomSheet
+        index={0}
+          ref={bottomSheetRef}
+          snapPoints={snapPoints}
+          enableDynamicSizing={false}>
+          <BottomSheetView style={styles.container}>
+            <View style={styles.socialBtnContainer}>
+              <TouchableOpacity style={styles.socialBtn} onPress={handleAppleSignUp}>
+                <Ionicons size={30} name="logo-apple"></Ionicons>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.socialBtn} onPress={handleGoogleSignUp}>
+                <GoogleIcon size={26} style={styles.socialBtnText}/>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookSignUp}>
+                <Ionicons  color="#1877F2" size={30} name="logo-facebook"></Ionicons>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.orRow}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.orLine} />
+            </View>
+
+            <TouchableOpacity style={styles.emailBtn} onPress={handleEmailSignUp}>
+              <Text style={styles.emailBtnText}>Continue with Email</Text>            
+            </TouchableOpacity>
+
+            <View style={styles.loginTxtContainer}>
+              <Text style={styles.loginTxt}>Already a member? <Text style={styles.login}>Log in</Text></Text>
+            </View>
+
+          </BottomSheetView>
+        </BottomSheet>
+      </SafeAreaFrameContext>
+    </GestureHandlerRootView>
+
+
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -79,6 +95,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+  },
+  frameImage: {
+    marginTop: -190,
   },
   logoCircle: {
     width: 96,
@@ -105,25 +124,30 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 36,
   },
-  socialBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#222',
-    borderRadius: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: '#fff',
-  },
   iconLeft: {
     width: 32,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
+  loginTxtContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  loginTxt: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  login: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#19E675',
+    textDecorationLine: 'underline'
+  },
   socialBtnText: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '600',
     color: '#222',
   },
@@ -140,21 +164,42 @@ const styles = StyleSheet.create({
   },
   orText: {
     marginHorizontal: 12,
-    fontSize: 16,
+    fontSize: 10,
     color: '#888',
     fontWeight: '600',
+  },
+  socialBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    borderRadius: 9999,
+    marginTop: 0,
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    borderWidth: 1.3,
+    borderColor: '#F3F4F6', 
+  },
+  socialBtnContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    padding: 16,
+    marginTop: -5
   },
   emailBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'center',
-    marginTop: 0,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    borderRadius: 9999,
+    marginTop: -9,
+    paddingVertical: 15,
+    paddingHorizontal: 90,
+    backgroundColor: '#19E675'
   },
   emailBtnText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#19E675',
+    fontWeight: '500',
+    color: '#002000',
   },
 });
+export default SignUp;

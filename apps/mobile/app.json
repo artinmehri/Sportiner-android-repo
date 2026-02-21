@@ -9,6 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.sportiner.app",
+      "buildNumber": "1",
       "simulator": {
         "device": "iPhone 17 Pro"
       },
@@ -22,7 +24,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.sportiner.app"
     },
     "web": {
       "output": "static",
@@ -46,6 +49,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3fc54ed7-2c43-46b8-b461-2d9d5c2804e6"
+      }
     }
   }
 }
