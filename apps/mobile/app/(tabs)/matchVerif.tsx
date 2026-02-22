@@ -63,10 +63,10 @@ const MatchVerif = () => {
           <Text style={styles.mainHeading}>Help us improve game quality</Text>
           
           {/* Match VS Button */}
-          <TouchableOpacity style={styles.matchVsButton}>
+          <View style={styles.matchVsButton}>
             <Ionicons name="star" size={20} color="#6B7280" />
             <Text style={styles.matchVsText}>Match VS. Artin M</Text>
-          </TouchableOpacity>
+          </View>
         </View>
 
         {/* Question Cards */}
@@ -111,29 +111,26 @@ const MatchVerif = () => {
 
           {/* Question 3 */}
           <View style={styles.questionCard}>
-            <Text style={styles.questionText}>How accurate was Artin's <Text style={styles.highlightText}>3.5</Text> level?</Text>
+            <Text style={styles.questionText}>How accurate was Artin's <Text style={styles.highlightText}>Intermediate(750)</Text> level?</Text>
             <View style={styles.ratingButtons}>
-              <TouchableOpacity 
-                style={[styles.ratingButton, accuracyRating === 'stronger' && styles.selectedRating]}
-                onPress={() => setAccuracyRating(accuracyRating === 'stronger' ? null : 'stronger')}
-              >
-                <Ionicons name="trending-up" size={16} color="#6B7280" />
-                <Text style={styles.ratingText}>Stronger</Text>
+
+              <TouchableOpacity style={[styles.ratingButton, accuracyRating === 'stronger' && styles.selectedRating]} onPress={() => setAccuracyRating(accuracyRating === 'stronger' ? null : 'stronger')}>
+              <Text style={[styles.ratingText, accuracyRating === 'stronger' && styles.selectedRatingText]}>Stronger</Text>
+                <Ionicons name="trending-up" size={16} style={[styles.logo, accuracyRating === 'stronger' && styles.selectedLogo]} />
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.ratingButton, accuracyRating === 'spot-on' && styles.selectedRating]}
-                onPress={() => setAccuracyRating(accuracyRating === 'spot-on' ? null : 'spot-on')}
-              >
-                <Ionicons name="star" size={16} color="#6B7280" />
-                <Text style={styles.ratingText}>Spot on</Text>
+
+
+              <TouchableOpacity style={[styles.ratingButton, accuracyRating === 'spot-on' && styles.selectedRating]} onPress={() => setAccuracyRating(accuracyRating === 'spot-on' ? null : 'spot-on')}>
+                <Text style={[styles.ratingText, accuracyRating === 'spot-on' && styles.selectedRatingText]}>Spot</Text>
+                <Ionicons name="star" size={16} style={[styles.logo, accuracyRating === 'spot-on' && styles.selectedLogo]} />
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.ratingButton, accuracyRating === 'weaker' && styles.selectedRating]}
-                onPress={() => setAccuracyRating(accuracyRating === 'weaker' ? null : 'weaker')}
-              >
-                <Ionicons name="trending-down" size={16} color="#6B7280" />
-                <Text style={styles.ratingText}>Weaker</Text>
+
+
+              <TouchableOpacity style={[styles.ratingButton, accuracyRating === 'weaker' && styles.selectedRating]}onPress={() => setAccuracyRating(accuracyRating === 'weaker' ? null : 'weaker')}>
+              <Text style={[styles.ratingText, accuracyRating === 'weaker' && styles.selectedRatingText]}>Weaker</Text>
+                <Ionicons name="trending-down" size={16} style={[styles.logo, accuracyRating === 'weaker' && styles.selectedLogo]} />
               </TouchableOpacity>
+
             </View>
           </View>
         </View>
@@ -170,7 +167,7 @@ const MatchVerif = () => {
           <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
             <Text style={styles.submitButtonText}>Submit feedback</Text>
           </TouchableOpacity>
-          <Text style={styles.disclaimerText}>Your feedback is only used to improve system</Text>
+          <Text style={styles.disclaimerText}>This feedback impacts their Community Trust Score. Please be accurate.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -214,7 +211,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1F2937',
     textAlign: 'center',
-    marginBottom: 15,
+    marginBottom: 30,
+    marginTop: 15
   },
   matchVsButton: {
     flexDirection: 'row',
@@ -226,6 +224,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 25,
     gap: 8,
+    marginBottom: 17
   },
   matchVsText: {
     fontSize: 14,
@@ -241,6 +240,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
+    borderColor: '#C2C2C2',
+    borderWidth: 0.7,
     shadowOffset: {
       width: 0,
       height: 2,
@@ -250,10 +251,12 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   questionText: {
+    textAlign: 'center',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1F2937',
-    marginBottom: 15,
+    marginBottom: 20,
+    
   },
   buttonRow: {
     flexDirection: 'row',
@@ -263,7 +266,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 2,
     borderColor: '#E5E7EB',
     alignItems: 'center',
@@ -285,10 +288,10 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   selectedYesText: {
-    color: '#10B981',
+    color: '#19E675',
   },
   highlightText: {
-    color: '#10B981',
+    color: '#19E675',
     fontWeight: '700',
   },
   ratingButtons: {
@@ -302,24 +305,41 @@ const styles = StyleSheet.create({
     borderColor: '#9CA3AF',
     paddingVertical: 10,
     paddingHorizontal: 15,
-    borderRadius: 8,
+    borderRadius: 9999,
     gap: 8,
   },
   selectedRating: {
     backgroundColor: 'transparent',
     borderColor: '#19E675',
   },
-  ratingText: {
+  selectedRatingText: {
     fontSize: 14,
     fontWeight: '500',
+    color: '#19E675',
+  },
+  ratingText: {
+    fontSize: 14,
+    marginLeft: 5,
+    fontWeight: '700',
     color: '#6B7280',
+  },
+  selectedLogo: {
+    color: '#19E675',
+    marginLeft: 'auto',
+    marginRight: 5
+  },
+  logo: {
+    color: '#6B7280',
+    marginLeft: 'auto',
+    marginRight: 5
   },
   winnerSection: {
     marginBottom: 30,
+    marginTop: 20
   },
   winnerTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1F2937',
     marginBottom: 15,
     textAlign: 'center',
@@ -346,7 +366,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   selectedWinner: {
-    borderColor: '#10B981',
+    borderColor: '#19E675',
   },
   winnerImage: {
     width: 80,
@@ -365,20 +385,22 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: '#19E675',
-    paddingVertical: 15,
-    paddingHorizontal: 40,
+    paddingVertical: 12,
+    paddingHorizontal: 70,
     borderRadius: 25,
     alignItems: 'center',
+    marginTop: 20,
     marginBottom: 10,
   },
   submitButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#002000',
   },
   disclaimerText: {
+    marginTop: 5,
     fontSize: 12,
-    color: '#6B7280',
+    color: '#ACA9A9',
     textAlign: 'center',
   },
 });
