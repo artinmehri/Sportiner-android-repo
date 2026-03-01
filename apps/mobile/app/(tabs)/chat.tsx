@@ -15,21 +15,20 @@ import {
   Animated,
   Image,
   Modal,
-  ScrollView,
-  PermissionsAndroid,
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
-import { FadeIn, FadeOut } from 'react-native-reanimated';
-import ProfileDetailsScreen from './profileDetails';
+import { router, useRouter } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as ImagePicker from 'expo-image-picker'
+import { useScrollEventsHandlersDefault } from '@gorhom/bottom-sheet';
+import * as Clipboard from 'expo-clipboard';
+
 
 const { width, height } = Dimensions.get('window');
 
 type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 type MessageType = 'text' | 'image' | 'video' | 'location' | 'document';
-
 type Message = {
   id: string;
   text: string;
@@ -56,6 +55,15 @@ type ReplyInfo = {
   type: MessageType;
 };
 
+const navigateToProfile = () => {
+  router.push('/(tabs)/profileDetails')
+}
+
+// Copy to clipboard function
+const copyToClipboard = async (message: any) => {
+  await Clipboard.setStringAsync(message)
+}
+ 
 const ChatScreen = () => {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([
@@ -95,20 +103,14 @@ const ChatScreen = () => {
   const [isReplying, setIsReplying] = useState(false);
   const [replyInfo, setReplyInfo] = useState<ReplyInfo | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState({
     visible: false,
     message: null as Message | null,
     position: { x: 0, y: 0 },
   });
   const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
-  const [showMediaPicker, setShowMediaPicker] = useState(false);
-  const [userPhotos, setUserPhotos] = useState<any[]>([]);
-  const [userVideos, setUserVideos] = useState<any[]>([]);
-  const [mediaPermission, setMediaPermission] = useState<string | null>(null);
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const [playingVideo, setPlayingVideo] = useState<string | null>(null);
-  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showFullScreenImage, setShowFullScreenImage] = useState(false);
+  const [showImage, setShowImage] = useState<string | null>(null);
   const [swipeReplyMessage, setSwipeReplyMessage] = useState<Message | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
@@ -116,52 +118,22 @@ const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
 
+  // Image picker function
+  const pickImgae = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 1
+    });
 
-  const requestMediaPermission = async () => {
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-        {
-          title: 'Media Library Permission',
-          message: 'Sportiner needs access to your photos and videos to send them in chat.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        },
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    if (!result.canceled) {
+      setSelectedMedia(result.assets[0].uri)
+      console.log(result)
     } else {
-      setMediaPermission('granted');
-      return true;
+      alert("You did not select any image or gave any permission, nope, thats what bad boys do, don't be a bad boy")
     }
-  };
+  }
 
-  const loadUserMedia = async () => {
-    const hasPermission = await requestMediaPermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Required', 'Please grant access to your photo library to send media.');
-      return;
-    }
-
-    try {
-      const mockPhotos = Array.from({ length: 12 }, (_, i) => ({
-        id: `photo-${i}`,
-        uri: `https://picsum.photos/seed/user-photo-${i}/200/200.jpg`,
-      }));
-      
-      const mockVideos = Array.from({ length: 8 }, (_, i) => ({
-        id: `video-${i}`,
-        uri: `https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4`,
-      }));
-      
-      setUserPhotos(mockPhotos);
-      setUserVideos(mockVideos);
-      setShowMediaPicker(true);
-    } catch (error) {
-      console.error('Error loading media:', error);
-      Alert.alert('Error', 'Failed to load your media.');
-    }
-  };
 
   const handleSend = () => {
     if ((!inputText.trim() && !selectedMedia && !isReplying && !editingMessage) || (isReplying && !inputText.trim() && !selectedMedia)) {
@@ -178,18 +150,22 @@ const ChatScreen = () => {
     } else {
       const newMessage: Message = {
         id: Date.now().toString(),
-        text: inputText,
+        text: inputText.trim(),
         sender: 'me',
         senderName: 'You',
         senderAvatar: 'https://picsum.photos/seed/you/100/100.jpg',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         status: 'sent',
-        type: selectedMedia ? (selectedMedia.includes('video') ? 'video' : 'image') : 'text',
+        type: selectedMedia ? 'image' : 'text',
         mediaUrl: selectedMedia || undefined,
         replyTo: replyInfo?.id,
       };
       
       setMessages([...messages, newMessage]);
+
+      // Reseting both text and media after sending
+      setInputText('')
+      setSelectedMedia(null)
       
       setTimeout(() => {
         setMessages(prev => 
@@ -260,27 +236,6 @@ const ChatScreen = () => {
     }, 1000);
   };
 
-  const onGestureEvent = (message: Message) => {
-    return (event: any) => {
-      const { translationX, state } = event.nativeEvent;
-      
-      if (state === State.ACTIVE) {
-        
-        if (translationX > 40) {
-          setSwipeReplyMessage(message);
-        }
-      } else if (state === State.END) {
-        if (translationX > 80) { 
-          handleSwipeReply(message);
-        } else {
-          setSwipeReplyMessage(null); 
-        }
-      } else if (state === State.CANCELLED) {
-        setSwipeReplyMessage(null); 
-      }
-    };
-  };
-
   const closeContextMenu = () => {
     
     Animated.timing(slideAnim, {
@@ -292,19 +247,40 @@ const ChatScreen = () => {
     });
   };
 
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <View style={styles.headerLeft}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.push('/(tabs)/inbox')}
+        >
+          <Ionicons name="chevron-back" size={28} color="#111" />
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => navigateToProfile()}>
+          <Image source={{ uri: 'https://picsum.photos/seed/behrad/100/100.jpg' }} style={styles.avatar} />
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => navigateToProfile()} style={styles.contactInfo}>
+          <View style={styles.contactNameRow}>
+            <Text style={styles.contactName}>Behrad</Text>
+            <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
+          </View>
+          <Text style={styles.contactSubtitle}>Wed · 3PM @ Saint-Louis Park</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender === 'me';
     const repliedMessage = item.replyTo ? messages.find(m => m.id === item.replyTo) : null;
     const isSwipeReplying = swipeReplyMessage?.id === item.id;
     
     return (
-      <PanGestureHandler 
-        onGestureEvent={onGestureEvent(item)}
-        onHandlerStateChange={onGestureEvent(item)}
-      >
         <View>
           <TouchableOpacity
-            activeOpacity={0.85}
             onLongPress={(e) => handleLongPress(item, e)}
             style={[
               styles.messageBubble,
@@ -325,62 +301,39 @@ const ChatScreen = () => {
                 </Text>
               </View>
             )}
-            {item.type === 'image' && item.mediaUrl && (
+            {item.type === 'image' && (
               <TouchableOpacity 
-                activeOpacity={0.9}
-                onPress={() => item.mediaUrl && setZoomedImage(item.mediaUrl)}
+                onPress={() => {
+                  if (item.mediaUrl) {
+                    setShowImage(item.mediaUrl);
+                    setShowFullScreenImage(true);
+                  }
+                }}
               >
                 <Image source={{ uri: item.mediaUrl }} style={styles.messageImage} />
               </TouchableOpacity>
             )}
-            {item.type === 'video' && item.mediaUrl && (
-              <TouchableOpacity 
-                activeOpacity={0.9}
-                onPress={() => item.mediaUrl && setPlayingVideo(item.mediaUrl)}
-                style={styles.videoContainer}
-              >
-                <Image source={{ uri: 'https://picsum.photos/seed/video-thumb/200/150.jpg' }} style={styles.videoThumbnail} />
-                <View style={styles.playButton}>
-                  <Ionicons name="play" size={20} color="#fff" />
-                </View>
-              </TouchableOpacity>
-            )}
-            {item.type === 'text' && (
+            
+            {item.text ? (
               <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.text}</Text>
-            )}
+            ) : null}
           </TouchableOpacity>
         </View>
-      </PanGestureHandler>
     );
   };
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <View style={styles.headerLeft}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.push('/(tabs)/inbox')}
-        >
-          <Ionicons name="chevron-back" size={28} color="#111" />
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => setShowProfileModal(true)}>
-          <Image source={{ uri: 'https://picsum.photos/seed/behrad/100/100.jpg' }} style={styles.avatar} />
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => setShowProfileModal(true)} style={styles.contactInfo}>
-          <View style={styles.contactNameRow}>
-            <Text style={styles.contactName}>Behrad</Text>
-            <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
-          </View>
-          <Text style={styles.contactSubtitle}>Wed · 3PM @ Saint-Louis Park</Text>
-        </TouchableOpacity>
-      </View>
-      <TouchableOpacity style={styles.infoButton}>
-        <Ionicons name="information-circle-outline" size={26} color="#111" />
-      </TouchableOpacity>
-    </View>
-  );
+  let inputStyling;
+  // If only text is typing, go with inputPill
+  if (inputText) {
+    inputStyling = styles.inputPill;
+    // If both media and text are selcted go with inputNMedia
+  } else if (selectedMedia) {
+    inputStyling = styles.inputNMedia;
+    // Otherwise if nothing is selected go with simple one
+  } else {
+    inputStyling = styles.simpleInputPill
+  }
+ 
 
   const renderReplyPreview = () => {
     if (!replyInfo) return null;
@@ -422,60 +375,59 @@ const ChatScreen = () => {
 
       {renderReplyPreview()}
 
-      <View style={styles.composerPill}>
-        <TouchableOpacity 
-          style={styles.composerIconButton}
-          onPress={loadUserMedia}
-        >
-          <Ionicons name="image-outline" size={20} color="#111" />
-        </TouchableOpacity>
+    
+      <View style={selectedMedia ? styles.composerPill: styles.simpleComposerPill}>
 
-        <TextInput
-          ref={inputRef}
-          style={styles.composerInput}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Meet me at the"
-          placeholderTextColor="#6B7280"
-          multiline={false}
-          onFocus={() => setShowEmojiPicker(false)}
-        />
-
-        {(inputText.trim() || selectedMedia) ? (
-          <TouchableOpacity
-            style={styles.sendButton}
-            onPress={handleSend}
-            disabled={!inputText.trim() && !selectedMedia && !editingMessage && !isReplying}
-          >
-            <Ionicons name="send" size={18} color="#22C55E" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.composerIconButton}>
-            <Ionicons name="mic-outline" size={20} color="#111" />
-          </TouchableOpacity>
+        {selectedMedia && (
+          <View style={styles.mediaPreview}>
+            {selectedMedia.includes('video') ? (
+              <View style={styles.videoPreview}>
+                <Image source={{ uri: 'https://picsum.photos/seed/video-thumb/100/100.jpg' }} style={styles.mediaThumbnail} />
+                <Ionicons name="videocam" size={16} color="#666" style={styles.mediaIcon} />
+              </View>
+            ) : (
+              <View style={styles.imagePreview}>
+                <Image source={{ uri: selectedMedia }} style={styles.mediaThumbnail} />
+                <TouchableOpacity 
+                  style={styles.removeMediaButton}
+                  onPress={() => setSelectedMedia(null)}
+                >
+                  <Ionicons name="close" size={16} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         )}
-      </View>
-      
-      {selectedMedia && (
-        <View style={styles.mediaPreview}>
-          {selectedMedia.includes('video') ? (
-            <View style={styles.videoPreview}>
-              <Image source={{ uri: 'https://picsum.photos/seed/video-thumb/100/100.jpg' }} style={styles.mediaThumbnail} />
-              <Ionicons name="videocam" size={16} color="#666" style={styles.mediaIcon} />
+
+
+        <View style={inputStyling}>
+            <TouchableOpacity 
+              style={styles.composerIconButton}
+              onPress={pickImgae}
+            >
+              <Ionicons name="image-outline" size={20} color="#111" />
+            </TouchableOpacity>
+
+            <TextInput
+              ref={inputRef}
+              style={styles.composerInput}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Type..."
+              placeholderTextColor="#6B7280"
+              multiline={false}
+            />
+            {(inputText.trim() || selectedMedia) &&
+                      <TouchableOpacity
+                        style={styles.sendButton}
+                        onPress={handleSend}
+                        disabled={!inputText.trim() && !selectedMedia && !editingMessage && !isReplying}
+                      >
+                        <Ionicons name="send" size={22} color="#22C55E" />
+                      </TouchableOpacity>
+                   }
             </View>
-          ) : (
-            <View style={styles.imagePreview}>
-              <Image source={{ uri: selectedMedia }} style={styles.mediaThumbnail} />
-              <TouchableOpacity 
-                style={styles.removeMediaButton}
-                onPress={() => setSelectedMedia(null)}
-              >
-                <Ionicons name="close" size={16} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      )}
+          </View>
     </View>
   );
 
@@ -525,6 +477,7 @@ const ChatScreen = () => {
                       if (item.id === 'edit') {
                         handleEdit(message);
                       } else if (item.id === 'copy') {
+                        copyToClipboard(message.text)
                         Alert.alert('Copied to clipboard', message.text);
                       } else if (item.id === 'delete') {
                         Alert.alert(
@@ -598,123 +551,30 @@ const ChatScreen = () => {
         
         {renderInput()}
         {renderContextMenu()}
-        
-        {/* Media Picker Modal */}
-        <Modal
-          visible={showMediaPicker}
-          animationType="slide"
-          presentationStyle="pageSheet"
-        >
-          <View style={styles.mediaPickerContainer}>
-            <View style={styles.mediaPickerHeader}>
-              <TouchableOpacity onPress={() => setShowMediaPicker(false)}>
-                <Ionicons name="close" size={24} color="#111" />
-              </TouchableOpacity>
-              <Text style={styles.mediaPickerTitle}>Select Media</Text>
-              <View style={{ width: 24 }} />
-            </View>
-            
-            <ScrollView style={styles.mediaPickerContent}>
-              {userPhotos.length > 0 && (
-                <View style={styles.mediaSection}>
-                  <Text style={styles.mediaSectionTitle}>Photos</Text>
-                  <View style={styles.mediaGrid}>
-                    {userPhotos.map((photo) => (
-                      <TouchableOpacity
-                        key={photo.id}
-                        style={styles.mediaItem}
-                        onPress={() => {
-                          setSelectedMedia(photo.uri);
-                          setShowMediaPicker(false);
-                        }}
-                      >
-                        <Image source={{ uri: photo.uri }} style={styles.mediaThumbnail} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-              
-              {userVideos.length > 0 && (
-                <View style={styles.mediaSection}>
-                  <Text style={styles.mediaSectionTitle}>Videos</Text>
-                  <View style={styles.mediaGrid}>
-                    {userVideos.map((video) => (
-                      <TouchableOpacity
-                        key={video.id}
-                        style={styles.mediaItem}
-                        onPress={() => {
-                          setSelectedMedia(video.uri);
-                          setShowMediaPicker(false);
-                        }}
-                      >
-                        <Image source={{ uri: video.uri }} style={styles.mediaThumbnail} />
-                        <View style={styles.videoOverlay}>
-                          <Ionicons name="play" size={16} color="#fff" />
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </Modal>
-        
-        {/* Image Zoom Modal */}
-        <Modal
-          visible={!!zoomedImage}
-          animationType="fade"
-          transparent={true}
-        >
-          <View style={styles.zoomContainer}>
-            <TouchableOpacity
-              style={styles.zoomCloseButton}
-              onPress={() => setZoomedImage(null)}
-            >
-              <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-            <ScrollView
-              style={styles.zoomScrollView}
-              contentContainerStyle={styles.zoomContentContainer}
-              minimumZoomScale={1}
-              maximumZoomScale={5}
-            >
-              <Image source={{ uri: zoomedImage || '' }} style={styles.zoomedImage} resizeMode="contain" />
-            </ScrollView>
-          </View>
-        </Modal>
-        
-        {/* Video Player Modal */}
-        <Modal
-          visible={!!playingVideo}
-          animationType="fade"
-          transparent={true}
-        >
-          <View style={styles.videoPlayerContainer}>
-            <TouchableOpacity
-              style={styles.videoCloseButton}
-              onPress={() => setPlayingVideo(null)}
-            >
-              <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-            {/* In a real app, you'd use a proper video player component here */}
-            <View style={styles.videoPlayerPlaceholder}>
-              <Ionicons name="play-circle" size={64} color="#fff" />
-              <Text style={styles.videoPlayerText}>Video Player</Text>
-              <Text style={styles.videoPlayerSubtext}>Tap to play video</Text>
-            </View>
-          </View>
-        </Modal>
 
-      {/* Profile Details Modal */}
-      <Modal
-        visible={showProfileModal}
-        animationType="slide"
-        onRequestClose={() => setShowProfileModal(false)}
+        <Modal
+        visible={showFullScreenImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowFullScreenImage(false)}
       >
-        <ProfileDetailsScreen onClose={() => setShowProfileModal(false)} />
+        <View style={styles.modalContainer}>
+          <TouchableOpacity 
+            style={styles.closeButton} 
+            onPress={() => setShowFullScreenImage(false)}
+          >
+            <Ionicons name="close" size={28} color="white" />
+          </TouchableOpacity>
+          {showImage && (
+            <Image 
+              source={{ uri: showImage }} 
+              style={styles.fullScreenImage} 
+              resizeMode="contain"
+            />
+          )}
+        </View>
       </Modal>
+    
       </KeyboardAvoidingView>
     </GestureHandlerRootView>
   );
@@ -773,9 +633,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  infoButton: {
-    padding: 8,
-  },
   messagesContainer: {
     paddingHorizontal: 14,
     paddingTop: 14,
@@ -786,6 +643,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 14,
     marginBottom: 12,
+    maxHeight: '100%',
   },
   sentMessage: {
     backgroundColor: '#22C55E',
@@ -805,7 +663,7 @@ const styles = StyleSheet.create({
   },
   messageImage: {
     width: 200,
-    height: 150,
+    height: 300,
     borderRadius: 8,
     marginBottom: 4,
   },
@@ -833,6 +691,8 @@ const styles = StyleSheet.create({
   mediaPreview: {
     marginTop: 8,
     marginHorizontal: 14,
+    alignSelf: 'flex-start',
+    marginLeft: 1,
   },
   imagePreview: {
     position: 'relative',
@@ -1001,13 +861,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   composerPill: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#D1D5DB',
     borderRadius: 24,
     paddingHorizontal: 12,
-    height: 46,
+    height: 112,
+  },
+  simpleComposerPill: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    height: 40,
+  },
+  simpleInputPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4.5,
+    marginTop: 7.9
+  },
+  inputNMedia: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4.5,
+  },
+  inputPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    marginTop: 0.5
   },
   composerIconButton: {
     paddingRight: 10,
@@ -1019,11 +905,13 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   sendButton: {
+    marginTop: 1,
     width: 36,
     height: 36,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: -10
   },
 
   replyPreview: {
@@ -1100,9 +988,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  contextMenuIcon: {
-  
-  },
   contextMenuText: {
     fontSize: 15,
     color: '#111',
@@ -1132,6 +1017,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'black',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    zIndex: 1,
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
   },
 });
 

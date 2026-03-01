@@ -20,9 +20,9 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { router, useRouter } from 'expo-router';
 import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
-
+import * as Clipboard from 'expo-clipboard';
 const { width, height } = Dimensions.get('window');
 
 type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -55,6 +55,10 @@ type ReplyInfo = {
   senderLevelColor?: string;
   type: MessageType;
 };
+
+const handleGameNavigation = () => {
+  router.push('/(tabs)/EventDetails')
+}
 
 const GroupChatScreen = () => {
   const router = useRouter();
@@ -382,17 +386,14 @@ const GroupChatScreen = () => {
           <Ionicons name="people" size={20} color="#fff" />
         </View>
 
-        <View style={styles.contactInfo}>
+        <TouchableOpacity onPress={handleGameNavigation} style={styles.contactInfo} >
           <View style={styles.contactNameRow}>
             <Text style={styles.contactName}>Boys Tennis Game</Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
           <Text style={styles.contactSubtitle}>Tue 7PM @ Cedarvale park</Text>
-        </View>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.infoButton}>
-        <Ionicons name="information-circle-outline" size={26} color="#111" />
-      </TouchableOpacity>
     </View>
   );
 
@@ -449,7 +450,7 @@ const GroupChatScreen = () => {
           style={styles.composerInput}
           value={inputText}
           onChangeText={setInputText}
-          placeholder="Meet me at the"
+          placeholder="Type..."
           placeholderTextColor="#6B7280"
           multiline={false}
           onFocus={() => setShowEmojiPicker(false)}
@@ -463,11 +464,7 @@ const GroupChatScreen = () => {
           >
             <Ionicons name="send" size={18} color="#22C55E" />
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.composerIconButton}>
-            <Ionicons name="mic-outline" size={20} color="#111" />
-          </TouchableOpacity>
-        )}
+        ): (null)}
       </View>
       
       {selectedMedia && (
@@ -502,6 +499,11 @@ const GroupChatScreen = () => {
       duration: 200,
       useNativeDriver: true,
     }).start();
+
+    //copy to clipboard function
+    const copyToClipboard = async (text: string) => {
+    await Clipboard.setStringAsync(text);
+}
     
     const message = showContextMenu.message;
     const menuItems = [
@@ -539,6 +541,7 @@ const GroupChatScreen = () => {
                       if (item.id === 'edit') {
                         handleEdit(message);
                       } else if (item.id === 'copy') {
+                        copyToClipboard(message.text)
                         Alert.alert('Copied to clipboard', message.text);
                       } else if (item.id === 'delete') {
                         Alert.alert(
@@ -670,9 +673,6 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 12,
     marginTop: 2,
-  },
-  infoButton: {
-    padding: 8,
   },
   messageContainer: {
     marginBottom: 16,

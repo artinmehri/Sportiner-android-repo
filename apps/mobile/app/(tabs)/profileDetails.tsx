@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView,
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
+import { router } from 'expo-router'
 
 export default function ProfileDetailsScreen({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
@@ -55,11 +56,10 @@ export default function ProfileDetailsScreen({ onClose }: { onClose: () => void 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerButton} onPress={onClose}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="black" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile</Text>
@@ -223,8 +223,8 @@ export default function ProfileDetailsScreen({ onClose }: { onClose: () => void 
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: 'white',
+    flex: 3,
+    backgroundColor: '#FFFFFF'
   },
   header: {
     flexDirection: 'row',

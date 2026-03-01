@@ -10,6 +10,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      backBehavior="history"
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
@@ -48,6 +49,7 @@ export default function TabLayout() {
         options={{
           title: 'Sign Up',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="arrow.down.circle.fill" color={color} />,
+          tabBarBadge: 3,
         }}
       />
       <Tabs.Screen
