@@ -19,10 +19,11 @@ import {
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useRouter } from 'expo-router';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker'
 import { useScrollEventsHandlersDefault } from '@gorhom/bottom-sheet';
 import * as Clipboard from 'expo-clipboard';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 
 const { width, height } = Dimensions.get('window');
@@ -43,8 +44,6 @@ type Message = {
   isEdited?: boolean;
   replyTo?: string;
   mediaUrl?: string;
-  fileSize?: string;
-  duration?: number;
 };
 
 type ReplyInfo = {
@@ -53,11 +52,55 @@ type ReplyInfo = {
   sender: 'me' | 'other';
   senderName: string;
   type: MessageType;
+  mediaUrl?: string;
 };
 
 const navigateToProfile = () => {
   router.push('/(tabs)/profileDetails')
 }
+
+const SWIPE_THRESHOLD = 80;
+
+type SwipeableMessageProps = {
+  message: Message;
+  onReply: (message: Message) => void;
+  onSwipeProgress?: (message: Message | null) => void;
+  children: React.ReactNode;
+};
+
+const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: SwipeableMessageProps) => {
+  const translateX = useSharedValue(0);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX(20)
+    .onUpdate((e) => {
+      if (e.translationX >= 0) {
+        translateX.value = e.translationX;
+        if (e.translationX > 20 && onSwipeProgress) {
+          runOnJS(onSwipeProgress)(message);
+        }
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationX > SWIPE_THRESHOLD) {
+        runOnJS(onReply)(message);
+      }
+      translateX.value = withTiming(0, { duration: 200 });
+      if (onSwipeProgress) {
+        runOnJS(onSwipeProgress)(null);
+      }
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={panGesture}>
+      <Reanimated.View style={animatedStyle}>{children}</Reanimated.View>
+    </GestureDetector>
+  );
+};
 
 // Copy to clipboard function
 const copyToClipboard = async (message: any) => {
@@ -202,6 +245,7 @@ const ChatScreen = () => {
     setReplyInfo({
       id: message.id,
       text: message.text,
+      mediaUrl: message.mediaUrl || undefined,
       sender: message.sender,
       senderName: message.senderName,
       type: message.type,
@@ -224,16 +268,6 @@ const ChatScreen = () => {
       message,
       position: { x: pageX, y: pageY },
     });
-  };
-
-  const handleSwipeReply = (message: Message) => {
-    setSwipeReplyMessage(message);
-    handleReply(message);
-    
-
-    setTimeout(() => {
-      setSwipeReplyMessage(null);
-    }, 1000);
   };
 
   const closeContextMenu = () => {
@@ -277,9 +311,21 @@ const ChatScreen = () => {
     const isMe = item.sender === 'me';
     const repliedMessage = item.replyTo ? messages.find(m => m.id === item.replyTo) : null;
     const isSwipeReplying = swipeReplyMessage?.id === item.id;
-    
+
     return (
-        <View>
+      <SwipeableMessage
+        message={item}
+        onReply={handleReply}
+        onSwipeProgress={setSwipeReplyMessage}
+      >
+        <View style={styles.messageWrapper}>
+
+        {isSwipeReplying && (
+                <View style={styles.swipeReplyIndicator}>
+                  <Ionicons style={styles.swipeReplyIcon} name="arrow-undo" size={30} color="#22C55E" />
+                </View>
+            )}
+
           <TouchableOpacity
             onLongPress={(e) => handleLongPress(item, e)}
             style={[
@@ -288,12 +334,7 @@ const ChatScreen = () => {
               isSwipeReplying && styles.swipeReplyingMessage,
             ]}
           >
-            {isSwipeReplying && (
-              <View style={styles.swipeReplyIndicator}>
-                <Ionicons name="arrow-undo" size={16} color="#22C55E" />
-                <Text style={styles.swipeReplyText}>Reply</Text>
-              </View>
-            )}
+    
             {repliedMessage && (
               <View style={styles.messageReplyPreview}>
                 <Text style={styles.messageReplyText}>
@@ -302,7 +343,7 @@ const ChatScreen = () => {
               </View>
             )}
             {item.type === 'image' && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => {
                   if (item.mediaUrl) {
                     setShowImage(item.mediaUrl);
@@ -313,12 +354,13 @@ const ChatScreen = () => {
                 <Image source={{ uri: item.mediaUrl }} style={styles.messageImage} />
               </TouchableOpacity>
             )}
-            
+
             {item.text ? (
               <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.text}</Text>
             ) : null}
           </TouchableOpacity>
         </View>
+      </SwipeableMessage>
     );
   };
 
@@ -340,9 +382,27 @@ const ChatScreen = () => {
     
     return (
       <View style={styles.replyPreview}>
-        <Text style={styles.replyPreviewText}>
-          Replying to {replyInfo.senderName}: "{replyInfo.text}"
-        </Text>
+        {replyInfo.mediaUrl ?     
+        <View style={styles.replyWrapper}>
+          <View>
+            <Text style={styles.replySender}>
+                {replyInfo.senderName}
+              </Text>
+              <Text style={styles.replyPreviewText}>
+                  Photo
+              </Text>
+            </View>
+            <Image source={{ uri: replyInfo.mediaUrl}} style={styles.replyImage}/>
+          </View>
+        :     
+        <><Text style={styles.replySender}>
+           {replyInfo.senderName}
+          </Text>
+          <Text style={styles.replyPreviewText}>
+          {replyInfo.text}
+        </Text></> 
+        }
+    
         <TouchableOpacity 
           style={styles.closeReplyButton}
           onPress={() => {
@@ -924,9 +984,23 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#22C55E',
   },
+  replyWrapper: {
+    flexDirection: 'row'
+  },
+  replySender: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#22C55E',
+  },
   replyPreviewText: {
     fontSize: 14,
     color: '#374151',
+  },
+  replyImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 7,
+    marginLeft: 210
   },
   closeReplyButton: {
     position: 'absolute',
@@ -993,6 +1067,9 @@ const styles = StyleSheet.create({
     color: '#111',
     fontWeight: '500',
   },
+  messageWrapper: {
+    flexDirection: 'row'
+  },
   swipeReplyingMessage: {
     transform: [{ scale: 0.98 }],
     shadowColor: '#22C55E',
@@ -1002,20 +1079,14 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   swipeReplyIndicator: {
-    position: 'absolute',
-    top: -25,
-    right: 8,
+    position: 'fixed',
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#22C55E',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
+    marginRight: 10,
+    justifyContent: 'center',
+    marginTop: '3%'
   },
-  swipeReplyText: {
-    color: '#fff',
-    fontSize: 12,
+  swipeReplyIcon: {
+    color: '#19E675',
     fontWeight: '600',
   },
   modalContainer: {
