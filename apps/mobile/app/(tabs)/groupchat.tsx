@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useRouter } from 'expo-router';
+import { router, useNavigation, useRouter } from 'expo-router';
 import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
 const { width, height } = Dimensions.get('window');
@@ -375,10 +375,12 @@ const GroupChatScreen = () => {
     );
   };
 
+  const navigation = useNavigation()
+
   const renderHeader = () => (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/inbox')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 

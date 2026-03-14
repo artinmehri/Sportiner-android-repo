@@ -18,12 +18,13 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useRouter } from 'expo-router';
+import { router, useNavigation, useRouter } from 'expo-router';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker'
 import { useScrollEventsHandlersDefault } from '@gorhom/bottom-sheet';
 import * as Clipboard from 'expo-clipboard';
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { NativeGesture } from 'react-native-gesture-handler/lib/typescript/handlers/gestures/nativeGesture';
 
 
 const { width, height } = Dimensions.get('window');
@@ -281,12 +282,15 @@ const ChatScreen = () => {
     });
   };
 
+  const navigation = useNavigation();
+
+
   const renderHeader = () => (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => router.push('/(tabs)/inbox')}
+          onPress={() => navigation.goBack()}
         >
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>

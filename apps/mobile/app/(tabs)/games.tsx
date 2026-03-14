@@ -590,8 +590,8 @@ export default function Games() {
             </TouchableOpacity>
           </View>
         </View>
-        <TouchableOpacity style={styles.notificationButton}>
-          <Ionicons name="mail-outline" size={24} color="#000" />
+        <TouchableOpacity style={styles.notificationButton} onPress={ () => router.push('/(tabs)/requests')}>
+          <Ionicons name="mail-outline" size={24} color="#000"/>
           <View style={styles.notificationBadge}>
             <Text style={styles.notificationText}>3</Text>
           </View>

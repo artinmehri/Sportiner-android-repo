@@ -22,131 +22,6 @@ type Chat = {
   avatar: string;
 };
 
-type Request = {
-  id: string;
-  name: string;
-  level: string;
-  reliability: string;
-  day: string;
-  time: string;
-  avatar: string;
-};
-
-const chats: Chat[] = [
-  {
-    id: "1",
-    name: "Boys Tennis Game",
-    lastMessage: "Artin: I'm almost there",
-    timeElapsed: "1h",
-    day: "Tue",
-    time: "7PM",
-    avatar:
-      "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "2",
-    name: "Alex Joe",
-    lastMessage: "Almost there!",
-    timeElapsed: "5h",
-    day: "Wed",
-    time: "3PM",
-    avatar:
-      "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "3",
-    name: "Seb Mira",
-    lastMessage: "Do u have a racket?",
-    timeElapsed: "10h",
-    day: "Mon",
-    time: "1PM",
-    avatar:
-      "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "4",
-    name: "Sara Dion",
-    lastMessage: "Are you here?",
-    timeElapsed: "3d",
-    day: "Fri",
-    time: "11Am",
-    avatar:
-      "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "5",
-    name: "Dawson Frak",
-    lastMessage: "Can't find the court",
-    timeElapsed: "7d",
-    day: "Sat",
-    time: "7PM",
-    avatar:
-      "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "6",
-    name: "Safwan Mukhtar",
-    lastMessage: "Let me know",
-    timeElapsed: "1w",
-    day: "Sun",
-    time: "2PM",
-    avatar:
-      "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "7",
-    name: "John Smith",
-    lastMessage: "Sure",
-    timeElapsed: "2w",
-    day: "Thu",
-    time: "10AM",
-    avatar:
-      "https://images.unsplash.com/photo-1505142468610-359e7d316be0?auto=format&fit=crop&w=200&q=60",
-  },
-];
-
-const requests: Request[] = [
-  {
-    id: "1",
-    name: "Artin Mehri",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Tue",
-    time: "7PM",
-    avatar:
-      "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "2",
-    name: "Sara Dion",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Tue",
-    time: "7PM",
-    avatar:
-      "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "3",
-    name: "Dawson Frak",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Thu",
-    time: "10AM",
-    avatar:
-      "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "4",
-    name: "Artin Mehri",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Thu",
-    time: "10AM",
-    avatar:
-      "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60",
-  },
-];
 
 export default function Inbox() {
   const [selectedFilter, setSelectedFilter] = useState("All");
@@ -224,73 +99,7 @@ export default function Inbox() {
         "https://images.unsplash.com/photo-1505142468610-359e7d316be0?auto=format&fit=crop&w=200&q=60",
     },
   ]);
-  const [requests, setRequests] = useState<Request[]>([
-    {
-      id: "1",
-      name: "Artin Mehri",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Tue",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "2",
-      name: "Sara Dion",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Tue",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "3",
-      name: "Dawson Frak",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Thu",
-      time: "10AM",
-      avatar:
-        "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "4",
-      name: "Artin Mehri",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Thu",
-      time: "10AM",
-      avatar:
-        "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60",
-    },
-  ]);
-
-  const handleApproveRequest = (request: Request) => {
-    const isGroup = request.name.toLowerCase().includes('group') || 
-                   request.name.toLowerCase().includes('team') ||
-                   request.name.toLowerCase().includes('boys') ||
-                   request.name.toLowerCase().includes('girls');
-    
-    const newChat: Chat = {
-      id: Date.now().toString(),
-      name: request.name,
-      lastMessage: "Request approved",
-      timeElapsed: "now",
-      day: request.day,
-      time: request.time,
-      avatar: request.avatar,
-    };
-    
-    setChats([...chats, newChat]);
-    setRequests(requests.filter(r => r.id !== request.id));
-    setSelectedFilter("All");
-  };
   
-  const handleDeclineRequest = (request: Request) => {
-    setRequests(requests.filter(r => r.id !== request.id));
-  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -299,11 +108,11 @@ export default function Inbox() {
       </View>
 
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#9CA3AF" />
+        <Ionicons name="search" size={20} color="#555555" />
         <TextInput
           placeholder="Look Up People"
-          placeholderTextColor="#9CA3AF"
-          style={styles.searchInput}
+          placeholderTextColor="#555555"
+          style={[styles.searchInput, { fontWeight: 'bold' }]} // Add bold weight
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -316,7 +125,7 @@ export default function Inbox() {
           style={styles.filterScrollView}
           contentContainerStyle={styles.filterRow}
         >
-          {["All", "Group", "1-1", "Requests"].map((filter) => {
+          {["All", "Group", "1-1"].map((filter) => {
             const active = selectedFilter === filter;
             return (
               <TouchableOpacity
@@ -341,21 +150,7 @@ export default function Inbox() {
         style={styles.ticketsScrollView}
         key={selectedFilter}
       >
-        {selectedFilter === "Requests" ? (
-          requests
-            .filter(request => 
-              searchQuery === "" || 
-              request.name.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-            .map((request) => (
-            <RequestItem 
-              key={request.id} 
-              request={request} 
-              onApprove={() => handleApproveRequest(request)}
-              onDecline={() => handleDeclineRequest(request)}
-            />
-          ))
-        ) : selectedFilter === "Group" ? (
+        { selectedFilter === "Group" ? (
           chats
             .filter((chat) => chat.id === "1")
             .filter(chat => 
@@ -415,36 +210,6 @@ function ChatItem({ chat, router }: { chat: Chat; router: any }) {
   );
 }
 
-function RequestItem({ request, onApprove, onDecline }: { request: Request; onApprove: () => void; onDecline: () => void }) {
-  return (
-    <View style={styles.requestItem}>
-      <View style={styles.requestHeader}>
-        <Image source={{ uri: request.avatar }} style={styles.avatar} />
-        <View style={styles.requestContent}>
-          <Text style={styles.requestName}>{request.name}</Text>
-          <Text style={styles.requestDetails}>
-            {request.level} • {request.reliability}
-          </Text>
-        </View>
-        <View style={styles.requestTimePill}>
-          <Text style={styles.requestTimePillText}>
-            {request.day} • {request.time}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.requestActions}>
-        <TouchableOpacity style={styles.declineButton} onPress={onDecline}>
-          <Ionicons name="close" size={18} color="#EF4444" />
-          <Text style={styles.declineButtonText}>Decline</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.approveButton} onPress={onApprove}>
-          <Ionicons name="checkmark" size={18} color="#19E675" />
-          <Text style={styles.approveButtonText}>Approve</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -457,15 +222,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   title: {
-    fontSize: 32,
-    fontWeight: "900",
+    fontFamily: 'Lexend',
+    fontSize: 27,
+    fontWeight: "bold",
     color: "#000000",
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F3F4F6",
-    borderRadius: 12,
+    backgroundColor: "#EFEFEF",
+    borderRadius: 28,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginHorizontal: 16,
@@ -507,7 +273,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   filterTextActive: {
-    color: "#FFFFFF",
+    color: "#002000",
   },
   ticketsScrollView: {
     flex: 1,
@@ -544,7 +310,7 @@ const styles = StyleSheet.create({
     color: "#6B7280",
   },
   unreadMessage: {
-    color: "#38BDF8",
+    color: "#0088FF",
     fontWeight: "600",
   },
   timeContainer: {
@@ -552,22 +318,24 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   timePill: {
-    backgroundColor: "#19E675",
+    backgroundColor: "#E8FCF1",
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   blueDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#38BDF8",
-    marginTop: 5,
+    width: 14,
+    height: 14,
+    borderRadius: 9999,
+    backgroundColor: "#0088FF",
+    marginTop: 10,
+    justifyContent: 'flex-end',
+    marginRight: -39
   },
   timePillText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: "#005124",
   },
   requestItem: {
     paddingVertical: 8,
@@ -592,18 +360,6 @@ const styles = StyleSheet.create({
   requestDetails: {
     fontSize: 14,
     color: "#6B7280",
-  },
-  requestTimePill: {
-    backgroundColor: "#FCD34D",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginLeft: 8,
-  },
-  requestTimePillText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#000000",
   },
   requestActions: {
     flexDirection: "row",
