@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   ScrollView,
   Modal,
+  Vibration
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,14 +17,32 @@ import { useRouter } from 'expo-router';
 
 const FifthOnbPage = () => {
   const router = useRouter();
-  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
+  const [showPopup, setShowPopup] = useState(false);
+  const [JoinedGame, setJoinedGame] = useState(false);
+  const [JoinedGame2, setJoinedGame2] = useState(false);
+
+  const buzzPhone = () => {
+    Vibration.vibrate()
+  }
   
-  const handleJoinGame = () => {
-    setShowJoinedGameModal(true);
-    
-    setTimeout(() => {
-      setShowJoinedGameModal(false);
-    }, 2500);
+  const handleJoinGame = (num: number) => {
+    if (!JoinedGame && num == 1) {
+      setShowPopup(true);
+      setJoinedGame(true);
+      buzzPhone()
+
+      setTimeout(() => {
+        setShowPopup(false);
+      }, 2500);
+    } else if (!JoinedGame2 && num == 2) {
+      setShowPopup(true);
+      setJoinedGame2(true);
+      buzzPhone()
+
+      setTimeout(() => {
+        setShowPopup(false);
+      }, 2500);
+    }
   };
   
   const handleBrowseGames = () => {
@@ -55,16 +74,20 @@ const FifthOnbPage = () => {
               
               <View style={styles.gameDetails}>
                 <View style={styles.detailRow}>
+                  <View style={styles.icon}>
                   <MaterialCommunityIcons name="calendar" size={16} color="#19E675" />
                   <Text style={styles.detailText}>Tue @ 6 PM</Text>
+                  </View>
                   <View style={styles.spacer} />
+                  <View style={styles.icon}>
                   <MaterialCommunityIcons name="map-marker" size={16} color="#19E675" />
                   <Text style={styles.detailText}>300 Steels Avenue</Text>
+                  </View>
                 </View>
               </View>
               
-              <TouchableOpacity style={styles.joinButton} onPress={handleJoinGame}>
-                <Text style={styles.joinButtonText}>Join Game</Text>
+              <TouchableOpacity style={ JoinedGame ? styles.joinedButton : styles.joinButton} onPress={ () => {handleJoinGame(1)}}>
+                <Text style={JoinedGame ? styles.joinedButtonText : styles.joinButtonText}>{JoinedGame ? "Joined" : "Join Game"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -82,16 +105,20 @@ const FifthOnbPage = () => {
               
               <View style={styles.gameDetails}>
                 <View style={styles.detailRow}>
+                  <View style={styles.icon}>
                   <MaterialCommunityIcons name="calendar" size={16} color="#19E675" />
                   <Text style={styles.detailText}>Sat @ 7 PM</Text>
+                  </View>
                   <View style={styles.spacer} />
+                  <View style={styles.icon}>
                   <MaterialCommunityIcons name="map-marker" size={16} color="#19E675" />
                   <Text style={styles.detailText}>120 Yonge Street</Text>
+                  </View>
                 </View>
               </View>
               
-              <TouchableOpacity style={styles.joinButton} onPress={handleJoinGame}>
-                <Text style={styles.joinButtonText}>Join Game</Text>
+              <TouchableOpacity style={ JoinedGame2 ? styles.joinedButton : styles.joinButton} onPress={ () => {handleJoinGame(2); setJoinedGame2(true);}}>
+                <Text style={JoinedGame2 ? styles.joinedButtonText : styles.joinButtonText}>{JoinedGame2 ? "Joined" : "Join Game"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -107,22 +134,20 @@ const FifthOnbPage = () => {
 
       {/* Joined Game Modal */}
       <Modal
-        visible={showJoinedGameModal}
+        visible={showPopup}
         animationType="fade"
         transparent={true}
-        onRequestClose={() => setShowJoinedGameModal(false)}
+        onRequestClose={() => setShowPopup(false)}
       >
         <TouchableOpacity 
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setShowJoinedGameModal(false)}
+          onPress={() => setShowPopup(false)}
         >
           <View style={styles.feedbackModal}>
             <View style={styles.feedbackContent}>
               <View style={styles.feedbackIconContainer}>
-                <View style={styles.checkmarkCircle}>
-                  <Ionicons name="checkmark" size={30} color="#ffffff" />
-                </View>
+                <Ionicons name="checkmark-circle-outline" size={23} color="#19E675" />
               </View>
               <Text style={styles.feedbackTitle}>Joined Game</Text>
             </View>
@@ -240,13 +265,13 @@ const styles = StyleSheet.create({
   },
   mainTitle: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: '900',
     color: '#1F2937',
     marginBottom: 5,
   },
   subTitle: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: '900',
     color: '#19E675',
   },
   cardsContainer: {
@@ -282,7 +307,8 @@ const styles = StyleSheet.create({
   gameLevel: {
     fontSize: 14,
     color: '#6B7280',
-    marginBottom: 12,
+    marginBottom: 15,
+    marginTop: 5,
   },
   gameDetails: {
     marginBottom: 16,
@@ -291,26 +317,44 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignContent: 'flex-start',
     gap: 8,
+  },
+  icon: {
+    flexDirection: 'row',
   },
   detailText: {
     fontSize: 14,
     color: '#1F2937',
     fontWeight: '500',
+    marginLeft: 7
   },
   joinButton: {
     backgroundColor: '#19E675',
-    paddingVertical: 12,
+    paddingVertical: 17,
     paddingHorizontal: 24,
-    borderRadius: 25,
+    borderRadius: 17,
     alignItems: 'center',
     alignSelf: 'stretch',
     width: '100%',
   },
   joinButtonText: {
-    color: '#000000',
+    color: '#002000',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  joinedButton: {
+    backgroundColor: 'rgba(25, 230, 117, 0.2)',
+    paddingVertical: 17,
+    paddingHorizontal: 24,
+    borderRadius: 17,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    width: '100%',
+  },
+  joinedButtonText: {
+    color: '#4A6B54',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -340,10 +384,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   feedbackContent: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#002000',
     borderRadius: 20,
-    padding: 30,
+    paddingHorizontal: 30,
+    paddingVertical: 7,
     alignItems: 'center',
+    flexDirection: 'row',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -354,22 +400,15 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   feedbackIconContainer: {
-    marginBottom: 15,
+    marginBottom: 1,
+    marginRight: 7
   },
   feedbackTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: '#19E675',
     textAlign: 'center',
-  },
-  checkmarkCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#19E675',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 3
   },
 });
 

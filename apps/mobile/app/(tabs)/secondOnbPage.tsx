@@ -9,9 +9,12 @@ import {
   PanResponder,
   Dimensions,
   Animated,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { ComponentProps } from 'react';
+
 
 const { width: screenWidth } = Dimensions.get('window');
 const sliderWidth = screenWidth - 80;
@@ -23,125 +26,25 @@ interface TennisLevel {
   description: string;
 }
 
-const tennisLevels: TennisLevel[] = [
-  { level: '1.0 - 1.5', profileName: 'Newcomer', description: 'I am just starting to learn the rules and the basic strokes.' },
-  { level: '2.0', profileName: 'Beginner', description: 'I can get the ball over the net, but rallies are still short.' },
-  { level: '2.5', profileName: 'Novice', description: 'I can sustain a slow rally and have basic court coverage.' },
-  { level: '3.0', profileName: 'Low-Int.', description: 'I hit with more consistency and have started playing for points.' },
-  { level: '3.5', profileName: 'Intermediate', description: 'I can place my shots with intent and use basic strategy.' },
-  { level: '4.0', profileName: 'High-Int.', description: 'I have dependable strokes and can control the depth of my shots.' },
-  { level: '4.5', profileName: 'Advanced', description: 'I hit with power and spin. I can vary my game based on the opponent.' },
-  { level: '5.0', profileName: 'Expert', description: 'I have high-level shot anticipation and play competitive tournaments.' },
-  { level: '5.5', profileName: 'Elite', description: 'I have a specialized game plan and likely played at the college level.' },
-  { level: '6.0+', profileName: 'Pro', description: 'I am a high-ranking competitive player or a teaching professional.' },
-];
-
 export default function SecondOnbPage() {
-  const [selectedIndex, setSelectedIndex] = useState(0); 
-  const thumbPosition = useRef(new Animated.Value(0)).current;
-  const [currentThumbValue, setCurrentThumbValue] = useState(0);
+  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);  
   const router = useRouter();
+
+  type IconName = ComponentProps<typeof Ionicons>['name'];
+  
+  const levels: { id: string; label: string; icon: IconName }[] = [    
+    { id: 'beginner', label: "I don't know how to play", icon: 'tennisball-outline' },
+    { id: 'intermediate', label: "I know the rules and basics", icon: 'trending-up-outline' },
+    { id: 'advanced', label: "I know strategies and tactics", icon: 'flame-outline' },
+    { id: 'pro', label: "I'm a tournament player", icon: 'trophy-outline' },
+  ];
 
   const handleBack = () => {
     router.push('/firstOnbPage');
   };
 
   const handleContinue = () => {
-    console.log('Selected level:', tennisLevels[selectedIndex].level);
     router.push('/thirdOnbPage');
-  };
-
-  const updateIndexFromPosition = (position: number) => {
-    const clampedPosition = Math.max(0, Math.min(sliderWidth, position));
-    const index = Math.round((clampedPosition / sliderWidth) * (tennisLevels.length - 1));
-    setSelectedIndex(index);
-  };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 3;
-      },
-      onPanResponderGrant: () => {
-        thumbPosition.stopAnimation();
-      
-        thumbPosition.addListener(({ value }) => {
-          setCurrentThumbValue(value);
-          thumbPosition.removeAllListeners();
-        });
-      },
-      onPanResponderMove: (_, gestureState) => {
-    
-        const newPosition = currentThumbValue + gestureState.dx;
-        const clampedPosition = Math.max(0, Math.min(sliderWidth, newPosition));
-        
-        thumbPosition.setValue(clampedPosition);
-        setCurrentThumbValue(clampedPosition); 
-        updateIndexFromPosition(clampedPosition);
-      },
-      onPanResponderRelease: () => {
-     
-        thumbPosition.addListener(({ value }) => {
-          setCurrentThumbValue(value); 
-          thumbPosition.removeAllListeners();
-        });
-      },
-    })
-  ).current;
-
-  const handleDotPress = (index: number) => {
-    setSelectedIndex(index);
-    const position = (index / (tennisLevels.length - 1)) * sliderWidth;
-    setCurrentThumbValue(position);
-    Animated.spring(thumbPosition, {
-      toValue: position,
-      useNativeDriver: false,
-      tension: 50, 
-      friction: 8,
-    }).start();
-  };
-
-  const currentLevel = tennisLevels[selectedIndex];
-  const progressWidth = (selectedIndex / (tennisLevels.length - 1)) * sliderWidth;
-
-  const renderIntervalSections = () => {
-    const intervalWidth = sliderWidth / (tennisLevels.length - 1);
-    
-    return tennisLevels.map((_, index) => {
-      const isLast = index === tennisLevels.length - 1;
-      const left = index * intervalWidth;
-      const width = isLast ? intervalWidth : intervalWidth;
-      
-      return (
-        <TouchableOpacity
-          key={index}
-          style={[
-            styles.intervalSection,
-            {
-              left: left,
-              width: width,
-            }
-          ]}
-          onPress={() => handleDotPress(index)}
-        />
-      );
-    });
-  };
-
-  const renderDots = () => {
-    return tennisLevels.map((_, index) => {
-      const isActive = index <= selectedIndex;
-      return (
-        <View
-          key={index}
-          style={[
-            styles.dot,
-            isActive && styles.dotActive,
-          ]}
-        />
-      );
-    });
   };
 
   return (
@@ -161,30 +64,27 @@ export default function SecondOnbPage() {
 
       <View style={styles.content}>
         <View style={styles.titleSection}>
-          <Text style={styles.title}>What is your Tennis Level?</Text>
+          <Text style={styles.title}>How's your game?</Text>
         </View>
 
-        <View style={styles.levelCard}>
-          <Text style={styles.levelNumber}>{currentLevel.level}</Text>
-          <Text style={styles.levelDescription}>{currentLevel.description}</Text>
-        </View>
-
-        <View style={styles.sliderContainer}>
-          <View style={styles.sliderTrack}>
-            <View style={[styles.sliderProgress, { width: progressWidth }]} />
-          </View>
-          <View style={styles.dotsContainer}>{renderIntervalSections()}</View>
-          <View style={styles.dotsContainer}>{renderDots()}</View>
-          <Animated.View
-            style={[
-              styles.sliderThumb, 
-              { 
-                left: thumbPosition
-              }
-            ]}
-            {...panResponder.panHandlers}
-          />
-        </View>
+        {levels.map((level) => {
+  const isSelected = selectedLevel === level.id;
+  return (
+    <Pressable 
+      key={level.id}
+      onPress={() => setSelectedLevel(level.id)}
+      style={({ pressed }) => [
+        styles.levelCard,
+        { backgroundColor: isSelected ? '#19E675' : (pressed ? '#E5E5E5' : '#fff') }
+      ]}
+    >
+      <Ionicons name={level.icon} size={28} color={isSelected ? '#002000' : '#666'} />
+      <Text style={[styles.levelDescription, { color: isSelected ? '#002000' : '#666' }]}>
+        {level.label}
+      </Text>
+    </Pressable>
+  );
+})}
       </View>
 
       <View style={styles.footer}>
@@ -238,7 +138,8 @@ const styles = StyleSheet.create({
   },
   titleSection: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginTop: -50,
+    marginBottom: 70,
   },
   title: {
     fontSize: 24,
@@ -247,13 +148,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   levelCard: {
-    backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 32,
+    padding: 23,
     alignItems: 'center',
-    marginBottom: 60,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: '#E5E5E5',
+    flexDirection: 'row'
   },
   levelNumber: {
     fontSize: 48,
@@ -262,10 +163,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   levelDescription: {
+    fontWeight: '600',
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 20,
+    marginLeft: 17
   },
   sliderContainer: {
     height: 60,

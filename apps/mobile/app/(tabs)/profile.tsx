@@ -22,7 +22,7 @@ export default function ProfileScreen() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Check out my tennis profile on Sportiner! 🎾\n\nPlayer: ${profileData.displayName}\nNTP Rating: 3.5\nLocation: ${profileData.location}\n\nDownload Sportiner to find tennis partners near you!`,
+        message: `🎾 Looking for tennis players in Toronto\n\nJoin me on Sportiner:`,
         url: 'https://sportiner.app', 
       });
     } catch (error) {
@@ -69,8 +69,8 @@ export default function ProfileScreen() {
 
       {/* NTP Rating */}
       <View style={styles.ratingSection}>
-        <Text style={styles.ratingNumber}>3.5</Text>
-        <Text style={styles.ratingLabel}>NTP Rating</Text>
+        <Text style={styles.ratingNumber}>750</Text>
+        <Text style={styles.ratingLabel}>Tennis Rating (ELO)</Text>
       </View>
 
       {/* Stats */}
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: 'black',
   },
@@ -234,19 +234,24 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   ratingSection: {
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 38,
+    marginTop: 15,
+    borderRadius: 20,
+
   },
   ratingNumber: {
     fontSize: 64,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#19E675',
     lineHeight: 70,
   },
   ratingLabel: {
     fontSize: 16,
-    color: '#666',
-    marginTop: -8,
+    fontWeight: '700',
+    color: '#19E675',
+    marginTop: -2,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -268,6 +273,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    marginRight: 3,
   },
   statValue: {
     fontSize: 20,

@@ -224,11 +224,11 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E5E5E5',
+    borderColor: '#000000',
   },
   timeSlotButtonSelected: {
     backgroundColor: '#19E675',
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   timeSlotTextSelected: {
-    color: '#fff',
+    color: '#002000',
   },
   footer: {
     paddingHorizontal: 20,

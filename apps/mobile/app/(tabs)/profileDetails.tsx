@@ -1,11 +1,22 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
-import { router } from 'expo-router'
+import { useNavigation } from '@react-navigation/native';
+import { router } from 'expo-router';
 
-export default function ProfileDetailsScreen({ onClose }: { onClose: () => void }) {
-  const insets = useSafeAreaInsets();
+export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void }) {
+  const navigation = useNavigation();
+
+  const handleBack = () => {
+    if (onClose) {
+      onClose();
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      router.replace('/(tabs)/profile');
+    }
+  };
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -53,20 +64,20 @@ export default function ProfileDetailsScreen({ onClose }: { onClose: () => void 
     );
   };
 
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="black" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Profile</Text>
-          <TouchableOpacity style={styles.headerButton} onPress={() => setShowMenu(true)}>
-            <Ionicons name="ellipsis-vertical" size={24} color="black" />
-          </TouchableOpacity>
-        </View>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.headerButton} onPress={handleBack}>
+              <Ionicons name="arrow-back" size={24} color="black" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Profile</Text>
+            <TouchableOpacity style={styles.headerButton} onPress={() => setShowMenu(true)}>
+              <Ionicons name="ellipsis-vertical" size={24} color="black" />
+            </TouchableOpacity>
+          </View>
 
       {/* Profile Info */}
       <View style={styles.profileSection}>
@@ -247,6 +258,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    marginTop: 40
   },
   profileSection: {
     alignItems: 'center',

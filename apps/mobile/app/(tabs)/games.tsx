@@ -127,8 +127,8 @@ const pastHostedGamesData: GameCard[] = [
     status: {
       type: 'verify',
       label: 'Verify Game & Levels',
-      color: '#007AFF',
-      icon: 'star',
+      color: '#19E675',
+      icon: 'checkmark',
     },
     players: [
       { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=100&q=80', name: 'Michael Chen', skillLevel: 'Advanced' },
@@ -591,7 +591,7 @@ export default function Games() {
           </View>
         </View>
         <TouchableOpacity style={styles.notificationButton} onPress={ () => router.push('/(tabs)/requests')}>
-          <Ionicons name="mail-outline" size={24} color="#000"/>
+          <Ionicons name="file-tray-outline" size={24} color="#000"/>
           <View style={styles.notificationBadge}>
             <Text style={styles.notificationText}>3</Text>
           </View>
@@ -635,8 +635,8 @@ export default function Games() {
                       </View>
                       {game.status && (
                         <TouchableOpacity style={[styles.verifyButton, { backgroundColor: game.status.color }]}>
-                          <Ionicons name={game.status.icon as any} size={16} color="#FFFFFF" />
-                          <Text style={styles.verifyButtonText}>{game.status.label}</Text>
+                          <Ionicons name={game.status.icon as any} size={16} color="#002000" />
+                          <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
                         </TouchableOpacity>
                       )}
                       <View style={styles.playersSection}>
@@ -969,8 +969,37 @@ export default function Games() {
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.playersModalContainer}>
+                <View style={styles.requestsHeader}>
+                <Ionicons name="file-tray" size={30}></Ionicons>
+                <Text style={styles.playersTitle}>Requests</Text>
+                </View>
+                <View style={styles.requestsContent}>
+                  {selectedGame?.players?.map((player, index) => (
+                    <TouchableOpacity key={index} onPress={() => { setShowPlayers(false); setShowProfileModal(true); }}>
+                      <View style={styles.playerItem}>
+                        <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} />
+                        <View style={styles.playerInfo}>
+                          <Text style={styles.playerName}>{player.name || 'Unknown Player'}</Text>
+                          <Text style={styles.playerSkill}>{player.skillLevel || 'Unknown Level'}</Text>
+                        </View>
+
+                        <View style={styles.requestActions}>
+                          <TouchableOpacity style={styles.declineButton}>
+                            <Ionicons name="close" size={18} color="#EF4444" />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.approveButton}>
+                            <Ionicons name="checkmark" size={18} color="#19E675" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+
                 <View style={styles.playersHeader}>
-                  <Text style={styles.playersTitle}>Players</Text>
+                <Ionicons name="people" size={30}></Ionicons>
+                <Text style={styles.playersTitle}>Players</Text>
                 </View>
                 <View style={styles.playersContent}>
                   {selectedGame?.players?.map((player, index) => (
@@ -985,7 +1014,7 @@ export default function Games() {
                     </TouchableOpacity>
                   ))}
                 </View>
-              </View>
+            </View>
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
@@ -1233,9 +1262,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    borderRadius: 30,
     marginBottom: 16,
     gap: 6,
     alignSelf: 'flex-start',
@@ -1250,6 +1279,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 6,
     alignSelf: 'flex-start',
+  },
+  verifyButtonTextHosting: {
+    color: '#002000',
+    fontSize: 14,
+    fontWeight: '600',
   },
   verifyButtonText: {
     color: '#FFFFFF',
@@ -1327,23 +1361,35 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     width: width,
     maxHeight: height * 0.7,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 8,
   },
+  requestsHeader: {
+    padding: 15,
+    flexDirection: 'row',
+    marginTop: 3,
+    marginBottom: -10
+  },
   playersHeader: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    padding: 15,
+    flexDirection: 'row',
+    marginTop: 3,
+    marginBottom: -10
   },
   playersContent: {
     paddingHorizontal: 20,
     paddingVertical: 16,
+    marginTop: -10
+  },
+  requestsContent: {
+    paddingHorizontal: 20,
   },
   playersTitle: {
     fontSize: 24,
+    marginTop: 1,
+    marginLeft: 10,
     fontWeight: '800',
     color: '#000',
     textAlign: 'center',
@@ -1355,8 +1401,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
   playerAvatarLarge: {
     width: 50,
@@ -1377,6 +1421,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#666',
+  },
+  requestActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  declineButton: {
+    maxWidth: 43,
+    height: 43,
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#EF4444",
+    borderRadius: 43,
+  },
+  approveButton: {
+    maxWidth: 43,
+    height: 43,
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderRadius: 43,
+    borderColor: "#19E675",
+
   },
   feedbackModal: {
     flex: 1,
