@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
-type JoinSetting = 'Anyone can join' | 'Ask to join';
+type JoinSetting = '👥 Open to Anyone' | '✋ Request Approval';
 type CourtType = 'Public' | 'Private/Club' | 'Condo';
 
 export interface Game {

@@ -7,21 +7,20 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  Alert,
   Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { useRouter } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
-import { useAuth } from "@/context/AuthContext";
 
 
 type Event = {
   title: string;
-  level: "Beginner" | "Intermediate" | "Advanced";
+  level: "Beginner(400-800)" | "Intermediate(800-1200)" | "Advanced(1200-1600)" | "Pro(1600+)";
   distance: string;
   address: string;
+  status: string;
   time: string;
   venue: string;
   cost: string;
@@ -33,12 +32,14 @@ type Event = {
   hasGreenBackground?: boolean;
 };
 
+
 const events1v1: Event[] = [
  {
    title: "John's Tennis Game",
-   level: "Intermediate",
+   level: "Intermediate(800-1200)",
    distance: "500m",
    address: "100 Steels Avenue",
+   status: "open",
    time: "Today • 7:30",
    venue: "Public court",
    cost: "Free",
@@ -49,9 +50,10 @@ const events1v1: Event[] = [
  },
  {
    title: "Alex's Tennis Game",
-   level: "Advanced",
+   level: "Advanced(1200-1600)",
    distance: "1.2km",
    address: "1200 Steels Avenue",
+   status: "full",
    time: "Today • 7:30",
    venue: "Private court",
    cost: "Free",
@@ -65,9 +67,10 @@ const events1v1: Event[] = [
 const eventsGroup: Event[] = [
  {
    title: "Sportiner Event",
-   level: "Beginner",
+   level: "Beginner(400-800)",
    distance: "500m",
    address: "300 Steels Avenue",
+   status: "open",
    time: "Today • 7:30",
    venue: "",
    cost: "Free",
@@ -81,9 +84,10 @@ const eventsGroup: Event[] = [
  },
  {
    title: "Alex's Tennis Doubles",
-   level: "Advanced",
+   level: "Advanced(1200-1600)",
    distance: "500m",
    address: "300 Steels Avenue",
+   status: "open",
    time: "Today • 10:30",
    venue: "",
    cost: "$10 Entry",
@@ -100,13 +104,24 @@ const eventsGroup: Event[] = [
 
 export default function Index() {
  const [mode, setMode] = useState<"1-1" | "Group">("1-1");
+ const [joinSingleGame, setJoinedSingleGame] = useState(false)
+ const [joinEvent, setJoinedEvent] = useState(false)
+ const [joinGroupGame, setJoinGroupGame] = useState(false)
  const [selectedFilter, setSelectedFilter] = useState("Today");
  const [searchQuery, setSearchQuery] = useState("");
  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
- const { user } = useAuth();
 
+const handleJoin = (gameType: string) => {
+  if (gameType === 'single game') {
+    setJoinedSingleGame(true)
+  } else if (gameType === 'event') {
+    setJoinedEvent(true)
+  } else if (gameType === 'group game') {
+    setJoinGroupGame(true)
+  }
+}
 
  return (
    <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -135,7 +150,7 @@ export default function Index() {
            <Ionicons
              name="person-outline"
              size={34}
-             color={mode === "1-1" ? "#19E675" : "#005124"}
+             color={mode === "1-1" ? "#19E675" : "rgba(27, 27, 27, 0.3)"}
            />
            <Text
              style={[
@@ -157,7 +172,7 @@ export default function Index() {
            <Ionicons
              name="people-outline"
              size={34}
-             color={mode === "Group" ? "#19E675" : "#005124"}
+             color={mode === "Group" ? "#19E675" : "rgba(27, 27, 27, 0.3)"}
            />
            <Text
              style={[
@@ -227,15 +242,13 @@ export default function Index() {
         onPress={() => setShowJoinedGameModal(false)}
       >
         <View style={styles.feedbackModal}>
-          <View style={styles.feedbackContent}>
-            <View style={styles.feedbackIconContainer}>
-              <View style={styles.checkmarkCircle}>
-                <Ionicons name="checkmark" size={30} color="#ffffff" />
+            <View style={styles.feedbackContent}>
+              <View style={styles.feedbackIconContainer}>
+                <Ionicons name="checkmark-circle-outline" size={23} color="#19E675" />
               </View>
+              <Text style={styles.feedbackTitle}>Joined Game</Text>
             </View>
-            <Text style={styles.feedbackTitle}>Joined Game</Text>
           </View>
-        </View>
       </TouchableOpacity>
     </Modal>
    </SafeAreaView>
@@ -250,6 +263,7 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
   requestJoinGame: (gameData: {
     gameId: string;
     gameTitle: string;
+    gameStatus: string;
     gameDetails?: {
       date: string;
       time: string;
@@ -261,19 +275,10 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
 }) {
  const isGroupMode = mode === "Group";
  const hasGreenBg = isGroupMode && event.hasGreenBackground;
- const levelColor = hasGreenBg && event.level === "Beginner"
-   ? "#FFFFFF"
-   : event.level === "Advanced" 
-   ? "#19E675" 
-   : event.level === "Beginner" 
-   ? "#19E675" 
-   : "#1FC365";
 
  const cardStyle = hasGreenBg ? styles.cardGreen : styles.card;
- const textColor = hasGreenBg ? "#FFFFFF" : "#4B5563";
  const titleColor = hasGreenBg ? "#FFFFFF" : "#303030";
  const dotColor = hasGreenBg ? "#FFFFFF" : "#4B5563";
- const spotsTextColor = isGroupMode ? "#005124" : "#4B5563";
 
  const handleJoinGame = () => {
     const hostName = event.title.split("'s")[0];
@@ -281,6 +286,7 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
     requestJoinGame({
       gameId: event.title.replace(/\s+/g, '-').toLowerCase(),
       gameTitle: event.title,
+      gameStatus: event.status,
       gameDetails: {
         date: event.time.split(' • ')[0],
         time: event.time.split(' • ')[1] || event.time,
@@ -299,39 +305,45 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
  return (
    <TouchableOpacity 
      style={cardStyle}
-     onPress={() => router.push('/(tabs)/EventDetails')}
+     onPress={event.status === 'full' ? undefined : () => router.push('/(tabs)/EventDetails')}
    >
-     <View style={styles.cardHeader}>
-       <Image source={{ uri: event.avatar }} style={styles.avatar} />
-       <Text style={[styles.cardTitle, { color: titleColor }]}>
-         {event.title}
-       </Text>
-     </View>
-
-     <View style={styles.infoRow}>
-       <Text style={[styles.level, { color: levelColor }]}>
-         {event.level}
-       </Text>
-       <Text style={[styles.dot, { color: dotColor }]}>•</Text>
-       <Text style={[styles.infoText, { color: textColor }]}>
-         {event.distance}
-       </Text>
-     </View>
-
-     {isGroupMode ? (
-       <>
-         <Text style={[styles.infoText, { color: textColor }]}>
+    <View style={styles.cardHeader}>
+      <Image source={{ uri: event.avatar }} style={event.status === 'full' ? styles.avatarFull :styles.avatar} />
+      <View style={styles.cardInfo}>
+        <View style={{flexDirection: 'row'}}>
+        <Text style={event.status === 'full' ? styles.cardTitleFull : styles.cardTitle}>{event.title}</Text>
+        {event.status === 'full' && 
+          <View style={{backgroundColor: "#E5E7EB", borderColor: "#D1D5DB", borderRadius: 20, paddingHorizontal: 15, paddingVertical: 3 }}>
+            <Text style={{color: "#6B7280", fontWeight: "600"}}>Full</Text>
+          </View>}
+        </View>
+          <View style={styles.cardMetaRow}>
+            <Text style={event.title ==='Sportiner Event' ? styles.cardLevelSportiner : event.status === 'full' ? styles.cardLevelFull : styles.cardLevel}>{event.level}</Text>
+            {event.level && event.distance && <Text style={styles.cardMetaDot}> • </Text>}
+            <Text style={event.title ==='Sportiner Event' ? styles.cardDistanceSportiner : event.status === 'full' ? styles.cardDistanceFull : styles.cardDistance}>{event.distance}</Text>
+          </View>
+      </View>
+    </View>
+    <>
+       <View style={styles.infoView}>
+       <Ionicons name="location-outline" color={event.title ==='Sportiner Event' ? "#002000" : event.status === 'full' ? "#9CA3AF" : "#4B5563"} size={16}></Ionicons>
+         <Text style={event.title ==='Sportiner Event' ? styles.locationTextSportiner : event.status === 'full' ? styles.locationTextFull : styles.locationText}>
            {event.address}
          </Text>
-         <Text style={[styles.infoText, { color: textColor }]}>
-           {event.cost}
-         </Text>
-         <Text style={[styles.infoText, { color: textColor }]}>
+       </View>
+
+       <View style={styles.infoView}>
+       <Ionicons name="time-outline" color={event.title ==='Sportiner Event' ? "#002000" : event.status === 'full' ? "#9CA3AF" : "#4B5563"} size={16}></Ionicons>
+        <Text style={event.title ==='Sportiner Event' ? styles.timeTextSportiner : event.status === 'full' ? styles.timeTextFull : styles.timeText}>
            {event.time}
          </Text>
+       </View>
+       </>
+     {isGroupMode ? (
+       <>
          {event.spotsFilled !== undefined && event.spotsTotal !== undefined && (
            <>
-             <Text style={[styles.infoText, { color: spotsTextColor, marginTop: 4 }]}>
+             <Text style={[event.title === 'Sportiner Event' ? styles.infoTextSportiner : styles.infoText]}>
                {event.spotsFilled}/{event.spotsTotal} Spots Filled
              </Text>
              <View style={styles.progressBarContainer}>
@@ -359,54 +371,36 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
            </>
          )}
        </>
-     ) : (
-       <>
-         <Text style={[styles.infoText, { color: textColor }]}>
-           {event.address}
-         </Text>
-         <Text style={[styles.infoText, { color: textColor }]}>
-           {event.time}
-         </Text>
-         <View style={styles.infoRow}>
-           <Text style={[styles.infoText, { color: textColor }]}>
-             {event.venue}
-           </Text>
-           <Text style={[styles.dot, { color: dotColor }]}>•</Text>
-           <Text style={[styles.infoText, { color: textColor }]}>
-             {event.cost}
-           </Text>
-         </View>
-       </>
-     )}
+     ) : null}
 
      <View style={styles.buttonRow}>
-       <TouchableOpacity
+      {event.title === "Sportiner Event" ? null : 
+      <TouchableOpacity
          style={[
-           styles.secondaryButton,
-           hasGreenBg && styles.secondaryButtonGreen,
+          event.status === 'full' ? styles.secondaryButtonFull : styles.secondaryButton,
          ]}
-         onPress={() => router.push('/(tabs)/chat')}
+         onPress={ event.status === 'full' ? undefined : () => router.push('/(tabs)/chat')}
        >
          <Text
            style={[
-             styles.secondaryButtonText,
-             hasGreenBg && styles.secondaryButtonTextGreen,
+            event.status === 'full' ? styles.secondaryButtonTextFull : styles.secondaryButtonText,
            ]}
          >
            {event.primaryCta}
          </Text>
-       </TouchableOpacity>
+       </TouchableOpacity>}
+  
        <TouchableOpacity
          style={[
-           styles.primaryButton,
-           hasGreenBg && styles.primaryButtonGreen,
+          event.title === 'Sportiner Event' ? styles.primaryButtonSportiner :
+          event.status === 'full' ? styles.primaryButtonFull : styles.primaryButton
          ]}
-         onPress={handleJoinGame}
+         onPress={event.status === 'full' ? undefined : handleJoinGame}
        >
          <Text
            style={[
-             styles.primaryButtonText,
-             hasGreenBg && styles.primaryButtonTextGreen,
+            event.title === 'Sportiner Event' ? styles.primaryButtonTextSportiner :
+            event.status === 'full' ? styles.primaryButtonTextFull : styles.primaryButtonText,
            ]}
          >
            {event.secondaryCta}
@@ -464,7 +458,7 @@ const styles = StyleSheet.create({
  segmentText: {
    fontSize: 16,
    fontWeight: "700",
-   color: "#005124",
+   color: "rgba(27, 27, 27, 0.3)",
    marginTop: 0,
  },
  segmentTextActive: {
@@ -488,7 +482,7 @@ const styles = StyleSheet.create({
  },
  filterPill: {
    backgroundColor: "#005124",
-   borderRadius: 12,
+   borderRadius: 50,
    paddingVertical: 7,
    paddingHorizontal: 12,
    alignItems: "center",
@@ -515,9 +509,9 @@ const styles = StyleSheet.create({
    shadowOpacity: 0.12,
    shadowRadius: 8,
    elevation: 4,
-   borderWidth: StyleSheet.hairlineWidth,
-   borderColor: "#E5E7EB",
    gap: 8,
+   borderWidth: StyleSheet.hairlineWidth,
+   borderColor: '#000000',
  },
  cardGreen: {
    backgroundColor: "#19E675",
@@ -535,27 +529,142 @@ const styles = StyleSheet.create({
    flexDirection: "row",
    alignItems: "center",
    gap: 12,
-   marginBottom: 4,
+   marginBottom: 7,
+ },
+ avatarFull: {
+  width: 54,
+  height: 54,
+  borderRadius: 7,
+  borderWidth: 2,
+  borderColor: '#9CA3AF'
  },
  avatar: {
-   width: 54,
-   height: 54,
-   borderRadius: 27,
+  width: 54,
+  height: 54,
+  borderRadius: 7,
+  borderWidth: 2,
+  borderColor: '#121212'
+ },
+ cardTitleFull: {
+  flex: 1,
+  fontSize: 20,
+  fontWeight: "800",
+  color: "#6B7280",
  },
  cardTitle: {
    flex: 1,
    fontSize: 20,
    fontWeight: "800",
-   color: "#303030",
+   color: "#121212",
  },
+  cardInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+ cardMetaRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginTop: 4
+},
+cardLevel: {
+  fontSize: 14,
+  color: '#19E675',
+  fontWeight: '600',
+  marginBottom: 3,
+  textTransform: 'uppercase',
+},
+cardLevelFull: {
+  fontSize: 14,
+  color: '#D1D5DB',
+  fontWeight: '600',
+  marginBottom: 3,
+  textTransform: 'uppercase',
+},
+cardLevelSportiner: {
+  fontSize: 14,
+  color: '#002000',
+  fontWeight: '600',
+  marginBottom: 3,
+  textTransform: 'uppercase',
+},
+cardMetaDot: {
+  fontSize: 14,
+  color: '#666',
+  marginBottom: 3
+},
+cardDistance: {
+  fontSize: 14,
+  color: '#71717A',
+  fontWeight: '400',
+  marginBottom: 3,
+  textTransform: 'uppercase',
+},
+cardDistanceSportiner: {
+  fontSize: 14,
+  color: '#002000',
+  fontWeight: '400',
+  marginBottom: 3,
+  textTransform: 'uppercase',
+},
+cardDistanceFull: {
+  fontSize: 14,
+  color: '#9CA3AF',
+  fontWeight: '400',
+  marginBottom: 3,
+  textTransform: 'uppercase',
+},
  infoRow: {
    flexDirection: "row",
    alignItems: "center",
    gap: 6,
  },
+ infoView: {
+  flexDirection: 'row',
+  marginBottom: 2
+ },
+ locationTextFull: {
+  fontSize: 16,
+  color: "#9CA3AF",
+  marginLeft: 5,
+  marginTop: -1
+ },
+ locationTextSportiner: {
+  fontSize: 16,
+  color: "#002000",
+  marginLeft: 5,
+  marginTop: -1
+ },
+ locationText: {
+  fontSize: 16,
+  color: "#4B5563",
+  marginLeft: 5,
+  marginTop: -1
+ },
+ timeTextFull: {
+  fontSize: 16,
+  color: "#9CA3AF",
+  marginLeft: 5,
+  marginTop: -2
+ },
+ timeTextSportiner: {
+  fontSize: 16,
+  color: "#002000",
+  marginLeft: 5,
+  marginTop: -1
+ },
+ timeText: {
+  fontSize: 16,
+  color: "#4B5563",
+  marginLeft: 5,
+  marginTop: -2
+ },
  infoText: {
    fontSize: 16,
    color: "#4B5563",
+ },
+ infoTextSportiner: {
+  fontSize: 16,
+  color: "#002000",
  },
  level: {
    fontSize: 16,
@@ -570,32 +679,78 @@ const styles = StyleSheet.create({
    gap: 12,
    marginTop: 8,
  },
+ secondaryButtonFull: {
+  flex: 1,
+  backgroundColor: "#F9FAFB",
+  borderRadius: 30,
+  paddingVertical: 12,
+  alignItems: "center",
+  borderWidth: 2,
+  borderColor: '#E5E7EB'
+ },
  secondaryButton: {
    flex: 1,
-   backgroundColor: "#0D4B2A",
-   borderRadius: 12,
+   backgroundColor: "#ffffff",
+   borderRadius: 30,
    paddingVertical: 12,
    alignItems: "center",
+   borderWidth: 2,
+   borderColor: '#1A1A1A'
+ },
+ secondaryButtonTextFull: {
+  color: "#9CA3AF",
+  fontSize: 16,
+  fontWeight: "700",
  },
  secondaryButtonText: {
-   color: "#21C567",
+   color: "#1A1A1A",
    fontSize: 16,
-   fontWeight: "800",
+   fontWeight: "700",
+ },
+ primaryButtonFull: {
+  flex: 1,
+  backgroundColor: "#E5E7EB",
+  borderRadius: 30,
+  paddingVertical: 12,
+  alignItems: "center",
+  borderWidth: 2,
+  borderColor: '#D1D5DB'
+ },
+ primaryButtonSportiner: {
+  flex: 1,
+  backgroundColor: "#005124",
+  borderRadius: 30,
+  paddingVertical: 12,
+  alignItems: "center",
+  borderWidth: 2,
+  borderColor: '#002000'
  },
  primaryButton: {
    flex: 1,
-   backgroundColor: "#0CCF67",
-   borderRadius: 12,
+   backgroundColor: "#19E675",
+   borderRadius: 30,
    paddingVertical: 12,
    alignItems: "center",
+   borderColor: '#1A1A1A',
+   borderWidth: 2
  },
  primaryButtonGreen: {
    backgroundColor: "#FFFFFF",
  },
+ primaryButtonTextFull: {
+  color: "#6B7280",
+  fontSize: 16,
+  fontWeight: "700",
+ },
+ primaryButtonTextSportiner: {
+  color: "#19E675",
+  fontSize: 16,
+  fontWeight: "700",
+ },
  primaryButtonText: {
-   color: "#FFFFFF",
+   color: "#002000",
    fontSize: 16,
-   fontWeight: "800",
+   fontWeight: "700",
  },
  primaryButtonTextGreen: {
    color: "#005124",
@@ -646,39 +801,34 @@ const styles = StyleSheet.create({
    paddingBottom: 50,
  },
  feedbackModal: {
-   justifyContent: 'flex-end',
-   alignItems: 'center',
- },
- feedbackContent: {
-   backgroundColor: '#ffffff',
-   borderRadius: 20,
-   padding: 30,
-   alignItems: 'center',
-   shadowColor: '#000',
-   shadowOffset: {
-     width: 0,
-     height: 4,
-   },
-   shadowOpacity: 0.25,
-   shadowRadius: 10,
-   elevation: 10,
- },
- feedbackIconContainer: {
-   marginBottom: 15,
- },
- feedbackTitle: {
-   fontSize: 24,
-   fontWeight: '700',
-   color: '#19E675',
-   textAlign: 'center',
- },
- checkmarkCircle: {
-   width: 60,
-   height: 60,
-   borderRadius: 30,
-   backgroundColor: '#19E675',
-   justifyContent: 'center',
-   alignItems: 'center',
-   marginBottom: 15,
- },
+  justifyContent: 'flex-end',
+  alignItems: 'center',
+},
+feedbackContent: {
+  backgroundColor: '#002000',
+  borderRadius: 20,
+  paddingHorizontal: 30,
+  paddingVertical: 7,
+  alignItems: 'center',
+  flexDirection: 'row',
+  shadowColor: '#000',
+  shadowOffset: {
+    width: 0,
+    height: 4,
+  },
+  shadowOpacity: 0.25,
+  shadowRadius: 10,
+  elevation: 10,
+},
+feedbackIconContainer: {
+  marginBottom: 1,
+  marginRight: 7
+},
+feedbackTitle: {
+  fontSize: 20,
+  fontWeight: '700',
+  color: '#19E675',
+  textAlign: 'center',
+  marginBottom: 3
+},
 });

@@ -8,15 +8,17 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGames } from '@/context/GameContext';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
-type JoinSetting = 'Anyone can join' | 'Ask to join';
+type JoinSetting = '👥 Open to Anyone' | '✋ Request Approval';
 type CourtType = 'Public' | 'Private/Club' | 'Condo';
 
 export default function CreateGame() {
@@ -26,13 +28,10 @@ export default function CreateGame() {
 
   const [gameType, setGameType] = useState<GameType>('1v1');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('Beginner');
-  const [joinSetting, setJoinSetting] = useState<JoinSetting>('Anyone can join');
+  const [joinSetting, setJoinSetting] = useState<JoinSetting>('👥 Open to Anyone');
 
   const [date, setDate] = useState<string>('');
   const [time, setTime] = useState<string>('07:00');
-  const [timeHour, setTimeHour] = useState<number>(7);
-  const [timeMinute, setTimeMinute] = useState<number>(0);
-  const [timePeriod, setTimePeriod] = useState<'AM' | 'PM'>('AM');
   const [location, setLocation] = useState<string>('');
   const [showLocationSuggestions, setShowLocationSuggestions] = useState<boolean>(false);
   const [selectedLocation, setSelectedLocation] = useState<string>('');
@@ -45,22 +44,12 @@ export default function CreateGame() {
   const [gameDescription, setGameDescription] = useState<string>('');
 
 
-  const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
-  const [showTimePicker, setShowTimePicker] = useState<boolean>(false);
+  const [datePickerMode, setDatePickerMode] = useState<'date' | 'time'>('date');
+  const [tempDate, setTempDate] = useState<Date>(new Date());
+  const [showPickerModal, setShowPickerModal] = useState<boolean>(false);
+  const [showBookingInfoModal, setShowBookingInfoModal] = useState<boolean>(false);
   
 
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
-
-
-  useEffect(() => {
-    if (date) {
-      const dateObj = new Date(date);
-      if (dateObj.getMonth() === currentMonth.getMonth() && dateObj.getFullYear() === currentMonth.getFullYear()) {
-        setSelectedDay(dateObj.getDate());
-      }
-    }
-  }, [date, currentMonth]);
 
 
   const locationSuggestions = [
@@ -78,31 +67,40 @@ export default function CreateGame() {
     return `${month}/${day}/${year}`;
   };
 
-  const formatMonthYear = (date: Date) => {
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    return `${months[date.getMonth()]} ${date.getFullYear()}`;
+  const handleDateSelect = (event: any, selectedDate?: Date) => {
+    if (event.type === 'set' && selectedDate) {
+      setTempDate(selectedDate);
+    }
   };
 
-  const getDaysInMonth = (date: Date) => {
-    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const handleTimeSelect = (event: any, selectedDate?: Date) => {
+    if (event.type === 'set' && selectedDate) {
+      setTempDate(selectedDate);
+    }
   };
 
-  const getFirstDayOfMonth = (date: Date) => {
-    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  const confirmDateSelection = () => {
+    if (datePickerMode === 'date') {
+      setDate(tempDate.toISOString());
+    } else {
+      const hours = String(tempDate.getHours()).padStart(2, '0');
+      const minutes = String(tempDate.getMinutes()).padStart(2, '0');
+      setTime(`${hours}:${minutes}`);
+    }
+    setShowPickerModal(false);
   };
 
-  const handleDateSelect = (day: number) => {
-    const selectedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-    setDate(selectedDate.toISOString());
-    setSelectedDay(day);
-    setShowDatePicker(false);
+  const openDatePicker = () => {
+    setDatePickerMode('date');
+    setTempDate(date ? new Date(date) : new Date());
+    setShowPickerModal(true);
   };
 
-  const handleTimeConfirm = () => {
-    const hour24 = timePeriod === 'PM' && timeHour !== 12 ? timeHour + 12 : timePeriod === 'AM' && timeHour === 12 ? 0 : timeHour;
-    const formattedTime = `${String(hour24).padStart(2, '0')}:${String(timeMinute).padStart(2, '0')}`;
-    setTime(formattedTime);
-    setShowTimePicker(false);
+  const openTimePicker = () => {
+    setDatePickerMode('time');
+    const currentTime = time ? new Date(`1970-01-01T${time}`) : new Date();
+    setTempDate(currentTime);
+    setShowPickerModal(true);
   };
 
   const handleLocationSelect = (locationName: string) => {
@@ -118,18 +116,6 @@ export default function CreateGame() {
   const handleLocationChange = (text: string) => {
     setLocation(text);
     setShowLocationSuggestions(text.length > 0 || true);
-  };
-
-  const navigateMonth = (direction: 'prev' | 'next') => {
-    setCurrentMonth(prev => {
-      const newDate = new Date(prev);
-      if (direction === 'prev') {
-        newDate.setMonth(prev.getMonth() - 1);
-      } else {
-        newDate.setMonth(prev.getMonth() + 1);
-      }
-      return newDate;
-    });
   };
 
   const handleCreateGame = () => {
@@ -197,6 +183,7 @@ export default function CreateGame() {
         {/* The Core Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>The Core</Text>
+          <Text style={styles.inputLabel}>Game type</Text>
 
           {/* Game Type */}
           <View style={styles.gameTypeContainer}>
@@ -207,7 +194,7 @@ export default function CreateGame() {
               <Ionicons
                 name="person"
                 size={24}
-                color={gameType === '1v1' ? '#FFFFFF' : '#666'}
+                color={gameType === '1v1' ? '#000' : '#666'}
               />
               <Text
                 style={[
@@ -225,7 +212,7 @@ export default function CreateGame() {
               <Ionicons
                 name="people"
                 size={24}
-                color={gameType === 'Group' ? '#FFFFFF' : '#666'}
+                color={gameType === 'Group' ? '#000' : '#666'}
               />
               <Text
                 style={[
@@ -239,6 +226,7 @@ export default function CreateGame() {
           </View>
 
           {/* Skill Level */}
+          <Text style={styles.levelLable}>Game type</Text>
           <View style={styles.skillLevelContainer}>
             {(['Beginner', 'Intermediate', 'Advanced'] as SkillLevel[]).map((level) => (
               <TouchableOpacity
@@ -267,36 +255,37 @@ export default function CreateGame() {
           </View>
 
           {/* Join Settings */}
+          <Text style={styles.visibilityLable}>Visibility</Text>
           <View style={styles.joinSettingsContainer}>
             <TouchableOpacity
               style={styles.joinSettingButton}
-              onPress={() => setJoinSetting('Anyone can join')}
+              onPress={() => setJoinSetting('👥 Open to Anyone')}
             >
               <Text
                 style={[
                   styles.joinSettingText,
-                  joinSetting === 'Anyone can join' && styles.joinSettingTextActive,
+                  joinSetting === '👥 Open to Anyone' && styles.joinSettingTextActive,
                 ]}
               >
-                Anyone can join
+                ✋ Request Approval
               </Text>
-              {joinSetting === 'Anyone can join' && (
+              {joinSetting === '👥 Open to Anyone' && (
                 <View style={styles.underline} />
               )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.joinSettingButton}
-              onPress={() => setJoinSetting('Ask to join')}
+              onPress={() => setJoinSetting('✋ Request Approval')}
             >
               <Text
                 style={[
                   styles.joinSettingText,
-                  joinSetting === 'Ask to join' && styles.joinSettingTextActive,
+                  joinSetting === '✋ Request Approval' && styles.joinSettingTextActive,
                 ]}
               >
-                Ask to join
+                👥 Open to Anyone
               </Text>
-              {joinSetting === 'Ask to join' && (
+              {joinSetting === '✋ Request Approval' && (
                 <View style={styles.underline} />
               )}
             </TouchableOpacity>
@@ -305,22 +294,18 @@ export default function CreateGame() {
 
         {/* The Logistics Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>The Logistics</Text>
+          <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 4, marginTop: 50,}}>The Logistics</Text>
 
           {/* Date and Time */}
           <View style={styles.dateTimeRow}>
             <View style={styles.dateTimeColumn}>
-              <Text style={styles.inputLabel}>Date</Text>
+              <Text style={{    fontSize: 16,
+    fontWeight: '300',
+    color: '#000',
+    marginBottom: 3}}>Date</Text>
               <TouchableOpacity
                 style={styles.dateTimeInput}
-                onPress={() => {
-                  if (date) {
-                    const dateObj = new Date(date);
-                    setCurrentMonth(dateObj);
-                    setSelectedDay(dateObj.getDate());
-                  }
-                  setShowDatePicker(true);
-                }}
+                onPress={openDatePicker}
               >
                 <Text style={[styles.dateTimeText, !date && styles.placeholderText]}>
                   {formatDate(date)}
@@ -329,10 +314,13 @@ export default function CreateGame() {
               </TouchableOpacity>
             </View>
             <View style={styles.dateTimeColumn}>
-              <Text style={styles.inputLabel}>Time</Text>
+              <Text style={{fontSize: 16,
+    fontWeight: '300',
+    color: '#000',
+    marginBottom: 3}}>Time</Text>
               <TouchableOpacity
                 style={styles.dateTimeInput}
-                onPress={() => setShowTimePicker(true)}
+                onPress={openTimePicker}
               >
                 <Text style={styles.dateTimeText}>{time}</Text>
                 <Ionicons name="time-outline" size={20} color="#666" />
@@ -394,6 +382,7 @@ export default function CreateGame() {
           </View>
 
           {/* Court Type */}
+          <Text style={styles.inputLabel}>Access</Text>
           <View style={styles.courtTypeContainer}>
             {(['Public', 'Private/Club', 'Condo'] as CourtType[]).map((type) => (
               <TouchableOpacity
@@ -428,28 +417,15 @@ export default function CreateGame() {
               {isBooked && <Ionicons name="checkmark" size={16} color="#19E675" />}
             </View>
             <Text style={styles.checkboxLabel}>I have booked this court</Text>
-            <Ionicons name="information-circle-outline" size={18} color="#666" />
+            <TouchableOpacity onPress={() => setShowBookingInfoModal(true)}>
+              <Ionicons name="information-circle-outline" size={18} color="#666" />
+            </TouchableOpacity>
           </TouchableOpacity>
-        </View>
-
-        {/* Game Description */}
-        <View style={styles.section}>
-          <Text style={styles.inputLabel}>Game Description</Text>
-          <TextInput
-            style={styles.descriptionInput}
-            placeholder="Write a description for your game..."
-            placeholderTextColor="#999"
-            value={gameDescription}
-            onChangeText={setGameDescription}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
         </View>
 
         {/* The Requirements Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>The Requirements</Text>
+        <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 10, marginTop: 50,}}>The Requirements</Text>
 
           {/* Number of Players */}
           <View style={styles.numberSelectorContainer}>
@@ -470,6 +446,22 @@ export default function CreateGame() {
               </TouchableOpacity>
             </View>
           </View>
+
+
+        {/* Game Description */}
+        <View style={styles.section}>
+          <Text style={styles.inputLabel}>Game Description</Text>
+          <TextInput
+            style={styles.descriptionInput}
+            placeholder="Write a description for your game..."
+            placeholderTextColor="#999"
+            value={gameDescription}
+            onChangeText={setGameDescription}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+          />
+        </View>
 
           {/* Payment */}
           <TouchableOpacity
@@ -504,183 +496,97 @@ export default function CreateGame() {
         </TouchableOpacity>
       </View>
 
-      {/* Date Picker Modal */}
+      {/* Date/Time Picker Modal */}
       <Modal
-        visible={showDatePicker}
+        visible={showPickerModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowDatePicker(false)}
+        onRequestClose={() => setShowPickerModal(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowDatePicker(false)}
-        >
-          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
-              <View style={styles.calendarHeader}>
-                <TouchableOpacity onPress={() => navigateMonth('prev')}>
-                  <Ionicons name="chevron-back" size={24} color="#000" />
-                </TouchableOpacity>
-                <Text style={styles.calendarMonthYear}>{formatMonthYear(currentMonth)}</Text>
-                <TouchableOpacity onPress={() => navigateMonth('next')}>
-                  <Ionicons name="chevron-forward" size={24} color="#000" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.calendarContainer}>
-                <View style={styles.calendarWeekDays}>
-                  {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((day) => (
-                    <Text key={day} style={styles.calendarWeekDay}>
-                      {day}
-                    </Text>
-                  ))}
-                </View>
-                <View style={styles.calendarGrid}>
-                  {Array.from({ length: getFirstDayOfMonth(currentMonth) }).map((_, index) => (
-                    <View key={`empty-${index}`} style={styles.calendarDay} />
-                  ))}
-                  {Array.from({ length: getDaysInMonth(currentMonth) }).map((_, index) => {
-                    const day = index + 1;
-                    const isSelected = selectedDay === day;
-                    return (
-                      <TouchableOpacity
-                        key={day}
-                        style={[styles.calendarDay, isSelected && styles.calendarDaySelected]}
-                        onPress={() => handleDateSelect(day)}
-                      >
-                        <Text
-                          style={[
-                            styles.calendarDayText,
-                            isSelected && styles.calendarDayTextSelected,
-                          ]}
-                        >
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Time Picker Modal */}
-      <Modal
-        visible={showTimePicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowTimePicker(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowTimePicker(false)}
-        >
-          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Select Time</Text>
-                <TouchableOpacity onPress={() => setShowTimePicker(false)}>
-                  <Ionicons name="close" size={24} color="#000" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.timePickerWheelContainer}>
-                <View style={styles.timePickerWheel}>
-                  <ScrollView
-                    style={styles.wheelScroll}
-                    contentContainerStyle={styles.wheelContent}
-                    showsVerticalScrollIndicator={false}
-                    snapToInterval={50}
-                    decelerationRate="fast"
-                  >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((hour) => (
-                      <TouchableOpacity
-                        key={hour}
-                        style={[
-                          styles.wheelItem,
-                          timeHour === hour && styles.wheelItemSelected,
-                        ]}
-                        onPress={() => setTimeHour(hour)}
-                      >
-                        <Text
-                          style={[
-                            styles.wheelItemText,
-                            timeHour === hour && styles.wheelItemTextSelected,
-                          ]}
-                        >
-                          {hour}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-                <View style={styles.timePickerWheel}>
-                  <ScrollView
-                    style={styles.wheelScroll}
-                    contentContainerStyle={styles.wheelContent}
-                    showsVerticalScrollIndicator={false}
-                    snapToInterval={50}
-                    decelerationRate="fast"
-                  >
-                    {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-                      <TouchableOpacity
-                        key={minute}
-                        style={[
-                          styles.wheelItem,
-                          timeMinute === minute && styles.wheelItemSelected,
-                        ]}
-                        onPress={() => setTimeMinute(minute)}
-                      >
-                        <Text
-                          style={[
-                            styles.wheelItemText,
-                            timeMinute === minute && styles.wheelItemTextSelected,
-                          ]}
-                        >
-                          {String(minute).padStart(2, '0')}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-                <View style={styles.timePickerWheel}>
-                  <ScrollView
-                    style={styles.wheelScroll}
-                    contentContainerStyle={styles.wheelContent}
-                    showsVerticalScrollIndicator={false}
-                    snapToInterval={50}
-                    decelerationRate="fast"
-                  >
-                    {['AM', 'PM'].map((period) => (
-                      <TouchableOpacity
-                        key={period}
-                        style={[
-                          styles.wheelItem,
-                          timePeriod === period && styles.wheelItemSelected,
-                        ]}
-                        onPress={() => setTimePeriod(period as 'AM' | 'PM')}
-                      >
-                        <Text
-                          style={[
-                            styles.wheelItemText,
-                            timePeriod === period && styles.wheelItemTextSelected,
-                          ]}
-                        >
-                          {period}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-              <TouchableOpacity style={styles.timeConfirmButton} onPress={handleTimeConfirm}>
-                <Text style={styles.timeConfirmButtonText}>Confirm</Text>
+        <View style={styles.pickerModalOverlay}>
+          <View style={[styles.pickerModalContent, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.pickerModalHeader}>
+              <TouchableOpacity onPress={() => setShowPickerModal(false)}>
+                <Text style={styles.pickerModalCancelButton}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.pickerModalTitle}>
+                {datePickerMode === 'date' ? 'Select Date' : 'Select Time'}
+              </Text>
+              <TouchableOpacity onPress={confirmDateSelection}>
+                <Text style={styles.pickerModalConfirmButton}>Done</Text>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+            <View style={styles.dateTimePickerContainer}>
+              <DateTimePicker
+                value={tempDate}
+                mode={datePickerMode}
+                display="spinner"
+                onChange={datePickerMode === 'date' ? handleDateSelect : handleTimeSelect}
+                minimumDate={datePickerMode === 'date' ? new Date() : undefined}
+                textColor="#000"
+                themeVariant="light"
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Booking Info Modal */}
+      <Modal
+        visible={showBookingInfoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowBookingInfoModal(false)}
+      >
+        <View style={styles.bookingInfoModalOverlay}>
+          <View style={[styles.bookingInfoModalContent, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.bookingInfoModalHeader}>
+              <Text style={styles.bookingInfoModalTitle}>What does "I have booked this court" mean?</Text>
+              <TouchableOpacity onPress={() => setShowBookingInfoModal(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.bookingInfoModalBody}>
+              <Text style={styles.bookingInfoModalText}>
+                When you check "I have booked this court," you're letting other players know that:
+              </Text>
+              <View style={styles.bookingInfoList}>
+                <View style={styles.bookingInfoItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
+                  <Text style={styles.bookingInfoItemText}>The court is reserved for your game time</Text>
+                </View>
+                <View style={styles.bookingInfoItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
+                  <Text style={styles.bookingInfoItemText}>Other players can join with confidence</Text>
+                </View>
+                <View style={styles.bookingInfoItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
+                  <Text style={styles.bookingInfoItemText}>No one else will book the same time slot</Text>
+                </View>
+              </View>
+              <Text style={styles.bookingInfoNote}>
+                Only check this if you've actually made a reservation through the court's booking system or by phone.
+              </Text>
+            </View>
+            <View style={styles.bookingInfoModalActions}>
+              <TouchableOpacity 
+                style={styles.bookingInfoCancelButton}
+                onPress={() => setShowBookingInfoModal(false)}
+              >
+                <Text style={styles.bookingInfoCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.bookingInfoConfirmButton}
+                onPress={() => {
+                  setIsBooked(true);
+                  setShowBookingInfoModal(false);
+                }}
+              >
+                <Text style={styles.bookingInfoConfirmText}>Yes, I've booked it</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -722,7 +628,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 23,
     fontWeight: '800',
     color: '#000',
     marginBottom: 4,
@@ -744,7 +650,8 @@ const styles = StyleSheet.create({
   },
   gameTypeButtonActive: {
     backgroundColor: '#19E675',
-    borderColor: '#19E675',
+    borderColor: '#797979',
+    borderWidth: 2
   },
   gameTypeText: {
     fontSize: 16,
@@ -752,7 +659,7 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   gameTypeTextActive: {
-    color: '#FFFFFF',
+    color: '#000',
     fontWeight: '700',
   },
   skillLevelContainer: {
@@ -792,6 +699,7 @@ const styles = StyleSheet.create({
   joinSettingsContainer: {
     flexDirection: 'row',
     gap: 24,
+    justifyContent: 'center'
   },
   joinSettingButton: {
     position: 'relative',
@@ -815,9 +723,23 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '300',
     color: '#000',
-    marginBottom: 8,
+    marginBottom: -9
+  },
+  visibilityLable: {
+    fontSize: 16,
+    fontWeight: '300',
+    color: '#000',
+    marginTop: 12,
+    marginBottom: -10
+  },
+  levelLable: {
+    fontSize: 16,
+    fontWeight: '300',
+    color: '#000',
+    marginTop: 12,
+    marginBottom: -10
   },
   dateTimeRow: {
     flexDirection: 'row',
@@ -1031,151 +953,157 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
   },
-  modalOverlay: {
+  dateTimePicker: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 15,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000',
-  },
-  modalText: {
-    fontSize: 16,
-    color: '#666',
-    padding: 16,
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
-  },
-  calendarMonthYear: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000',
-  },
-  calendarContainer: {
-    padding: 16,
-  },
-  calendarWeekDays: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 12,
-  },
-  calendarWeekDay: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-    width: 40,
-    textAlign: 'center',
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-  },
-  calendarDay: {
-    width: 40,
-    height: 40,
+  dateTimePickerContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    margin: 2,
-  },
-  calendarDaySelected: {
-    backgroundColor: '#4A90E2',
-    borderRadius: 20,
-  },
-  calendarDayText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-  },
-  calendarDayTextSelected: {
-    color: '#FFFFFF',
-  },
-  timePickerWheelContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    minHeight: 200,
+    paddingHorizontal: 20,
     paddingVertical: 20,
-    height: 200,
   },
-  timePickerWheel: {
+  pickerModalOverlay: {
     flex: 1,
-    maxWidth: 100,
-    marginHorizontal: 8,
-  },
-  wheelScroll: {
-    flex: 1,
-  },
-  wheelContent: {
-    paddingVertical: 75,
-  },
-  wheelItem: {
-    height: 50,
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
-    paddingVertical: 12,
+    alignItems: 'center',
   },
-  wheelItemSelected: {
-    backgroundColor: '#E5E7EB',
-    borderRadius: 8,
+  pickerModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    width: '90%',
+    maxWidth: 400,
+    height: 250,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
   },
-  wheelItemText: {
+  pickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  pickerModalCancelButton: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  pickerModalTitle: {
     fontSize: 18,
+    fontWeight: '700',
+    color: '#000',
+  },
+  pickerModalConfirmButton: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  bookingInfoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookingInfoModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  bookingInfoModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  bookingInfoModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000',
+    flex: 1,
+    marginRight: 10,
+  },
+  bookingInfoModalBody: {
+    padding: 20,
+  },
+  bookingInfoModalText: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  bookingInfoList: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  bookingInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  bookingInfoIcon: {
+    marginTop: 2,
+  },
+  bookingInfoItemText: {
+    fontSize: 15,
+    color: '#333',
+    flex: 1,
+    lineHeight: 20,
+  },
+  bookingInfoNote: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FCD34D',
+  },
+  bookingInfoModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  bookingInfoCancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  bookingInfoCancelText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#666',
   },
-  wheelItemTextSelected: {
-    color: '#000',
-    fontWeight: '700',
-  },
-  timeConfirmButton: {
+  bookingInfoConfirmButton: {
+    flex: 2,
     backgroundColor: '#19E675',
     borderRadius: 12,
-    padding: 16,
+    paddingVertical: 14,
     alignItems: 'center',
-    margin: 16,
   },
-  timeConfirmButtonText: {
+  bookingInfoConfirmText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
-  },
-  modalButton: {
-    backgroundColor: '#19E675',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#005124',
   },
 });
 
