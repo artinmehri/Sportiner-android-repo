@@ -50,6 +50,7 @@ export default function TabLayout() {
           title: 'Sign Up',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="arrow.down.circle.fill" color={color} />,
           tabBarBadge: 3,
+          href: null
         }}
       />
       <Tabs.Screen
@@ -142,6 +143,27 @@ export default function TabLayout() {
           title: 'Game Confirmation',
           href: null,
         }}
+      />
+      <Tabs.Screen
+      name="matchVerif"
+      options={{
+        title: 'Game Verification',
+        href: null
+      }}
+      />
+      <Tabs.Screen
+      name="requests"
+      options={{
+        title: 'Requests',
+        href: null
+      }}
+      />
+      <Tabs.Screen
+      name="congratsGame"
+      options={{
+        title: 'Congratulation on Game',
+        href: null
+      }}
       />
     </Tabs>
   );

@@ -25,9 +25,10 @@ const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 32; 
 
 type GameStatus = {
-  type: 'spots' | 'booked' | 'pending' | 'full' | 'verify' | 'verified';
+  type: 'spots' | 'booked' | 'requested' | 'full' | 'verify' | 'verified';
   label: string;
   color: string;
+  backgroundcolor: string;
   icon: string;
 };
 
@@ -43,6 +44,7 @@ type GameCard = {
   statuses?: GameStatus[];
   date?: string;
   image?: string;
+  verified?: boolean,
   status?: GameStatus;
   players?: {
     avatar: string;
@@ -64,8 +66,8 @@ const hostingGames: GameCard[] = [
     time: 'Today • 10:30 PM',
     avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
     statuses: [
-      { type: 'spots', label: '2 Left', color: '#FF9500', icon: 'person' },
-      { type: 'booked', label: 'Court booked', color: '#19E675', icon: 'checkmark' },
+      { type: 'spots', label: '2 Left', color: '#9A3412', backgroundcolor: 'rgba(255, 179, 71, 0.2)', icon: 'people' },
+      { type: 'booked', label: 'Court booked', color: '#005124', backgroundcolor: 'rgba(25, 230, 117, 0.2)', icon: 'checkmark' },
     ],
     players: [
       { avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60', name: 'Artin Mehri', skillLevel: 'Advanced' },
@@ -84,8 +86,8 @@ const hostingGames: GameCard[] = [
     time: 'Today • 10:30 PM',
     avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
     statuses: [
-      { type: 'full', label: 'Full', color: '#19E675', icon: 'people' },
-      { type: 'booked', label: 'Court booked', color: '#19E675', icon: 'checkmark' },
+      { type: 'full', label: 'Full', color: '#005124', backgroundcolor: 'rgba(25, 230, 117, 0.2)', icon: 'people' },
+      { type: 'booked', label: 'Court booked', color: '#005124', backgroundcolor: 'rgba(25, 230, 117, 0.2)', icon: 'checkmark' },
     ],
     players: [
       { avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60', name: 'Artin Mehri', skillLevel: 'Advanced' },
@@ -107,7 +109,7 @@ const playingGames: GameCard[] = [
     time: 'Today • 10:30 PM',
     avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
     statuses: [
-      { type: 'pending', label: 'Pending', color: '#FFD700', icon: 'bar-chart' },
+      { type: 'requested', label: 'Requested', color: '#92400E', backgroundcolor: '#FFF3A1', icon: 'cellular' },
     ],
     players: [
       { avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60', name: 'Artin Mehri', skillLevel: 'Advanced' },
@@ -123,11 +125,15 @@ const pastHostedGamesData: GameCard[] = [
     id: '4',
     title: "Alex's Tennis Doubles",
     date: 'Played Oct 12',
+    level: 'Advanced',
+    distance: '500m',
+    verified: false,
     image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
     status: {
       type: 'verify',
       label: 'Verify Game & Levels',
-      color: '#19E675',
+      color: '#002000',
+      backgroundcolor: '#19E675',
       icon: 'checkmark',
     },
     players: [
@@ -142,12 +148,16 @@ const pastHostedGamesData: GameCard[] = [
     id: '7',
     title: "Alex's Tennis Singles",
     date: 'Played Oct 10',
+    level: 'Advanced',
+    distance: '500m',
+    verified: true,
     image: 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=400&q=80',
     status: {
       type: 'verified',
       label: 'Game & Levels Verified',
-      color: '#19E675',
-      icon: 'checkmark',
+      color: '#005124',
+      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
+      icon: 'checkmark-circle',
     },
     players: [
       { avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', name: 'David Kim', skillLevel: 'Advanced' },
@@ -159,12 +169,16 @@ const pastHostedGamesData: GameCard[] = [
     id: '8',
     title: "Alex's Mixed Doubles",
     date: 'Played Oct 8',
+    level: 'Advanced',
+    distance: '500m',
+    verified: true,
     image: 'https://images.unsplash.com/photo-1554068394-1e8e0a0b5d8d?auto=format&fit=crop&w=400&q=80',
     status: {
       type: 'verified',
       label: 'Game & Levels Verified',
-      color: '#19E675',
-      icon: 'checkmark',
+      color: '#005124',
+      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
+      icon: 'checkmark-circle',
     },
     players: [
       { avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80', name: 'Robert Johnson', skillLevel: 'Intermediate' },
@@ -180,13 +194,17 @@ const pastPlayedGamesData: GameCard[] = [
   {
     id: '5',
     title: "Alex's Tennis Single",
+    level: 'Advanced',
+    distance: '500m',
+    verified: true,
     date: 'Played Oct 12',
     image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
     status: {
       type: 'verified',
       label: 'Game & Levels Verified',
-      color: '#19E675',
-      icon: 'checkmark',
+      color: '#005124',
+      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
+      icon: 'checkmark-circle',
     },
     players: [
       { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=100&q=80', name: 'Chris Taylor', skillLevel: 'Advanced' },
@@ -196,12 +214,16 @@ const pastPlayedGamesData: GameCard[] = [
   {
     id: '6',
     title: "Alex's Tennis Single",
+    level: 'Intermediate',
+    distance: '1.2km',
     date: 'Played Oct 12',
+    verified: false,
     image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
     status: {
       type: 'verified',
-      label: 'Game & Levels Verified',
-      color: '#19E675',
+      label: 'Verify Game & Levels',
+      color: '#002000',
+      backgroundcolor: '#19E675',
       icon: 'checkmark',
     },
     players: [
@@ -212,13 +234,17 @@ const pastPlayedGamesData: GameCard[] = [
   {
     id: '9',
     title: "Alex's Tennis Doubles",
+    level: 'Beginner',
+    distance: '800m',
     date: 'Played Oct 9',
+    verified: true,
     image: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=400&q=80',
     status: {
       type: 'verified',
       label: 'Game & Levels Verified',
-      color: '#19E675',
-      icon: 'checkmark',
+      color: '#005124',
+      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
+      icon: 'checkmark-circle',
     },
     players: [
       { avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80', name: 'Ryan Garcia', skillLevel: 'Beginner' },
@@ -591,7 +617,7 @@ export default function Games() {
           </View>
         </View>
         <TouchableOpacity style={styles.notificationButton} onPress={ () => router.push('/(tabs)/requests')}>
-          <Ionicons name="file-tray-outline" size={24} color="#000"/>
+          <Ionicons name="file-tray-outline" size={30} color="#000"/>
           <View style={styles.notificationBadge}>
             <Text style={styles.notificationText}>3</Text>
           </View>
@@ -613,15 +639,24 @@ export default function Games() {
                     <Ionicons name="chevron-back" size={24} color="#000" />
                   </TouchableOpacity>
                 )}
+                {(pastHostingScrollIndex == 0 || pastHostingScrollIndex == 1) && (
+                  <TouchableOpacity
+                    style={styles.scrollArrowRight}
+                    onPress={() => scrollPastHosting('right')}
+                  >
+                    <Ionicons name="chevron-forward" size={24} color="#000" />
+                  </TouchableOpacity>
+                )}
                 <ScrollView
                   ref={pastHostingScrollRef}
                   horizontal
-                  showsHorizontalScrollIndicator={true}
+                  showsHorizontalScrollIndicator={false}
                   pagingEnabled
                   onScroll={(e) => {
                     const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
                     setPastHostingScrollIndex(index);
                   }}
+                
                   scrollEventThrottle={16}
                 >
                   {pastHostedGames.map((game, index) => (
@@ -630,15 +665,27 @@ export default function Games() {
                         <Image source={{ uri: game.image }} style={styles.avatar} />
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
-                          <Text style={styles.cardDate}>{formatGameDate(game.date)}</Text>
+                          <View style={styles.cardMetaRow}>
+                            <Text style={styles.cardLevel}>{game.level}</Text>
+                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                            <Text style={styles.cardDistance}>{game.distance}</Text>
+                          </View>
                         </View>
                       </View>
-                      {game.status && (
-                        <TouchableOpacity style={[styles.verifyButton, { backgroundColor: game.status.color }]}>
-                          <Ionicons name={game.status.icon as any} size={16} color="#002000" />
+                      <Text style={styles.cardDate}>{game.date}</Text>
+                      {game.status &&  game.verified == false && (
+                        <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
+                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
                           <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
                         </TouchableOpacity>
                       )}
+                      {game.status && game.verified == true && (
+                        <View style={[styles.verifiedStatus, { backgroundColor: game.status.backgroundcolor }]}>
+                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
+                          <Text style={styles.verifyButtonText}>{game.status.label}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.playersHead}>Players</Text>
                       <View style={styles.playersSection}>
                         <View style={styles.playersContainer}>
                           {game.players?.slice(0, 3).map((player, index) => (
@@ -677,10 +724,19 @@ export default function Games() {
                     <Ionicons name="chevron-back" size={24} color="#000" />
                   </TouchableOpacity>
                 )}
+                {(pastPlayingScrollIndex == 0 || pastPlayingScrollIndex == 1) && (
+                  <TouchableOpacity
+                    style={styles.scrollArrowRight}
+                    onPress={() => scrollPastPlaying('right')}
+                  >
+                    <Ionicons name="chevron-forward" size={24} color="#000" />
+                  </TouchableOpacity>
+                )}
                 <ScrollView
+                style={{}}
                   ref={pastPlayingScrollRef}
                   horizontal
-                  showsHorizontalScrollIndicator={true}
+                  showsHorizontalScrollIndicator={false}
                   pagingEnabled
                   onScroll={(e) => {
                     const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
@@ -689,20 +745,39 @@ export default function Games() {
                   scrollEventThrottle={16}
                 >
                   {pastPlayedGames.map((game, index) => (
-                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === pastPlayedGames.length - 1 && styles.lastCard]}>
+                    <View
+                      key={game.id}
+                      style={[
+                        styles.card,
+                        index === 0 && styles.firstCard,
+                        index === pastPlayedGames.length - 1 && styles.lastCard,
+                      ]}
+                    >
                       <View style={styles.cardHeader}>
                         <Image source={{ uri: game.image }} style={styles.avatar} />
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
-                          <Text style={styles.cardDate}>{formatGameDate(game.date)}</Text>
+                          <View style={styles.cardMetaRow}>
+                            <Text style={styles.cardLevel}>{game.level}</Text>
+                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                            <Text style={styles.cardDistance}>{game.distance}</Text>
+                          </View>
                         </View>
                       </View>
-                      {game.status && (
-                        <View style={[styles.verifiedStatus, { backgroundColor: game.status.color }]}>
-                          <Ionicons name={game.status.icon as any} size={16} color="#FFFFFF" />
+                      <Text style={styles.cardDate}>{game.date}</Text>
+                      {game.status &&  game.verified == false && (
+                        <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
+                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
+                          <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
+                        </TouchableOpacity>
+                      )}
+                      {game.status && game.verified == true && (
+                        <View style={[styles.verifiedStatus, { backgroundColor: game.status.backgroundcolor }]}>
+                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
                           <Text style={styles.verifyButtonText}>{game.status.label}</Text>
                         </View>
                       )}
+                      <Text style={styles.playersHead}>Players</Text>
                       <View style={styles.playersSection}>
                         <View style={styles.playersContainer}>
                           {game.players?.slice(0, 3).map((player, index) => (
@@ -756,14 +831,18 @@ export default function Games() {
                 >
                   {hostingGamesList.map((game, index) => (
                     <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === hostingGamesList.length - 1 && styles.lastCard]}>
-                      <View style={styles.cardHeader}>
+                    <View style={styles.cardHeader}>
                         <Image source={{ uri: game.avatar }} style={styles.avatar} />
-                        <Text style={styles.cardTitle}>{game.title}</Text>
+                        <View style={styles.cardInfo}>
+                          <Text style={styles.cardTitle}>{game.title}</Text>
+                          <View style={styles.cardMetaRow}>
+                            <Text style={styles.cardLevel}>{game.level}</Text>
+                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                            <Text style={styles.cardDistance}>{game.distance}</Text>
+                          </View>
+                        </View>
                       </View>
                       <View style={styles.cardDetails}>
-                        <Text style={styles.detailText}>
-                          <Text style={{ color: getLevelColor(game.level || ''), fontWeight: '700' }}>{game.level}</Text> • {game.distance}
-                        </Text>
                         <Text style={styles.detailText}>
                           {game.address} • {game.cost}
                         </Text>
@@ -773,9 +852,9 @@ export default function Games() {
                         {game.statuses?.map((status: any, index: any) => (
                           <View
                             key={index}
-                            style={[styles.statusPill, { backgroundColor: status.color }]}
+                            style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
                           >
-                            <Ionicons name={status.icon as any} size={14} color="#FFFFFF" />
+                            <Ionicons name={status.icon as any} size={14} color={status.color} />
                             <Text style={styles.statusText}>{status.label}</Text>
                           </View>
                         ))}
@@ -833,14 +912,18 @@ export default function Games() {
                 >
                   {playingGames.map((game, index) => (
                     <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === playingGames.length - 1 && styles.lastCard]}>
-                      <View style={styles.cardHeader}>
+                    <View style={styles.cardHeader}>
                         <Image source={{ uri: game.avatar }} style={styles.avatar} />
-                        <Text style={styles.cardTitle}>{game.title}</Text>
+                        <View style={styles.cardInfo}>
+                          <Text style={styles.cardTitle}>{game.title}</Text>
+                          <View style={styles.cardMetaRow}>
+                            <Text style={styles.cardLevel}>{game.level}</Text>
+                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                            <Text style={styles.cardDistance}>{game.distance}</Text>
+                          </View>
+                        </View>
                       </View>
                       <View style={styles.cardDetails}>
-                        <Text style={styles.detailText}>
-                          <Text style={{ color: getLevelColor(game.level || ''), fontWeight: '700' }}>{game.level}</Text> • {game.distance}
-                        </Text>
                         <Text style={styles.detailText}>
                           {game.address} • {game.cost}
                         </Text>
@@ -850,9 +933,9 @@ export default function Games() {
                         {game.statuses?.map((status: any, index: any) => (
                           <View
                             key={index}
-                            style={[styles.statusPill, { backgroundColor: status.color }]}
+                            style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
                           >
-                            <Ionicons name={status.icon as any} size={14} color="#FFFFFF" />
+                            <Ionicons name={status.icon as any} size={14} color={status.color} />
                             <Text style={styles.statusText}>{status.label}</Text>
                           </View>
                         ))}
@@ -1082,6 +1165,7 @@ const styles = StyleSheet.create({
     padding: 3,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    marginLeft: 20
   },
   toggleOption: {
     flexDirection: 'row',
@@ -1132,8 +1216,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   section: {
-    marginTop: 24,
-    marginBottom: 32,
+    marginTop: 15,
+    marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 20,
@@ -1185,7 +1269,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
+    borderColor: '#000000',
+    
   },
   firstCard: {
     marginLeft: 16,
@@ -1202,7 +1287,9 @@ const styles = StyleSheet.create({
   avatar: {
     width: 54,
     height: 54,
-    borderRadius: 27,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#121212'
   },
   cardTitle: {
     flex: 1,
@@ -1210,13 +1297,23 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#000',
   },
+  cardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3
+  },
+  cardMetaDot: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 3
+  },
   cardDetails: {
     marginBottom: 12,
     gap: 4,
   },
   detailText: {
     fontSize: 16,
-    color: '#000',
+    color: '#71717A',
     fontWeight: '400',
   },
   statusContainer: {
@@ -1234,7 +1331,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   statusText: {
-    color: '#FFFFFF',
+    color: '#92400E',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -1252,11 +1349,31 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  playersHead: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+    marginBottom: 7
+  },
   cardDate: {
     fontSize: 14,
     color: '#666',
     fontWeight: '400',
-    marginTop: 2,
+    marginBottom: 7
+  },
+  cardLevel: {
+    fontSize: 14,
+    color: '#19E675',
+    fontWeight: '600',
+    marginBottom: 3,
+    textTransform: 'uppercase',
+  },
+  cardDistance: {
+    fontSize: 14,
+    color: '#71717A',
+    fontWeight: '400',
+    marginBottom: 3,
+    textTransform: 'uppercase',
   },
   verifyButton: {
     flexDirection: 'row',
@@ -1273,9 +1390,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 20,
     marginBottom: 16,
     gap: 6,
     alignSelf: 'flex-start',
@@ -1286,7 +1403,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   verifyButtonText: {
-    color: '#FFFFFF',
+    color: '#005124',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -1405,7 +1522,7 @@ const styles = StyleSheet.create({
   playerAvatarLarge: {
     width: 50,
     height: 50,
-    borderRadius: 25,
+    borderRadius: 50,
     marginRight: 16,
   },
   playerInfo: {

@@ -25,9 +25,10 @@ export interface Game {
     avatar: string;
   };
   statuses?: Array<{
-    type: 'spots' | 'booked' | 'pending' | 'full' | 'verify' | 'verified';
+    type: 'spots' | 'booked' | 'requested' | 'full' | 'verify' | 'verified';
     label: string;
     color: string;
+    backgroundcolor: string;
     icon: string;
   }>;
   players?: Array<{
@@ -62,8 +63,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
       },
       statuses: [
-        { type: 'spots', label: `${gameData.numberOfPlayers - 1} Left`, color: '#FF9500', icon: 'person' },
-        { type: 'booked', label: 'Court booked', color: '#19E675', icon: 'checkmark' },
+        { type: 'spots', label: `${gameData.numberOfPlayers - 1} Left`, color: '#FF9500', backgroundcolor: 'rgba(255, 179, 71, 0.2)', icon: 'person'},
+        { type: 'booked', label: 'Court booked', color: '#19E675', backgroundcolor: 'rgba(255, 179, 71, 0.2)', icon: 'checkmark'},
       ],
     };
     setGames(prev => [newGame, ...prev]);
