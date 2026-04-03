@@ -91,8 +91,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="EventDetails"
         options={{
-          title: 'Details',
+          tabBarStyle: { display: 'none' },
           href: null,
+
         }}
       />
       <Tabs.Screen

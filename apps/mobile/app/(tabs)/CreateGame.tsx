@@ -294,7 +294,7 @@ export default function CreateGame() {
 
         {/* The Logistics Section */}
         <View style={styles.section}>
-          <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 4, marginTop: 50,}}>The Logistics</Text>
+          <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 4, marginTop: 40,}}>The Logistics</Text>
 
           {/* Date and Time */}
           <View style={styles.dateTimeRow}>
@@ -409,23 +409,26 @@ export default function CreateGame() {
           </View>
 
           {/* Booking Status */}
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => setIsBooked(!isBooked)}
-          >
-            <View style={[styles.checkbox, isBooked && styles.checkboxChecked]}>
-              {isBooked && <Ionicons name="checkmark" size={16} color="#19E675" />}
-            </View>
-            <Text style={styles.checkboxLabel}>I have booked this court</Text>
-            <TouchableOpacity onPress={() => setShowBookingInfoModal(true)}>
+          <View style={styles.bookingStatusContainer}>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => setIsBooked(!isBooked)}
+            >
+              <View style={[styles.checkbox, isBooked && styles.checkboxChecked]}>
+                {isBooked && <Ionicons name="checkmark" size={16} color="#19E675" />}
+              </View>
+              <Text style={styles.checkboxLabel}>I have booked this court</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.infoIcon} onPress={() => setShowBookingInfoModal(true)}>
               <Ionicons name="information-circle-outline" size={18} color="#666" />
             </TouchableOpacity>
-          </TouchableOpacity>
+          </View>
         </View>
 
         {/* The Requirements Section */}
         <View style={styles.section}>
-        <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 10, marginTop: 50,}}>The Requirements</Text>
+        <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 10, marginTop: 40,}}>The Requirements</Text>
 
           {/* Number of Players */}
           <View style={styles.numberSelectorContainer}>
@@ -476,14 +479,29 @@ export default function CreateGame() {
 
           {isPaid && (
             <View style={styles.paymentInputContainer}>
-              <TextInput
-                style={styles.paymentInput}
-                placeholder="Dollars"
-                placeholderTextColor="#999"
-                value={paymentAmount}
-                onChangeText={setPaymentAmount}
-                keyboardType="numeric"
-              />
+              <View style={styles.paymentInputWrapper}>
+                <Text style={styles.dollarSign}>$</Text>
+                <TextInput
+                  style={styles.paymentInput}
+                  placeholder="0.00"
+                  keyboardType="numeric"
+                  inputMode="decimal" 
+                  placeholderTextColor="#999"
+                  value={paymentAmount}
+                  onChangeText={(text) => {
+                    let cleaned = text.replace(/[^0-9.]/g, '');
+                  
+                    // only one decimal point
+                    const parts = cleaned.split('.');
+                    if (parts.length > 2) return;
+                  
+                    // limit to 2 decimal places
+                    if (parts[1]?.length > 2) return;
+                  
+                    setPaymentAmount(cleaned);
+                  }}
+                />
+              </View>
             </View>
           )}
         </View>
@@ -571,7 +589,7 @@ export default function CreateGame() {
             <View style={styles.bookingInfoModalActions}>
               <TouchableOpacity 
                 style={styles.bookingInfoCancelButton}
-                onPress={() => setShowBookingInfoModal(false)}
+                onPress={() => {setShowBookingInfoModal(false); setIsBooked(false);}}
               >
                 <Text style={styles.bookingInfoCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -699,7 +717,8 @@ const styles = StyleSheet.create({
   joinSettingsContainer: {
     flexDirection: 'row',
     gap: 24,
-    justifyContent: 'center'
+    justifyContent: 'center',
+    marginTop: 12,
   },
   joinSettingButton: {
     position: 'relative',
@@ -852,6 +871,12 @@ const styles = StyleSheet.create({
     color: '#19E675',
     fontWeight: '700',
   },
+  bookingStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -871,8 +896,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderColor: '#19E675',
   },
+  infoIcon: {
+    marginTop: 10,
+    marginLeft: 100,
+  },
   checkboxLabel: {
-    flex: 1,
     fontSize: 16,
     fontWeight: '600',
     color: '#000',
@@ -926,10 +954,23 @@ const styles = StyleSheet.create({
   paymentInputContainer: {
     marginTop: 12,
   },
-  paymentInput: {
+  paymentInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#F3F4F6',
     borderRadius: 12,
-    padding: 16,
+    paddingHorizontal: 16,
+  },
+  
+  dollarSign: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginRight: 6,
+  },
+  paymentInput: {
+    flex: 1,
+    paddingVertical: 16,
     fontSize: 16,
     fontWeight: '600',
     color: '#000',

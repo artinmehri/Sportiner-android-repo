@@ -234,7 +234,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
 
 const styles = StyleSheet.create({
   container: {
-    flex: 3,
+    flex: 1,
     backgroundColor: '#FFFFFF'
   },
   header: {
@@ -242,7 +242,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 8,
     paddingBottom: 8,
   },
   headerButton: {

@@ -1,6 +1,5 @@
 import { Image } from 'expo-image';
 import { View, StyleSheet, Text, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +16,6 @@ export default function EventDetails() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.heroContainer}>
           <Image source={require('@/assets/images/tennis-court.png')} style={styles.eventImage} />
@@ -33,34 +31,53 @@ export default function EventDetails() {
           <Text style={styles.eventTitle}>Alex's Tennis Doubles</Text>
 
           <View style={styles.detailsContainer}>
+          
+            <View style={styles.pillContainere}>
+              <View style={styles.courtPill}>
+                <Text style={{fontWeight: '600', color: 'rgba(25, 230, 117, 0.8)'}}>PUBLIC COURT</Text>
+              </View>
+
+              <View style={styles.weatherPill}>
+              <Text style={{fontWeight: '600', color: '#EA580C'}}>72° Sunny</Text>
+              </View>
+
+              <View style={styles.levelPill}>
+              <Text style={{fontWeight: '600', color: '#52525B'}}>ADVANCED</Text>
+              </View>
+            </View>
+
+          <View style={styles.detailItemContainer}>
+
             <View style={styles.detailItem}>
               <View style={styles.iconContainer}>
-                <Ionicons name="location" size={18} color="white" />
+                <Ionicons name="calendar-outline" size={20} color="#19E675" />
               </View>
-              <Text style={styles.detailText}>300 Steels Avenue</Text>
+              <Text style={styles.lableText}>DATE</Text>
+              <Text style={styles.detailText}>Sun
+              </Text>
+              <Text style={styles.detailText}>10:00 AM</Text>
             </View>
 
             <View style={styles.detailItem}>
               <View style={styles.iconContainer}>
-                <Ionicons name="calendar-outline" size={18} color="white" />
+                <Ionicons name="location" size={20} color="#19E675" />
               </View>
-              <Text style={styles.detailText}>Today</Text>
+              <Text style={styles.lableText}>LOCATION</Text>
+              <Text style={styles.detailText}>Riverside Park</Text>
             </View>
 
             <View style={styles.detailItem}>
               <View style={styles.iconContainer}>
-                <Ionicons name="flash" size={18} color="white" />
+                <Ionicons name="cash-outline" size={20} color="#19E675" />
               </View>
-              <Text style={styles.detailText}>Advanced 4.5+</Text>
+              <Text style={styles.lableText}>ENTRY</Text>
+              <Text style={styles.detailText}>Free</Text>
             </View>
 
-            <View style={styles.detailItem}>
-              <View style={styles.iconContainer}>
-                <Ionicons name="star" size={18} color="white" />
-              </View>
-              <Text style={styles.detailText}>10$ Entry</Text>
-            </View>
           </View>
+        </View>
+
+        <View style={{height: 1, backgroundColor: '#CED0CE', width: '100%' }} />
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>About this match</Text>
@@ -69,35 +86,39 @@ export default function EventDetails() {
             </Text>
           </View>
 
+          <View style={{height: 1, backgroundColor: '#CED0CE', width: '100%' }} />
+
+
+
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Organizer</Text>
-            <View style={styles.organizerContainer}>
-              <Image source={require('@/assets/images/icon.png')} style={styles.organizerImage} />
-              <View style={styles.organizerInfo}>
-                <Text style={styles.organizerName}>Ethan Carter</Text>
-                <Text style={styles.organizerRole}>Tournament Director</Text>
+            <Text style={styles.playingTitle}>Who's Playing</Text>
+
+            <TouchableOpacity onPress={() => router.navigate('/(tabs)/profileDetails')} style={styles.playerCard}>
+              <Image source={'https://picsum.photos/seed/sarah/100/100.jpg'} style={styles.playerImage} />
+              <View style={styles.playerInfo}>
+                <Text style={styles.playerName}>Ethan C.</Text>
+                <Text style={styles.playerRole}>Host</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => router.navigate('/(tabs)/profileDetails')} style={styles.playerCard}>
+              <Image source={'https://picsum.photos/seed/you/100/100.jpg'} style={styles.playerImage} />
+              <View style={styles.playerInfo}>
+                <Text style={styles.playerName}>Sarah M.</Text>
+                <Text style={styles.playerRole}>Member</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.emptySlotCard}>
+              <Image source={'https://www.movetopuntagorda.com/wp-content/uploads/2020/09/55-Icon.png'} style={styles.playerImage} />
+              <View style={styles.playerInfo}>
+                <Text style={styles.emptySlotName}>Empty Slot</Text>
+                <Text style={styles.emptySlotStatus}>Waiting...</Text>
               </View>
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Who's Going? (12)</Text>
-            <View style={styles.attendeesContainer}>
-              {[1, 2, 3, 4, 5, 6, 7].map((index) => (
-                <Image 
-                  key={index} 
-                  source={require('@/assets/images/icon.png')} 
-                  style={[
-                    styles.attendeeImage,
-                    index > 0 && { marginLeft: -8 }
-                  ]} 
-                />
-              ))}
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.buttonContainer}>
+          <View style={styles.buttonContainer}>
           <TouchableOpacity style={styles.requestSpotButton} onPress={handleJoinEvent}>
             <Text style={styles.requestSpotText}>Request Spot</Text>
           </TouchableOpacity>
@@ -106,21 +127,19 @@ export default function EventDetails() {
             <Text style={styles.messageHostText}>Message Host</Text>
           </TouchableOpacity>
         </View>
+        </View>
       </ScrollView>
-    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
   scrollView: {
     flex: 1,
+    backgroundColor: '#fff'
   },
   heroContainer: {
     position: 'relative',
+    backgroundColor: '#000', 
   },
   eventImage: {
     width: '100%',
@@ -128,7 +147,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: 'absolute',
-    top: 60,
+    top: 50,
     left: 24,
     width: 36,
     height: 36,
@@ -146,14 +165,13 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   contentCard: {
-    backgroundColor: 'white',
-    marginTop: 60,
-    marginHorizontal: 16,
-    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 33,
     padding: 24,
+    marginTop: -30,
     shadowColor: '#000',
     shadowOffset: {
-      width: 0,
+      width: 10,
       height: 8,
     },
     shadowOpacity: 0.08,
@@ -161,37 +179,87 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   eventTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginBottom: 24,
+    flex: 1,
+    fontSize: 25,
+    fontWeight: "800",
+    marginBottom: 20,
     color: '#1a1a1a',
     lineHeight: 38,
+    justifyContent: 'center'
   },
   detailsContainer: {
     marginBottom: 32,
   },
-  detailItem: {
+  pillContainere: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 40
+  },
+  courtPill: {
+    maxWidth: 130,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999, // THIS makes it a pill
+    backgroundColor: 'rgba(25, 230, 117, 0.1)',
+  },
+  weatherPill: {
+    maxWidth: 95,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999, // THIS makes it a pill
+    backgroundColor: '#FFEDD5',
+  },
+  levelPill: {
+    maxWidth: 105,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999, // THIS makes it a pill
+    backgroundColor: '#E4E4E7',
+  },
+  detailItemContainer: {
+    flexDirection: 'row',
+    gap: 39,
+    justifyContent: 'center'
+  },
+  detailItem: {
+    flexDirection: 'column',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#22c55e',
+    width: 40,
+    height: 40,
+    borderRadius: 9999,
+    backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
+  
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+  
+    // Android shadow
+    elevation: 6,
+  },
+  lableText: {
+    fontSize: 12,
+    color: '#A1A1AA',
+    fontWeight: '500',
+    marginRight: 10,
+    marginTop: 10
   },
   detailText: {
     fontSize: 15,
-    color: '#374151',
-    flex: 1,
+    color: '#121212',
     fontWeight: '500',
+    marginRight: 10
   },
   section: {
     marginBottom: 32,
+    marginTop: 40
   },
   sectionTitle: {
     fontSize: 18,
@@ -199,31 +267,79 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#1a1a1a',
   },
+  playingTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    color: '#474747',
+  },
   sectionDescription: {
     fontSize: 14,
     lineHeight: 20,
     color: '#6b7280',
   },
-  organizerContainer: {
+  emptySlotCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF', // ✅ REQUIRED (you’re missing this)
+    borderRadius: 20,
+    borderWidth: 2, // slightly thinner looks more modern
+    borderColor: '#C7C1C1',
+    padding: 12, // ✅ gives that “card” feel
+    marginVertical: 8, // ✅ creates separation between cards
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+  
+    // Android
+    elevation: 8,
   },
-  organizerImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  playerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF', // ✅ REQUIRED (you’re missing this)
+    borderRadius: 20,
+    borderWidth: 2, // slightly thinner looks more modern
+    borderColor: '#121212',
+    padding: 12, // ✅ gives that “card” feel
+    marginVertical: 8, // ✅ creates separation between cards
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+  
+    // Android
+    elevation: 8,
+  },
+  playerImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
     marginRight: 16,
   },
-  organizerInfo: {
-    flex: 1,
+  playerInfo: {
+    flex: 0.3,
   },
-  organizerName: {
-    fontSize: 16,
+  emptySlotName: {
+    fontSize: 14.3,
+    fontWeight: '600',
+    color: '#AFAFAF',
+  },
+  emptySlotStatus: {
+    fontSize: 12.7,
+    color: '#C8C8C8',
+    marginTop: 2,
+  },
+  playerName: {
+    fontSize: 14.3,
     fontWeight: '600',
     color: '#1a1a1a',
   },
-  organizerRole: {
-    fontSize: 13,
+  playerRole: {
+    fontSize: 12.7,
     color: '#6b7280',
     marginTop: 2,
   },
@@ -241,16 +357,18 @@ const styles = StyleSheet.create({
   buttonContainer: {
     paddingHorizontal: 16,
     paddingBottom: 60,
-    marginTop: 40,
+    marginTop: 20,
   },
   requestSpotButton: {
-    backgroundColor: '#22c55e',
-    paddingVertical: 16,
+    borderColor: '#1A1A1A',
+    borderWidth: 2,
+    backgroundColor: '#19E675',
+    paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 28,
     alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#22c55e',
+    marginBottom: 17,
+    shadowColor: '#19E675',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -260,19 +378,21 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   messageHostButton: {
-    backgroundColor: '#14532d',
-    paddingVertical: 16,
+    backgroundColor: 'white',
+    borderColor: '#1A1A1A',
+    borderWidth: 2,
+    paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 28,
     alignItems: 'center',
   },
   requestSpotText: {
-    color: 'white',
+    color: '#002000',
     fontSize: 16,
     fontWeight: '600',
   },
   messageHostText: {
-    color: '#22c55e',
+    color: '#1A1A1A',
     fontSize: 16,
     fontWeight: '600',
   },
