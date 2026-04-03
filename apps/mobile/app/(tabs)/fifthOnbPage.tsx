@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 
 const FifthOnbPage = () => {
   const router = useRouter();
@@ -24,7 +26,12 @@ const FifthOnbPage = () => {
   const buzzPhone = () => {
     Vibration.vibrate()
   }
+
+  useEffect(() => {
+    AsyncStorage.setItem("signupValue", "signedUp");
+  }, []); 
   
+
   const handleJoinGame = (num: number) => {
     if (!JoinedGame && num == 1) {
       setShowPopup(true);

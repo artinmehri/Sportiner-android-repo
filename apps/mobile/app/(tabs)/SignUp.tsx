@@ -30,8 +30,7 @@ const SignUp = () => {
   };
 
   const handleEmailSignUp = () => {
-    console.log('Navigating to firstOnbPage with Email method');
-    router.push('/firstOnbPage');
+    router.replace('/firstOnbPage');
   };
 
   // renders
