@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm -r dev",
     "mobile:dev": "pnpm --filter mobile start",
+    "expo:start": "pnpm --filter mobile start",
     "mobile:ios": "pnpm --filter mobile ios",
     "mobile:android": "pnpm --filter mobile android",
     "shared:build": "pnpm --filter @sportiner/shared build",

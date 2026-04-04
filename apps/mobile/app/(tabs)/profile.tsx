@@ -1,23 +1,49 @@
 import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '@/context/AuthContext';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import ProfileSettingsScreen from './profileSettings';
+
+type UserRow = {
+  name: string | null;
+  points: number | null;
+  level: string | null;
+  availability: Record<string, unknown> | null;
+};
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const [dbUser, setDbUser] = useState<UserRow | null>(null);
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [profileData, setProfileData] = useState({
-    displayName: 'Artin M.',
-    location: '15-18 • Toronto',
+    displayName: 'Player',
+    location: 'Sportiner',
     profileImage: 'https://picsum.photos/seed/tennis-court/120/120',
     availability: {
       morning: ['', '', '', '', '', '', ''],
-      afternoon: ['', 'filled', '', '', '', 'filled', ''],
-      night: ['filled', '', '', '', '', '', 'filled']
+      afternoon: ['', '', '', '', '', '', ''],
+      night: ['', '', '', '', '', '', '']
     }
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isSupabaseConfigured || !user?.id) return;
+      supabase
+        .from('users')
+        .select('name, points, level, availability')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setDbUser(data as UserRow);
+        });
+    }, [user?.id])
+  );
 
   const handleShare = async () => {
     try {
@@ -63,13 +89,18 @@ export default function ProfileScreen() {
             style={styles.profileImage} 
           />
         </TouchableOpacity>
-        <Text style={styles.profileName}>{profileData.displayName}</Text>
-        <Text style={styles.profileLocation}>{profileData.location}</Text>
+        <Text style={styles.profileName}>{dbUser?.name ?? user?.name ?? profileData.displayName}</Text>
+        <Text style={styles.profileLocation}>
+          {dbUser?.level ? `${dbUser.level} • ` : ''}
+          {user?.email ?? profileData.location}
+        </Text>
       </View>
 
       {/* NTP Rating */}
       <View style={styles.ratingSection}>
-        <Text style={styles.ratingNumber}>750</Text>
+        <Text style={styles.ratingNumber}>
+          {dbUser?.points != null ? String(dbUser.points) : '—'}
+        </Text>
         <Text style={styles.ratingLabel}>Tennis Rating (ELO)</Text>
       </View>
 

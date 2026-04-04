@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, type ComponentProps } from 'react';
 import {
   View,
   Text,
@@ -6,29 +6,22 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
-  PanResponder,
   Dimensions,
-  Animated,
   Pressable,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { ComponentProps } from 'react';
+import { useOnboarding } from '@/context/OnboardingContext';
 
 
 const { width: screenWidth } = Dimensions.get('window');
 const sliderWidth = screenWidth - 80;
-const thumbSize = 24;
-
-interface TennisLevel {
-  level: string;
-  profileName: string;
-  description: string;
-}
 
 export default function SecondOnbPage() {
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);  
   const router = useRouter();
+  const { setTennisLevel } = useOnboarding();
 
   type IconName = ComponentProps<typeof Ionicons>['name'];
   
@@ -44,6 +37,11 @@ export default function SecondOnbPage() {
   };
 
   const handleContinue = () => {
+    if (!selectedLevel) {
+      Alert.alert('Select a level', 'Pick the option that best describes your tennis experience.');
+      return;
+    }
+    setTennisLevel(selectedLevel);
     router.push('/thirdOnbPage');
   };
 
@@ -64,7 +62,7 @@ export default function SecondOnbPage() {
 
       <View style={styles.content}>
         <View style={styles.titleSection}>
-          <Text style={styles.title}>How's your game?</Text>
+          <Text style={styles.title}>How{"'"}s your game?</Text>
         </View>
 
         {levels.map((level) => {

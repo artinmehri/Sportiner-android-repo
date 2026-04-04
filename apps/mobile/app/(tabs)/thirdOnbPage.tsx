@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useOnboarding } from '@/context/OnboardingContext';
 
 type TimeSlot = 'morning' | 'afternoon' | 'evening';
 type DaySchedule = {
@@ -50,6 +51,7 @@ const timeSlotLabels: Record<TimeSlot, string> = {
 
 export default function ThirdOnbPage() {
   const router = useRouter();
+  const { setSchedule: setOnboardingSchedule } = useOnboarding();
   
   const [schedule, setSchedule] = useState<WeekSchedule>(() => {
     const initialSchedule: WeekSchedule = {};
@@ -68,7 +70,7 @@ export default function ThirdOnbPage() {
   };
 
   const handleContinue = () => {
-    console.log('Selected schedule:', schedule);
+    setOnboardingSchedule(schedule);
     router.push('/fourthOnbPage'); 
   };
 
@@ -101,7 +103,7 @@ export default function ThirdOnbPage() {
         <View style={styles.titleSection}>
           <Text style={styles.title}>When are you usually to play?</Text>
           <Text style={styles.subtitle}>
-            Select all times that work for you. We'll notify you when games match
+            Select all times that work for you. We{"'"}ll notify you when games match
           </Text>
         </View>
 

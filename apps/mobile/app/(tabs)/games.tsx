@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useGames, Game } from '@/context/GameContext';
+import { useAuth } from '@/context/AuthContext';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import ProfileDetailsScreen from './profileDetails';
 
 const { width, height } = Dimensions.get('window');
@@ -54,71 +57,6 @@ type GameCard = {
   extraPlayers?: number;
   section?: 'hosted' | 'played';
 };
-
-const hostingGames: GameCard[] = [
-  {
-    id: '1',
-    title: "Alex's Tennis Doubles",
-    level: 'Advanced',
-    distance: '500m',
-    address: '300 Steels Avenue',
-    cost: '$10 Entry',
-    time: 'Today • 10:30 PM',
-    avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-    statuses: [
-      { type: 'spots', label: '2 Left', color: '#9A3412', backgroundcolor: 'rgba(255, 179, 71, 0.2)', icon: 'people' },
-      { type: 'booked', label: 'Court booked', color: '#005124', backgroundcolor: 'rgba(25, 230, 117, 0.2)', icon: 'checkmark' },
-    ],
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60', name: 'Artin Mehri', skillLevel: 'Advanced' },
-      { avatar: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60', name: 'Sara Dion', skillLevel: 'Intermediate' },
-      { avatar: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60', name: 'Dawson Frak', skillLevel: 'Beginner' },
-      { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60', name: 'Safwan Mukhtar', skillLevel: 'Advanced' },
-    ],
-  },
-  {
-    id: '2',
-    title: "Alex's Tennis Doubles",
-    level: 'Advanced',
-    distance: '500m',
-    address: '300 Steels Avenue',
-    cost: '$10 Entry',
-    time: 'Today • 10:30 PM',
-    avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-    statuses: [
-      { type: 'full', label: 'Full', color: '#005124', backgroundcolor: 'rgba(25, 230, 117, 0.2)', icon: 'people' },
-      { type: 'booked', label: 'Court booked', color: '#005124', backgroundcolor: 'rgba(25, 230, 117, 0.2)', icon: 'checkmark' },
-    ],
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60', name: 'Artin Mehri', skillLevel: 'Advanced' },
-      { avatar: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60', name: 'Sara Dion', skillLevel: 'Intermediate' },
-      { avatar: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60', name: 'Dawson Frak', skillLevel: 'Beginner' },
-      { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60', name: 'Safwan Mukhtar', skillLevel: 'Advanced' },
-    ],
-  },
-];
-
-const playingGames: GameCard[] = [
-  {
-    id: '3',
-    title: "Alex's Tennis Doubles",
-    level: 'Advanced',
-    distance: '500m',
-    address: '300 Steels Avenue',
-    cost: '$10 Entry',
-    time: 'Today • 10:30 PM',
-    avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-    statuses: [
-      { type: 'requested', label: 'Requested', color: '#92400E', backgroundcolor: '#FFF3A1', icon: 'cellular' },
-    ],
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60', name: 'Artin Mehri', skillLevel: 'Advanced' },
-      { avatar: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60', name: 'Sara Dion', skillLevel: 'Intermediate' },
-      { avatar: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60', name: 'Dawson Frak', skillLevel: 'Beginner' },
-      { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60', name: 'Safwan Mukhtar', skillLevel: 'Advanced' },
-    ],
-  },
-];
 
 const pastHostedGamesData: GameCard[] = [
   {
@@ -256,7 +194,9 @@ const pastPlayedGamesData: GameCard[] = [
 
 export default function Games() {
   const router = useRouter();
-  const { games } = useGames();
+  const { games, refreshGames } = useGames();
+  const { user } = useAuth();
+  const [joinGameIds, setJoinGameIds] = useState<string[]>([]);
   const { feedbackSubmitted } = useLocalSearchParams<{ feedbackSubmitted?: string }>();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
   const hostingScrollRef = useRef<ScrollView>(null);
@@ -272,8 +212,12 @@ export default function Games() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [pastHostedGames, setPastHostedGames] = useState(pastHostedGamesData);
-  const [pastPlayedGames, setPastPlayedGames] = useState(pastPlayedGamesData);
+  const [pastHostedGames, setPastHostedGames] = useState<GameCard[]>(() =>
+    isSupabaseConfigured ? [] : pastHostedGamesData
+  );
+  const [pastPlayedGames, setPastPlayedGames] = useState<GameCard[]>(() =>
+    isSupabaseConfigured ? [] : pastPlayedGamesData
+  );
   const feedbackShownRef = useRef(false);
 
   useEffect(() => {
@@ -291,6 +235,31 @@ export default function Games() {
       }, 2500);
     }
   }, [feedbackSubmitted]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshGames();
+      let cancelled = false;
+      async function loadJoinRequests() {
+        if (!isSupabaseConfigured || !user?.id) {
+          if (!cancelled) setJoinGameIds([]);
+          return;
+        }
+        const { data, error } = await supabase
+          .from('game_requests')
+          .select('game_id')
+          .eq('user_id', user.id)
+          .in('status', ['pending', 'accepted']);
+        if (!cancelled && !error) {
+          setJoinGameIds((data ?? []).map((r: { game_id: string }) => r.game_id));
+        }
+      }
+      loadJoinRequests();
+      return () => {
+        cancelled = true;
+      };
+    }, [refreshGames, user?.id])
+  );
 
   const formatGameDate = (dateString: string | undefined) => {
     if (!dateString) return 'Date TBD';
@@ -311,28 +280,28 @@ export default function Games() {
     }
   };
 
-  const hostingGamesList: GameCard[] = games.map(game => {
+  const gameToCard = (game: Game): GameCard => {
     const formatDate = (dateString: string) => {
       const date = new Date(dateString);
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
+
       if (date.toDateString() === today.toDateString()) {
         return 'Today';
-      } else if (date.toDateString() === tomorrow.toDateString()) {
-        return 'Tomorrow';
-      } else {
-        return date.toLocaleDateString('en-US', { 
-          month: 'long', 
-          day: 'numeric' 
-        });
       }
+      if (date.toDateString() === tomorrow.toDateString()) {
+        return 'Tomorrow';
+      }
+      return date.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+      });
     };
-    
+
     const formatTime = (timeString: string) => {
       const [hours, minutes] = timeString.split(':');
-      const hour = parseInt(hours);
+      const hour = parseInt(hours, 10);
       const ampm = hour >= 12 ? 'PM' : 'AM';
       const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
       return `${displayHour} ${ampm}`;
@@ -350,7 +319,28 @@ export default function Games() {
       statuses: game.statuses || [],
       players: game.players || [],
     };
-  });
+  };
+
+  const hostingGamesList: GameCard[] = useMemo(
+    () =>
+      games
+        .filter((g) => user?.id && g.hostId === user.id)
+        .map(gameToCard),
+    [games, user?.id]
+  );
+
+  const playingGamesList: GameCard[] = useMemo(
+    () =>
+      games
+        .filter(
+          (g) =>
+            Boolean(user?.id) &&
+            joinGameIds.includes(g.id) &&
+            g.hostId !== user?.id
+        )
+        .map(gameToCard),
+    [games, user?.id, joinGameIds]
+  );
 
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
@@ -375,7 +365,7 @@ export default function Games() {
 
   const scrollPlaying = (direction: 'left' | 'right') => {
     const newIndex = direction === 'right' ? playingScrollIndex + 1 : playingScrollIndex - 1;
-    if (newIndex >= 0 && newIndex < playingGames.length) {
+    if (newIndex >= 0 && newIndex < playingGamesList.length) {
       playingScrollRef.current?.scrollTo({ x: newIndex * CARD_WIDTH, animated: true });
       setPlayingScrollIndex(newIndex);
     }
@@ -910,8 +900,8 @@ export default function Games() {
                   }}
                   scrollEventThrottle={16}
                 >
-                  {playingGames.map((game, index) => (
-                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === playingGames.length - 1 && styles.lastCard]}>
+                  {playingGamesList.map((game, index) => (
+                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === playingGamesList.length - 1 && styles.lastCard]}>
                     <View style={styles.cardHeader}>
                         <Image source={{ uri: game.avatar }} style={styles.avatar} />
                         <View style={styles.cardInfo}>
@@ -957,7 +947,7 @@ export default function Games() {
                     </View>
                   ))}
                 </ScrollView>
-                {playingScrollIndex < playingGames.length - 1 && (
+                {playingScrollIndex < playingGamesList.length - 1 && (
                   <TouchableOpacity
                     style={styles.scrollArrowRight}
                     onPress={() => scrollPlaying('right')}

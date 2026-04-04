@@ -342,7 +342,7 @@ const ChatScreen = () => {
             {repliedMessage && (
               <View style={styles.messageReplyPreview}>
                 <Text style={styles.messageReplyText}>
-                  {repliedMessage.senderName}: "{repliedMessage.text}"
+                  {`${repliedMessage.senderName}: "${repliedMessage.text}"`}
                 </Text>
               </View>
             )}

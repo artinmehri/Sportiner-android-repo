@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -118,7 +117,7 @@ export default function CreateGame() {
     setShowLocationSuggestions(text.length > 0 || true);
   };
 
-  const handleCreateGame = () => {
+  const handleCreateGame = async () => {
     if (!date) {
       Alert.alert('Missing Information', 'Please select a date for your game');
       return;
@@ -160,9 +159,13 @@ export default function CreateGame() {
       title: `${gameType === '1v1' ? '1v1' : 'Group'} Tennis Game`,
     };
 
-    addGame(gameData);
-
-    router.push('/(tabs)/GameConfirmation');
+    try {
+      await addGame(gameData);
+      router.push('/(tabs)/GameConfirmation');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Something went wrong';
+      Alert.alert('Could not create game', message);
+    }
   };
 
   return (
@@ -559,14 +562,16 @@ export default function CreateGame() {
         <View style={styles.bookingInfoModalOverlay}>
           <View style={[styles.bookingInfoModalContent, { paddingBottom: insets.bottom + 20 }]}>
             <View style={styles.bookingInfoModalHeader}>
-              <Text style={styles.bookingInfoModalTitle}>What does "I have booked this court" mean?</Text>
+              <Text style={styles.bookingInfoModalTitle}>
+                {`What does "I have booked this court" mean?`}
+              </Text>
               <TouchableOpacity onPress={() => setShowBookingInfoModal(false)}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
             <View style={styles.bookingInfoModalBody}>
               <Text style={styles.bookingInfoModalText}>
-                When you check "I have booked this court," you're letting other players know that:
+                {`When you check "I have booked this court," you're letting other players know that:`}
               </Text>
               <View style={styles.bookingInfoList}>
                 <View style={styles.bookingInfoItem}>
@@ -583,7 +588,7 @@ export default function CreateGame() {
                 </View>
               </View>
               <Text style={styles.bookingInfoNote}>
-                Only check this if you've actually made a reservation through the court's booking system or by phone.
+                {`Only check this if you've actually made a reservation through the court's booking system or by phone.`}
               </Text>
             </View>
             <View style={styles.bookingInfoModalActions}>
@@ -600,7 +605,7 @@ export default function CreateGame() {
                   setShowBookingInfoModal(false);
                 }}
               >
-                <Text style={styles.bookingInfoConfirmText}>Yes, I've booked it</Text>
+                <Text style={styles.bookingInfoConfirmText}>{`Yes, I've booked it`}</Text>
               </TouchableOpacity>
             </View>
           </View>

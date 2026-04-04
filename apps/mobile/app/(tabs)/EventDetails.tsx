@@ -1,18 +1,57 @@
 import { Image } from 'expo-image';
-import { View, StyleSheet, Text, TouchableOpacity, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ScrollView } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useGames } from '@/context/GameContext';
+import { useGameTickets } from '@/context/GameTicketsContext';
 
 export default function EventDetails() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { getGameById } = useGames();
+  const { requestJoinGame } = useGameTickets();
+
+  const game = id ? getGameById(String(id)) : undefined;
+
+  const title = game?.title ?? "Event";
+  const courtLabel = (game?.courtType ?? 'Public').toUpperCase();
+  const levelLabel = (game?.skillLevel ?? 'Open').toUpperCase();
+  const dateLine = game?.date
+    ? new Date(game.date).toLocaleDateString('en-US', { weekday: 'short' })
+    : '—';
+  const timeLine = game?.time ?? '—';
+  const locationLine = game?.location ?? '—';
+  const entryLine =
+    game?.isPaid && game.paymentAmount ? `$${game.paymentAmount}` : 'Free';
+  const aboutText =
+    game?.gameDescription?.trim() ||
+    'Details for this match will appear here when loaded from the server.';
 
   const handleMessageHost = () => {
     router.push('/(tabs)/chat');
   };
 
-  const handleJoinEvent = () => {
-    Alert.alert('Success', 'You have successfully joined the event!');
+  const handleJoinEvent = async () => {
+    if (!game) {
+      Alert.alert('Event', 'No game data loaded.');
+      return;
+    }
+    const hostName = game.host?.name ?? 'Host';
+    const { error } = await requestJoinGame({
+      gameId: game.id,
+      gameTitle: game.title,
+      gameDetails: {
+        date: game.date,
+        time: game.time,
+        location: game.location,
+        host: hostName,
+      },
+    });
+    if (error) {
+      Alert.alert('Join request', error);
+      return;
+    }
+    Alert.alert('Success', 'Your join request was sent to the host.');
   };
 
   return (
@@ -28,21 +67,21 @@ export default function EventDetails() {
         </View>
 
         <View style={styles.contentCard}>
-          <Text style={styles.eventTitle}>Alex's Tennis Doubles</Text>
+          <Text style={styles.eventTitle}>{title}</Text>
 
           <View style={styles.detailsContainer}>
           
             <View style={styles.pillContainere}>
               <View style={styles.courtPill}>
-                <Text style={{fontWeight: '600', color: 'rgba(25, 230, 117, 0.8)'}}>PUBLIC COURT</Text>
+                <Text style={{fontWeight: '600', color: 'rgba(25, 230, 117, 0.8)'}}>{courtLabel}</Text>
               </View>
 
               <View style={styles.weatherPill}>
-              <Text style={{fontWeight: '600', color: '#EA580C'}}>72° Sunny</Text>
+              <Text style={{fontWeight: '600', color: '#EA580C'}}>—</Text>
               </View>
 
               <View style={styles.levelPill}>
-              <Text style={{fontWeight: '600', color: '#52525B'}}>ADVANCED</Text>
+              <Text style={{fontWeight: '600', color: '#52525B'}}>{levelLabel}</Text>
               </View>
             </View>
 
@@ -53,9 +92,8 @@ export default function EventDetails() {
                 <Ionicons name="calendar-outline" size={20} color="#19E675" />
               </View>
               <Text style={styles.lableText}>DATE</Text>
-              <Text style={styles.detailText}>Sun
-              </Text>
-              <Text style={styles.detailText}>10:00 AM</Text>
+              <Text style={styles.detailText}>{dateLine}</Text>
+              <Text style={styles.detailText}>{timeLine}</Text>
             </View>
 
             <View style={styles.detailItem}>
@@ -63,7 +101,7 @@ export default function EventDetails() {
                 <Ionicons name="location" size={20} color="#19E675" />
               </View>
               <Text style={styles.lableText}>LOCATION</Text>
-              <Text style={styles.detailText}>Riverside Park</Text>
+              <Text style={styles.detailText}>{locationLine}</Text>
             </View>
 
             <View style={styles.detailItem}>
@@ -71,10 +109,11 @@ export default function EventDetails() {
                 <Ionicons name="cash-outline" size={20} color="#19E675" />
               </View>
               <Text style={styles.lableText}>ENTRY</Text>
-              <Text style={styles.detailText}>Free</Text>
+              <Text style={styles.detailText}>{entryLine}</Text>
             </View>
 
           </View>
+        </View>
         </View>
 
         <View style={{height: 1, backgroundColor: '#CED0CE', width: '100%' }} />
@@ -82,7 +121,7 @@ export default function EventDetails() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>About this match</Text>
             <Text style={styles.sectionDescription}>
-              Join us for an exciting doubles tournament at Central Park! This event is perfect for intermediate players looking to test their skills and meet new people. We'll have a round-robin format with prizes for the top teams. Refreshments will be provided, and all equipment is included. Sign up now to secure your spot!
+              {aboutText}
             </Text>
           </View>
 
@@ -94,9 +133,9 @@ export default function EventDetails() {
             <Text style={styles.playingTitle}>Who's Playing</Text>
 
             <TouchableOpacity onPress={() => router.navigate('/(tabs)/profileDetails')} style={styles.playerCard}>
-              <Image source={'https://picsum.photos/seed/sarah/100/100.jpg'} style={styles.playerImage} />
+              <Image source={{ uri: game?.host.avatar ?? 'https://picsum.photos/seed/sarah/100/100.jpg' }} style={styles.playerImage} />
               <View style={styles.playerInfo}>
-                <Text style={styles.playerName}>Ethan C.</Text>
+                <Text style={styles.playerName}>{game?.host.name ?? 'Host'}</Text>
                 <Text style={styles.playerRole}>Host</Text>
               </View>
             </TouchableOpacity>
@@ -104,8 +143,8 @@ export default function EventDetails() {
             <TouchableOpacity onPress={() => router.navigate('/(tabs)/profileDetails')} style={styles.playerCard}>
               <Image source={'https://picsum.photos/seed/you/100/100.jpg'} style={styles.playerImage} />
               <View style={styles.playerInfo}>
-                <Text style={styles.playerName}>Sarah M.</Text>
-                <Text style={styles.playerRole}>Member</Text>
+                <Text style={styles.playerName}>Players</Text>
+                <Text style={styles.playerRole}>See game list</Text>
               </View>
             </TouchableOpacity>
 
@@ -126,7 +165,6 @@ export default function EventDetails() {
           <TouchableOpacity style={styles.messageHostButton} onPress={handleMessageHost}>
             <Text style={styles.messageHostText}>Message Host</Text>
           </TouchableOpacity>
-        </View>
         </View>
       </ScrollView>
   );

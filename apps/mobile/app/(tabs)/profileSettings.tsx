@@ -263,7 +263,9 @@ export default function ProfileSettingsScreen({
                   <Ionicons name="search-outline" size={24} color="#19E675" />
                   <View style={styles.helpText}>
                     <Text style={styles.helpTitle}>Finding Tennis Partners</Text>
-                    <Text style={styles.helpDescription}>Use the availability grid to show when you're free to play. Other players can see your schedule and invite you to matches.</Text>
+                    <Text style={styles.helpDescription}>
+                      {`Use the availability grid to show when you're free to play. Other players can see your schedule and invite you to matches.`}
+                    </Text>
                   </View>
                 </View>
 
@@ -321,7 +323,9 @@ export default function ProfileSettingsScreen({
                 
                 <View style={styles.termsSection}>
                   <Text style={styles.termsSubtitle}>🔒 Your Privacy Matters</Text>
-                  <Text style={styles.termsText}>We only collect what's necessary to help you find tennis partners. Your profile, schedule, and match history are kept private and secure.</Text>
+                  <Text style={styles.termsText}>
+                    {`We only collect what's necessary to help you find tennis partners. Your profile, schedule, and match history are kept private and secure.`}
+                  </Text>
                 </View>
 
                 <View style={styles.termsSection}>

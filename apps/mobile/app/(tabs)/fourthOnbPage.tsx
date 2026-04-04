@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useOnboarding } from '@/context/OnboardingContext';
 
 
 export default function FourthOnbPage() {
   const router = useRouter();
+  const { displayName } = useOnboarding();
   
 
 
@@ -31,7 +33,7 @@ export default function FourthOnbPage() {
       <View style={styles.content}>
         <View style={styles.titleSection}>
           <Text style={styles.title}>Game On</Text>
-          <Text style={styles.title2}>Artin</Text>
+          <Text style={styles.title2}>{displayName.trim() || 'Player'}</Text>
           <Text style={styles.subtitle}>Ready for your first game?</Text>
         </View>
       </View>

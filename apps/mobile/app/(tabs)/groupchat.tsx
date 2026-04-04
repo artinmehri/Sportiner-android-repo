@@ -363,7 +363,7 @@ const GroupChatScreen = () => {
               {repliedMessage && (
                 <View style={styles.messageReplyPreview}>
                   <Text style={styles.messageReplyText}>
-                    {repliedMessage.senderName}: "{repliedMessage.text}"
+                    {`${repliedMessage.senderName}: "${repliedMessage.text}"`}
                   </Text>
                 </View>
               )}
@@ -405,7 +405,7 @@ const GroupChatScreen = () => {
     return (
       <View style={styles.replyPreview}>
         <Text style={styles.replyPreviewText}>
-          Replying to {replyInfo.senderName}: "{replyInfo.text}"
+          {`Replying to ${replyInfo.senderName}: "${replyInfo.text}"`}
         </Text>
         <TouchableOpacity 
           style={styles.closeReplyButton}

@@ -14,8 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-
-type AuthMethod = 'email' | 'google' | 'facebook' | 'apple';
+import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
 
 export default function FirstOnbPage() {
   const [displayName, setDisplayName] = useState('');
@@ -27,6 +26,14 @@ export default function FirstOnbPage() {
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
   const params = useLocalSearchParams<{ method?: AuthMethod; email?: string }>();
+  const {
+    setDisplayName: setOnboardingDisplayName,
+    setEmail: setOnboardingEmail,
+    setPassword: setOnboardingPassword,
+    setAgeGroup: setOnboardingAgeGroup,
+    setProfileImageUri: setOnboardingProfileImage,
+    setAuthMethod: setOnboardingAuthMethod,
+  } = useOnboarding();
   const authMethod = params.method || 'email';
 
   const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
@@ -58,7 +65,12 @@ export default function FirstOnbPage() {
       return;
     }
 
-    console.log('Continue pressed');
+    setOnboardingAuthMethod(authMethod);
+    setOnboardingDisplayName(displayName.trim());
+    setOnboardingEmail(email.trim());
+    setOnboardingPassword(password);
+    setOnboardingAgeGroup(selectedAgeGroup);
+    setOnboardingProfileImage(profileImage);
     router.push('/secondOnbPage');
   };
 
@@ -87,6 +99,16 @@ export default function FirstOnbPage() {
       setEmail(params.email);
     }
   }, [params.email]);
+
+  React.useEffect(() => {
+    // Without ?method= we are on the email path — must reset context (e.g. user picked
+    // Google first, went back, then chose email).
+    if (params.method) {
+      setOnboardingAuthMethod(params.method);
+    } else {
+      setOnboardingAuthMethod('email');
+    }
+  }, [params.method, setOnboardingAuthMethod]);
 
   return (
     <SafeAreaView style={styles.container}>

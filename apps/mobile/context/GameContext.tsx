@@ -1,12 +1,20 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
+
+import { useAuth } from '@/context/AuthContext';
+import { appendGameMeta, combineDateAndTimeToIso, parseGameMeta, type GameMeta } from '@/lib/gameMeta';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 type JoinSetting = '👥 Open to Anyone' | '✋ Request Approval';
 type CourtType = 'Public' | 'Private/Club' | 'Condo';
 
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60';
+
 export interface Game {
   id: string;
+  hostId: string;
   title: string;
   gameType: GameType;
   skillLevel: SkillLevel;
@@ -43,39 +51,226 @@ export interface Game {
   avatar?: string;
 }
 
+export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players'>;
+
 interface GameContextType {
   games: Game[];
-  addGame: (game: Omit<Game, 'id' | 'host'>) => void;
+  isLoading: boolean;
+  error: string | null;
+  refreshGames: () => Promise<void>;
+  addGame: (game: GameInsert) => Promise<void>;
   getGameById: (id: string) => Game | undefined;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
-export function GameProvider({ children }: { children: ReactNode }) {
-  const [games, setGames] = useState<Game[]>([]);
+type GameRow = {
+  id: string;
+  host_id: string;
+  title: string | null;
+  description: string | null;
+  category: string | null;
+  time: string | null;
+  level: string | null;
+  public: boolean | null;
+  capacity: number | null;
+  players_list: unknown;
+  created_at: string;
+};
 
-  const addGame = (gameData: Omit<Game, 'id' | 'host'>) => {
-    const newGame: Game = {
-      ...gameData,
-      id: Date.now().toString(),
-      host: {
-        name: 'You',
-        avatar: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
+type UserRow = {
+  id: string;
+  name: string | null;
+  profile_picture: number | null;
+};
+
+function rowToGame(row: GameRow, host?: UserRow | null): Game {
+  const { cleanDescription, meta } = parseGameMeta(row.description);
+  const skillLevel = (row.level as SkillLevel) ?? 'Beginner';
+  const spotsLeft = Math.max(0, (row.capacity ?? 2) - 1);
+
+  const t = row.time ? new Date(row.time) : new Date();
+  const dateIso = row.time ?? '';
+  const timeStr = row.time
+    ? `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+    : '';
+
+  const gameType: GameType =
+    meta?.gameType ?? (row.category?.trim().startsWith('1v1') ? '1v1' : 'Group');
+  const joinSetting: JoinSetting =
+    meta?.joinSetting ??
+    (row.public !== false ? '👥 Open to Anyone' : '✋ Request Approval');
+  const courtType: CourtType = meta?.courtType ?? 'Public';
+  const isBooked = meta?.isBooked ?? false;
+  const isPaid = meta?.isPaid ?? false;
+  const paymentAmount = meta?.paymentAmount;
+  const location = meta?.location ?? '';
+
+  return {
+    id: row.id,
+    hostId: row.host_id,
+    title: row.title ?? 'Game',
+    gameType,
+    skillLevel,
+    joinSetting,
+    date: dateIso,
+    time: timeStr,
+    location,
+    courtType,
+    isBooked,
+    numberOfPlayers: row.capacity ?? 2,
+    gameDescription: cleanDescription,
+    isPaid,
+    paymentAmount,
+    host: {
+      name: host?.name ?? 'Host',
+      avatar: DEFAULT_AVATAR,
+    },
+    statuses: [
+      {
+        type: 'spots',
+        label: `${spotsLeft} Left`,
+        color: '#FF9500',
+        backgroundcolor: 'rgba(255, 179, 71, 0.2)',
+        icon: 'person',
       },
-      statuses: [
-        { type: 'spots', label: `${gameData.numberOfPlayers - 1} Left`, color: '#FF9500', backgroundcolor: 'rgba(255, 179, 71, 0.2)', icon: 'person'},
-        { type: 'booked', label: 'Court booked', color: '#19E675', backgroundcolor: 'rgba(255, 179, 71, 0.2)', icon: 'checkmark'},
-      ],
-    };
-    setGames(prev => [newGame, ...prev]);
+      {
+        type: 'booked',
+        label: isBooked ? 'Court booked' : 'Court TBD',
+        color: '#19E675',
+        backgroundcolor: 'rgba(255, 179, 71, 0.2)',
+        icon: 'checkmark',
+      },
+    ],
+    level: skillLevel,
+    address: location,
+    cost: isPaid && paymentAmount ? `$${paymentAmount} Entry` : 'Free',
   };
+}
 
-  const getGameById = (id: string) => {
-    return games.find(game => game.id === id);
-  };
+export function GameProvider({ children }: { children: ReactNode }) {
+  const { session } = useAuth();
+  const authUserId = session?.user?.id ?? null;
+  const [games, setGames] = useState<Game[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshGames = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setGames([]);
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    const { data: rows, error: qErr } = await supabase
+      .from('games')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (qErr) {
+      setError(qErr.message);
+      setGames([]);
+      setIsLoading(false);
+      return;
+    }
+
+    const list = (rows ?? []) as GameRow[];
+    const hostIds = [...new Set(list.map((r) => r.host_id))];
+    let profileMap: Record<string, UserRow> = {};
+
+    if (hostIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name, profile_picture')
+        .in('id', hostIds);
+      profileMap = Object.fromEntries((users ?? []).map((p: UserRow) => [p.id, p]));
+    }
+
+    setGames(list.map((r) => rowToGame(r, profileMap[r.host_id])));
+    setIsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refreshGames();
+  }, [refreshGames, authUserId]);
+
+  const addGame = useCallback(
+    async (gameData: GameInsert) => {
+      if (!isSupabaseConfigured) {
+        const newGame: Game = {
+          ...gameData,
+          id: String(Date.now()),
+          hostId: 'local',
+          host: { name: 'You', avatar: DEFAULT_AVATAR },
+          statuses: [
+            {
+              type: 'spots',
+              label: `${gameData.numberOfPlayers - 1} Left`,
+              color: '#FF9500',
+              backgroundcolor: 'rgba(255, 179, 71, 0.2)',
+              icon: 'person',
+            },
+            {
+              type: 'booked',
+              label: 'Court booked',
+              color: '#19E675',
+              backgroundcolor: 'rgba(255, 179, 71, 0.2)',
+              icon: 'checkmark',
+            },
+          ],
+        };
+        setGames((prev) => [newGame, ...prev]);
+        return;
+      }
+
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData.user) {
+        throw new Error('Sign in to create a game.');
+      }
+
+      const meta: GameMeta = {
+        gameType: gameData.gameType,
+        joinSetting: gameData.joinSetting,
+        courtType: gameData.courtType,
+        isBooked: gameData.isBooked,
+        isPaid: gameData.isPaid,
+        paymentAmount: gameData.paymentAmount,
+        location: gameData.location,
+      };
+      const fullDescription = appendGameMeta(gameData.gameDescription, meta);
+      const gameTime = combineDateAndTimeToIso(gameData.date, gameData.time);
+
+      const row = {
+        host_id: userData.user.id,
+        title: gameData.title,
+        description: fullDescription,
+        category: `${gameData.gameType} · ${gameData.courtType}`,
+        time: gameTime,
+        level: gameData.skillLevel,
+        public: gameData.joinSetting === '👥 Open to Anyone',
+        capacity: gameData.numberOfPlayers,
+        players_list: [userData.user.id],
+        city_id: null,
+      };
+
+      const { error: insErr } = await supabase.from('games').insert(row);
+      if (insErr) {
+        throw new Error(insErr.message);
+      }
+      await refreshGames();
+    },
+    [refreshGames]
+  );
+
+  const getGameById = useCallback(
+    (id: string) => games.find((game) => game.id === id),
+    [games]
+  );
 
   return (
-    <GameContext.Provider value={{ games, addGame, getGameById }}>
+    <GameContext.Provider
+      value={{ games, isLoading, error, refreshGames, addGame, getGameById }}
+    >
       {children}
     </GameContext.Provider>
   );

@@ -1,50 +1,62 @@
-import { Redirect, Tabs, useRouter } from 'expo-router';
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import { Tabs, usePathname, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '@/context/AuthContext';
+
+const publicScreens = ['(tabs)/SignUp', '(tabs)/firstOnbPage', '(tabs)/secondOnbPage', '(tabs)/thirdOnbPage', '(tabs)/fourthOnbPage', '(tabs)/fifthOnbPage'];
+
+const AUTH_ONBOARDING_ROUTES = [
+  'SignUp',
+  'firstOnbPage',
+  'secondOnbPage',
+  'thirdOnbPage',
+  'fourthOnbPage',
+  'fifthOnbPage',
+];
+
+function isAuthOnboardingPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return AUTH_ONBOARDING_ROUTES.some((r) => pathname.includes(r));
+}
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const [showNav, setShowNav] = useState(false)
-  const [loading, setLoading] = useState(false);
-
-  if (loading) return null;
-
+  const pathname = usePathname();
+  const { session, isLoading } = useAuth();
 
   useEffect(() => {
-    const getItem = async () => {
-      console.log("searching for itx")
-      const signupValue = await AsyncStorage.getItem("signupValue")
-      setLoading(true)
-      if (signupValue === "signedUp") {
-        router.replace('/')
-        setShowNav(true)
-      } else {
-        setShowNav(false)
+    if (isLoading) return;
+
+    if (!session) {
+      if (!isAuthOnboardingPath(pathname)) {
         router.replace('/SignUp');
       }
-      setLoading(false)
+      return;
     }
-    getItem()
-  }, [])
 
+    if (pathname.includes('SignUp') && !pathname.includes('OnbPage')) {
+      router.replace('/');
+    }
+  }, [isLoading, session, pathname, router]);
+
+  const showNav = !isLoading && Boolean(session) && !isAuthOnboardingPath(pathname);
 
   return (
     <Tabs
       backBehavior="history"
       screenOptions={{
         tabBarStyle: {
-          // display : showNav ? 'flex' : 'none',
-          display: 'flex'
+          display: showNav ? 'flex' : 'none',
         },
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
         tabBarButton: HapticTab,
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
@@ -79,7 +91,7 @@ export default function TabLayout() {
           title: 'Sign Up',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="arrow.down.circle.fill" color={color} />,
           tabBarBadge: 3,
-          href: null
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -121,7 +133,7 @@ export default function TabLayout() {
         name="EventDetails"
         options={{
           tabBarStyle: { display: 'none' },
-          href: null
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -174,25 +186,25 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-      name="matchVerif"
-      options={{
-        title: 'Game Verification',
-        href: null
-      }}
+        name="matchVerif"
+        options={{
+          title: 'Game Verification',
+          href: null,
+        }}
       />
       <Tabs.Screen
-      name="requests"
-      options={{
-        title: 'Requests',
-        href: null
-      }}
+        name="requests"
+        options={{
+          title: 'Requests',
+          href: null,
+        }}
       />
       <Tabs.Screen
-      name="congratsGame"
-      options={{
-        title: 'Congratulation on Game',
-        href: null
-      }}
+        name="congratsGame"
+        options={{
+          title: 'Congratulation on Game',
+          href: null,
+        }}
       />
       <Tabs.Screen
       name="login"
