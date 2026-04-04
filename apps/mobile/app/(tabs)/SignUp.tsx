@@ -72,7 +72,7 @@ const SignUp = () => {
             </TouchableOpacity>
 
             <View style={styles.loginTxtContainer}>
-              <Text style={styles.loginTxt}>Already a member? <Text style={styles.login}>Log in</Text></Text>
+              <Text style={styles.loginTxt}>Already a member? <Text onPress={() => router.replace('/login')} style={styles.login}>Log in</Text></Text>
             </View>
 
           </BottomSheetView>

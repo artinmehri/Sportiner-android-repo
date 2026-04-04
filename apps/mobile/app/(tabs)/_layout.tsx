@@ -17,11 +17,12 @@ export default function TabLayout() {
 
   useEffect(() => {
     const getItem = async () => {
-      console.log("searching for it")
+      console.log("searching for itx")
       const signupValue = await AsyncStorage.getItem("signupValue")
       setLoading(true)
       if (signupValue === "signedUp") {
         router.replace('/')
+        setShowNav(true)
       } else {
         setShowNav(false)
         router.replace('/SignUp');
@@ -37,7 +38,8 @@ export default function TabLayout() {
       backBehavior="history"
       screenOptions={{
         tabBarStyle: {
-          display : showNav ? 'flex' : 'none',
+          // display : showNav ? 'flex' : 'none',
+          display: 'flex'
         },
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
@@ -189,6 +191,13 @@ export default function TabLayout() {
       name="congratsGame"
       options={{
         title: 'Congratulation on Game',
+        href: null
+      }}
+      />
+      <Tabs.Screen
+      name="login"
+      options={{
+        title: 'Login',
         href: null
       }}
       />

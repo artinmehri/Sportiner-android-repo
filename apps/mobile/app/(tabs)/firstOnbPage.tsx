@@ -144,7 +144,7 @@ export default function FirstOnbPage() {
                   style={[styles.input, focusedField === 'email' && styles.inputFocused]}
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="e.g., Artin K"
+                  placeholder="e.g., artin@sportiner.com"
                   keyboardType="email-address"
                   autoCapitalize="none"
                   onFocus={() => setFocusedField('email')}

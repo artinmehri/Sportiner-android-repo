@@ -3,6 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 export default function ProfileSettingsScreen({ 
   onClose, 
@@ -43,6 +45,12 @@ export default function ProfileSettingsScreen({
     }
   };
 
+  const logout = async() => {
+    const router = useRouter();
+    await AsyncStorage.removeItem("signupValue") 
+    router.push('/login')
+  }
+
   const toggleAvailability = (timeOfDay: 'morning' | 'afternoon' | 'night', dayIndex: number) => {
     const newAvailability = { ...availability };
     newAvailability[timeOfDay][dayIndex] = newAvailability[timeOfDay][dayIndex] === 'filled' ? '' : 'filled';
@@ -68,6 +76,7 @@ export default function ProfileSettingsScreen({
       { text: 'OK', onPress: () => setShowWebModal(false) }
     ]);
   };
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -210,6 +219,12 @@ export default function ProfileSettingsScreen({
             <Ionicons name="chevron-forward" size={20} color="#666" />
           </TouchableOpacity>
         </View>
+
+
+        <TouchableOpacity onPress={logout} style={styles.logoutButton}>
+          <Ionicons style={styles.logoutLogo} name='log-out-outline' size={24}></Ionicons>
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Web Content Modal */}
@@ -255,8 +270,8 @@ export default function ProfileSettingsScreen({
                 <View style={styles.helpSection}>
                   <Ionicons name="trophy-outline" size={24} color="#19E675" />
                   <View style={styles.helpText}>
-                    <Text style={styles.helpTitle}>NTP Rating System</Text>
-                    <Text style={styles.helpDescription}>The NTP rating helps match you with players of similar skill levels. Ratings range from 1.0 (beginner) to 7.0 (professional).</Text>
+                    <Text style={styles.helpTitle}>ELO Rating System</Text>
+                    <Text style={styles.helpDescription}>The ELO rating helps match you with players of similar skill levels. Ratings range from 400 (beginner) to +1600 (professional).</Text>
                   </View>
                 </View>
 
@@ -512,6 +527,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'black',
     marginLeft: 12,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    borderColor: '#EA4335',
+    borderWidth: 2,
+    minWidth: 10,
+    maxWidth: 200,
+    borderRadius: 90,
+    justifyContent: 'space-evenly',
+    minHeight: 40,
+    position: 'relative',
+    marginLeft: 90,
+    marginTop: 30,
+    marginBottom: 20
+  },
+  logoutLogo: {
+    color: '#EA4335',
+    marginTop: 6
+  },
+  logoutText: {
+    color: '#EA4335',
+    fontWeight: '600',
+    fontSize: 15,
+    justifyContent: 'center',
+    marginTop: 8,
+    marginRight: 10,
+    marginLeft: -20
   },
   webContentContainer: {
     flex: 1,
