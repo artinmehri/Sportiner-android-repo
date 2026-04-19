@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,19 +8,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { SignupInterface } from '@/context/SignupInterface.type';
 
 
-export default function FourthOnbPage() {
+export default function FourthOnbPage({onNext}: SignupInterface) {
   const router = useRouter();
   
-
-
-  const handleContinue = () => {
-    router.push('/fifthOnbPage'); 
-  };
-
-
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -48,12 +40,11 @@ export default function FourthOnbPage() {
   <Text style={styles.blueText}>7 days</Text> to earn a{' '}
   <Text style={styles.greenText}>reliability</Text> badge!
 </Text>
-    
+  
 
     </View>
-
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
+        <TouchableOpacity onPress={onNext} style={styles.continueButton}>
           <Text style={styles.continueButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>

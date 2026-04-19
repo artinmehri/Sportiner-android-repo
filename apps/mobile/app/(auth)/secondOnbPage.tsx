@@ -14,19 +14,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { ComponentProps } from 'react';
+import { SignupInterface } from '../../context/SignupInterface.type';
 
 
 const { width: screenWidth } = Dimensions.get('window');
 const sliderWidth = screenWidth - 80;
 const thumbSize = 24;
 
-interface TennisLevel {
-  level: string;
-  profileName: string;
-  description: string;
-}
 
-export default function SecondOnbPage() {
+export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterface) {
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);  
   const router = useRouter();
 
@@ -39,19 +35,21 @@ export default function SecondOnbPage() {
     { id: 'pro', label: "I'm a tournament player", icon: 'trophy-outline' },
   ];
 
-  const handleBack = () => {
-    router.push('/firstOnbPage');
-  };
 
   const handleContinue = () => {
-    router.push('/thirdOnbPage');
+    changeData((prev: any) => ({
+      ...prev,
+      level: selectedLevel
+    }))
+    onNext()
+    console.log('data sent to signup flow')
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#000" />
         </TouchableOpacity>
         <View style={styles.progressDots}>

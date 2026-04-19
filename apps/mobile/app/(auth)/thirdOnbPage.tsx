@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { SignupInterface } from '../../context/SignupInterface.type';
 
 type TimeSlot = 'morning' | 'afternoon' | 'evening';
 type DaySchedule = {
@@ -48,7 +49,7 @@ const timeSlotLabels: Record<TimeSlot, string> = {
   evening: 'Evening'
 };
 
-export default function ThirdOnbPage() {
+export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterface) {
   const router = useRouter();
   
   const [schedule, setSchedule] = useState<WeekSchedule>(() => {
@@ -63,13 +64,15 @@ export default function ThirdOnbPage() {
     return initialSchedule;
   });
 
-  const handleBack = () => {
-    router.push('/secondOnbPage');
-  };
-
   const handleContinue = () => {
+    changeData((prev: any) => ({
+      ...prev, 
+      availability: schedule
+    }))
+
     console.log('Selected schedule:', schedule);
-    router.push('/fourthOnbPage'); 
+    onNext();
+    console.log('data sent to signup flow')
   };
 
   const toggleTimeSlot = (day: string, timeSlot: TimeSlot) => {
@@ -86,7 +89,7 @@ export default function ThirdOnbPage() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#000" />
         </TouchableOpacity>
         <View style={styles.progressDots}>

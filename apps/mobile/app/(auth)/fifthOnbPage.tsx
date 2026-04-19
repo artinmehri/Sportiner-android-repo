@@ -15,9 +15,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SignupInterface } from '@/context/SignupInterface.type';
 
 
-const FifthOnbPage = () => {
+export default function FifthOnbPage ({onNext}: SignupInterface) {
   const router = useRouter();
   const [showPopup, setShowPopup] = useState(false);
   const [JoinedGame, setJoinedGame] = useState(false);
@@ -40,6 +41,7 @@ const FifthOnbPage = () => {
 
       setTimeout(() => {
         setShowPopup(false);
+        onNext()
       }, 2500);
     } else if (!JoinedGame2 && num == 2) {
       setShowPopup(true);
@@ -48,13 +50,11 @@ const FifthOnbPage = () => {
 
       setTimeout(() => {
         setShowPopup(false);
+        onNext()
       }, 2500);
     }
   };
-  
-  const handleBrowseGames = () => {
-    router.push('/');
-  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
@@ -132,7 +132,7 @@ const FifthOnbPage = () => {
         </View>
 
         {/* Footer */}
-        <TouchableOpacity onPress={handleBrowseGames} style={styles.footer}>
+        <TouchableOpacity onPress={onNext} style={styles.footer}>
           <Text style={styles.footerText}>
             Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
           </Text>
@@ -418,5 +418,3 @@ const styles = StyleSheet.create({
     marginBottom: 3
   },
 });
-
-export default FifthOnbPage;

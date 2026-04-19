@@ -1,15 +1,13 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, TextInput, Alert } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
-import { SafeAreaFrameContext, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/scripts/GoogleIcon'
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/context/AuthContext';
 
 
-const login = () => {
+export default function Login () {
   const router = useRouter();
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [email, setEmail] = useState('');
@@ -32,7 +30,7 @@ const login = () => {
     router.push('/firstOnbPage?method=apple');
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email.trim()) {
         Alert.alert('Error', 'Please enter your email');
         return
@@ -43,8 +41,14 @@ const login = () => {
         return
     } 
 
-    router.replace('/');
-    AsyncStorage.setItem("signupValue", "signedUp")
+    const {data, error} = await supabase.auth.signInWithPassword({email: email, password: password})
+
+    if (error) {
+      Alert.alert('login not successful')
+      console.log('login failed buddy!', error.message)
+    } else {
+      console.log('signed in', data.session)
+    }
   };
 
   // renders
@@ -297,4 +301,3 @@ const styles = StyleSheet.create({
     color: '#002000',
   },
 });
-export default login;

@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/scripts/GoogleIcon'
 
 
-const SignUp = () => {
+export default function SignUp() {
   const router = useRouter();
   // ref
   const bottomSheetRef = useRef<BottomSheet>(null);
@@ -16,21 +16,21 @@ const SignUp = () => {
 
   const handleGoogleSignUp = () => {
     console.log('Navigating to firstOnbPage with Google method');
-    router.push('/firstOnbPage?method=google');
-  };
+    router.push({ pathname: '/SignupFlow', params: { method: 'google' }})
+    };
 
   const handleFacebookSignUp = () => {
     console.log('Navigating to firstOnbPage with Facebook method');
-    router.push('/firstOnbPage?method=facebook');
+    router.push({ pathname: '/SignupFlow', params: { method: 'facebook' }})
   };
 
   const handleAppleSignUp = () => {
     console.log('Navigating to firstOnbPage with Apple method');
-    router.push('/firstOnbPage?method=apple');
+    router.push({ pathname: '/SignupFlow', params: { method: 'apple' }})
   };
 
   const handleEmailSignUp = () => {
-    router.replace('/firstOnbPage');
+    router.push('/SignupFlow');
   };
 
   // renders
@@ -201,4 +201,3 @@ const styles = StyleSheet.create({
     color: '#002000',
   },
 });
-export default SignUp;

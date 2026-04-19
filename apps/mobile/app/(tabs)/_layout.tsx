@@ -1,5 +1,5 @@
-import { Redirect, Tabs, useRouter } from 'expo-router';
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import { Tabs, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
@@ -9,37 +9,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
-  const [showNav, setShowNav] = useState(false)
-  const [loading, setLoading] = useState(false);
-
-  if (loading) return null;
-
-
-  useEffect(() => {
-    const getItem = async () => {
-      console.log("searching for itx")
-      const signupValue = await AsyncStorage.getItem("signupValue")
-      setLoading(true)
-      if (signupValue === "signedUp") {
-        router.replace('/')
-        setShowNav(true)
-      } else {
-        setShowNav(false)
-        router.replace('/SignUp');
-      }
-      setLoading(false)
-    }
-    getItem()
-  }, [])
-
-
+ 
   return (
     <Tabs
       backBehavior="history"
       screenOptions={{
         tabBarStyle: {
-          // display : showNav ? 'flex' : 'none',
-          display: 'flex'
+          display : 'flex'
         },
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
@@ -202,5 +178,5 @@ export default function TabLayout() {
       }}
       />
     </Tabs>
-  );
-}
+  )
+};

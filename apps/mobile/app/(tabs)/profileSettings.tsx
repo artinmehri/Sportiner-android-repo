@@ -3,8 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { supabase } from '@/context/AuthContext';
 
 export default function ProfileSettingsScreen({ 
   onClose, 
@@ -22,7 +22,6 @@ export default function ProfileSettingsScreen({
   });
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [showWebModal, setShowWebModal] = useState(false);
-  const [webContent, setWebContent] = useState('');
   const [webContentType, setWebContentType] = useState('');
   const [rating, setRating] = useState(5);
 
@@ -45,10 +44,10 @@ export default function ProfileSettingsScreen({
     }
   };
 
+
   const logout = async() => {
-    const router = useRouter();
-    await AsyncStorage.removeItem("signupValue") 
-    router.push('/login')
+    await supabase.auth.signOut();
+    console.log('loged out')
   }
 
   const toggleAvailability = (timeOfDay: 'morning' | 'afternoon' | 'night', dayIndex: number) => {

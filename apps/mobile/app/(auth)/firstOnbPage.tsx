@@ -14,10 +14,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { SignupInterface } from '../../context/SignupInterface.type';
+
 
 type AuthMethod = 'email' | 'google' | 'facebook' | 'apple';
 
-export default function FirstOnbPage() {
+export default function FirstOnbPage({onNext, changeData, onBack} : SignupInterface) {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,9 +33,6 @@ export default function FirstOnbPage() {
 
   const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
 
-  const handleBack = () => {
-    router.push('/SignUp');
-  };
 
   const handleContinue = () => {
     if (!displayName.trim()) {
@@ -51,6 +50,11 @@ export default function FirstOnbPage() {
         Alert.alert('Error', 'Please enter your password');
         return;
       }
+
+      if (password.length < 6) {
+        Alert.alert('Error', 'Your password has to be at least 6 characters.')
+        return;
+      }
     }
 
     if (!selectedAgeGroup) {
@@ -58,8 +62,17 @@ export default function FirstOnbPage() {
       return;
     }
 
-    console.log('Continue pressed');
-    router.push('/secondOnbPage');
+    changeData((prev: any) => ({
+      ...prev,
+      name: displayName,
+      profile_picture: profileImage,
+      email: email,
+      password: password,
+      age_group: selectedAgeGroup
+    }))
+
+    onNext();
+    console.log('data sent to signup flow')
   };
 
   const handleImagePick = async () => {
@@ -92,7 +105,7 @@ export default function FirstOnbPage() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#000" />
         </TouchableOpacity>
         <View style={styles.progressDots}>
