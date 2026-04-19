@@ -5,6 +5,7 @@ import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { supabase } from '@/lib/supabase';
 
 export default function ProfileSettingsScreen({ 
   onClose, 
@@ -13,6 +14,7 @@ export default function ProfileSettingsScreen({
   onClose: () => void; 
   onSave: (data: { displayName?: string; availability?: any; profileImage?: string | null }) => void; 
 }) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState('Artin Mehri');
   const [availability, setAvailability] = useState({
@@ -46,9 +48,17 @@ export default function ProfileSettingsScreen({
   };
 
   const logout = async() => {
-    const router = useRouter();
-    await AsyncStorage.removeItem("signupValue") 
-    router.push('/login')
+    try {
+      await supabase.auth.signOut();
+      
+      await AsyncStorage.removeItem("signupValue");
+      
+      router.replace('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      await AsyncStorage.removeItem("signupValue");
+      router.replace('/login');
+    }
   }
 
   const toggleAvailability = (timeOfDay: 'morning' | 'afternoon' | 'night', dayIndex: number) => {

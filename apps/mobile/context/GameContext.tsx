@@ -60,6 +60,16 @@ interface GameContextType {
   refreshGames: () => Promise<void>;
   addGame: (game: GameInsert) => Promise<void>;
   getGameById: (id: string) => Game | undefined;
+  getAllGames: () => Promise<Game[]>;
+  getMyGames: () => Promise<Game[]>;
+  createGame: (gameData: GameInsert) => Promise<Game>;
+  requestToJoin: (gameId: string) => Promise<string>;
+  getIncomingRequests: () => Promise<Array<{
+    game_id: string;
+    game_title: string;
+    requester_user_id: string;
+    status: string;
+  }>>;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -267,9 +277,204 @@ export function GameProvider({ children }: { children: ReactNode }) {
     [games]
   );
 
+  const getAllGames = useCallback(async (): Promise<Game[]> => {
+    if (!isSupabaseConfigured) {
+      return [];
+    }
+    const { data: rows, error: qErr } = await supabase
+      .from('games')
+      .select('*')
+      .order('time', { ascending: true });
+
+    if (qErr) {
+      throw new Error(qErr.message);
+    }
+
+    const list = (rows ?? []) as GameRow[];
+    const hostIds = [...new Set(list.map((r) => r.host_id))];
+    let profileMap: Record<string, UserRow> = {};
+
+    if (hostIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name, profile_picture')
+        .in('id', hostIds);
+      profileMap = Object.fromEntries((users ?? []).map((p: UserRow) => [p.id, p]));
+    }
+
+    return list.map((r) => rowToGame(r, profileMap[r.host_id]));
+  }, []);
+
+  const getMyGames = useCallback(async (): Promise<Game[]> => {
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData.user) {
+      throw new Error('User not authenticated');
+    }
+
+    const { data: rows, error: qErr } = await supabase
+      .from('games')
+      .select('*')
+      .eq('host_id', userData.user.id)
+      .order('time', { ascending: true });
+
+    if (qErr) {
+      throw new Error(qErr.message);
+    }
+
+    const list = (rows ?? []) as GameRow[];
+    const hostIds = [...new Set(list.map((r) => r.host_id))];
+    let profileMap: Record<string, UserRow> = {};
+
+    if (hostIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name, profile_picture')
+        .in('id', hostIds);
+      profileMap = Object.fromEntries((users ?? []).map((p: UserRow) => [p.id, p]));
+    }
+
+    return list.map((r) => rowToGame(r, profileMap[r.host_id]));
+  }, []);
+
+  const createGame = useCallback(async (gameData: GameInsert): Promise<Game> => {
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData.user) {
+      throw new Error('Sign in to create a game.');
+    }
+
+    const meta: GameMeta = {
+      gameType: gameData.gameType,
+      joinSetting: gameData.joinSetting,
+      courtType: gameData.courtType,
+      isBooked: gameData.isBooked,
+      isPaid: gameData.isPaid,
+      paymentAmount: gameData.paymentAmount,
+      location: gameData.location,
+    };
+    const fullDescription = appendGameMeta(gameData.gameDescription, meta);
+    const gameTime = combineDateAndTimeToIso(gameData.date, gameData.time);
+
+    const row = {
+      host_id: userData.user.id,
+      title: gameData.title,
+      description: fullDescription,
+      category: `${gameData.gameType} · ${gameData.courtType}`,
+      time: gameTime,
+      level: gameData.skillLevel,
+      public: gameData.joinSetting === '👥 Open to Anyone',
+      capacity: gameData.numberOfPlayers,
+      players_list: [userData.user.id],
+      city_id: null,
+    };
+
+    const { data: insertedRow, error: insErr } = await supabase
+      .from('games')
+      .insert(row)
+      .select()
+      .single();
+
+    if (insErr) {
+      throw new Error(insErr.message);
+    }
+
+    const { data: host } = await supabase
+      .from('users')
+      .select('id, name, profile_picture')
+      .eq('id', userData.user.id)
+      .single();
+
+    return rowToGame(insertedRow as GameRow, host as UserRow);
+  }, []);
+
+  const requestToJoin = useCallback(async (gameId: string): Promise<string> => {
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData.user) {
+      throw new Error('User not authenticated');
+    }
+
+    const { data: existingRequest } = await supabase
+      .from('game_requests')
+      .select('*')
+      .eq('game_id', gameId)
+      .eq('user_id', userData.user.id)
+      .maybeSingle();
+
+    if (existingRequest) {
+      return 'already_requested';
+    }
+
+    const { error: insErr } = await supabase.from('game_requests').insert({
+      game_id: gameId,
+      user_id: userData.user.id,
+      status: 'pending',
+    });
+
+    if (insErr) {
+      throw new Error(insErr.message);
+    }
+
+    return 'created';
+  }, []);
+
+  const getIncomingRequests = useCallback(async () => {
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData.user) {
+      throw new Error('User not authenticated');
+    }
+
+    const { data: hostedGames, error: gamesErr } = await supabase
+      .from('games')
+      .select('id')
+      .eq('host_id', userData.user.id);
+
+    if (gamesErr) {
+      throw new Error(gamesErr.message);
+    }
+
+    const gameIds = (hostedGames ?? []).map((g: { id: string }) => g.id);
+    if (gameIds.length === 0) {
+      return [];
+    }
+
+    const { data: requests, error: reqErr } = await supabase
+      .from('game_requests')
+      .select('game_id, user_id, status')
+      .in('game_id', gameIds);
+
+    if (reqErr) {
+      throw new Error(reqErr.message);
+    }
+
+    const { data: games } = await supabase
+      .from('games')
+      .select('id, title')
+      .in('id', gameIds);
+
+    const gameMap = Object.fromEntries((games ?? []).map((g: { id: string; title: string | null }) => [g.id, g.title || 'Game']));
+
+    return (requests ?? []).map((r: { game_id: string; user_id: string; status: string }) => ({
+      game_id: r.game_id,
+      game_title: gameMap[r.game_id] || 'Game',
+      requester_user_id: r.user_id,
+      status: r.status,
+    }));
+  }, []);
+
   return (
     <GameContext.Provider
-      value={{ games, isLoading, error, refreshGames, addGame, getGameById }}
+      value={{ 
+        games, 
+        isLoading, 
+        error, 
+        refreshGames, 
+        addGame, 
+        getGameById,
+        getAllGames,
+        getMyGames,
+        createGame,
+        requestToJoin,
+        getIncomingRequests
+      }}
     >
       {children}
     </GameContext.Provider>

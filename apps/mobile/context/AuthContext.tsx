@@ -16,6 +16,7 @@ interface AuthContextType {
   isLoading: boolean;
   session: Session | null;
   signUp: (email: string, password?: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithFacebook: () => Promise<void>;
   signInWithApple: () => Promise<void>;
@@ -110,6 +111,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const signIn = async (email: string, password: string) => {
+    if (!isSupabaseConfigured) {
+      await new Promise((r) => setTimeout(r, 500));
+      setUser({
+        id: String(Date.now()),
+        email,
+        provider: 'email',
+        name: email.split('@')[0],
+        avatar:
+          'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
+      });
+      return;
+    }
+    
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      throw error;
+    }
+    await refreshUser();
+  };
+
   const signUp = async (email: string, password?: string) => {
     if (!isSupabaseConfigured) {
       await new Promise((r) => setTimeout(r, 500));
@@ -196,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         session,
         signUp,
+        signIn,
         signInWithGoogle,
         signInWithFacebook,
         signInWithApple,

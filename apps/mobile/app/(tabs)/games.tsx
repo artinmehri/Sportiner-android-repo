@@ -24,6 +24,13 @@ import { useAuth } from '@/context/AuthContext';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import ProfileDetailsScreen from './profileDetails';
 
+interface GameRequest {
+  game_id: string;
+  game_title: string;
+  requester_user_id: string;
+  status: string;
+}
+
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 32; 
 
@@ -194,9 +201,13 @@ const pastPlayedGamesData: GameCard[] = [
 
 export default function Games() {
   const router = useRouter();
-  const { games, refreshGames } = useGames();
+  const { games, refreshGames, requestToJoin, getMyGames, getIncomingRequests } = useGames();
   const { user } = useAuth();
   const [joinGameIds, setJoinGameIds] = useState<string[]>([]);
+  const [myGames, setMyGames] = useState<Game[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<GameRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { feedbackSubmitted } = useLocalSearchParams<{ feedbackSubmitted?: string }>();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
   const hostingScrollRef = useRef<ScrollView>(null);
@@ -238,27 +249,41 @@ export default function Games() {
 
   useFocusEffect(
     useCallback(() => {
-      refreshGames();
-      let cancelled = false;
-      async function loadJoinRequests() {
-        if (!isSupabaseConfigured || !user?.id) {
-          if (!cancelled) setJoinGameIds([]);
-          return;
+      const loadData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          await refreshGames();
+          
+          if (isSupabaseConfigured && user?.id) {
+            const { data, error } = await supabase
+              .from('game_requests')
+              .select('game_id')
+              .eq('user_id', user.id)
+              .in('status', ['pending', 'accepted']);
+            if (!error) {
+              setJoinGameIds((data ?? []).map((r: { game_id: string }) => r.game_id));
+            }
+          }
+
+          if (user?.id) {
+            const myGamesList = await getMyGames();
+            setMyGames(myGamesList);
+          }
+
+          if (user?.id) {
+            const requests = await getIncomingRequests();
+            setIncomingRequests(requests);
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to load data');
+        } finally {
+          setLoading(false);
         }
-        const { data, error } = await supabase
-          .from('game_requests')
-          .select('game_id')
-          .eq('user_id', user.id)
-          .in('status', ['pending', 'accepted']);
-        if (!cancelled && !error) {
-          setJoinGameIds((data ?? []).map((r: { game_id: string }) => r.game_id));
-        }
-      }
-      loadJoinRequests();
-      return () => {
-        cancelled = true;
       };
-    }, [refreshGames, user?.id])
+
+      loadData();
+    }, [refreshGames, user?.id, getMyGames, getIncomingRequests])
   );
 
   const formatGameDate = (dateString: string | undefined) => {
@@ -321,12 +346,22 @@ export default function Games() {
     };
   };
 
-  const hostingGamesList: GameCard[] = useMemo(
+  const availableGamesList: GameCard[] = useMemo(
     () =>
       games
-        .filter((g) => user?.id && g.hostId === user.id)
+        .filter((g) => 
+          user?.id && 
+          g.hostId !== user.id && 
+          !joinGameIds.includes(g.id)
+        )
         .map(gameToCard),
-    [games, user?.id]
+    [games, user?.id, joinGameIds]
+  );
+
+  const hostingGamesList: GameCard[] = useMemo(
+    () =>
+      myGames.map(gameToCard),
+    [myGames]
   );
 
   const playingGamesList: GameCard[] = useMemo(
@@ -523,6 +558,20 @@ export default function Games() {
     }
     setShowMenu(false);
     setSelectedGame(null);
+  };
+
+  const handleJoinGame = async (gameId: string) => {
+    try {
+      const response = await requestToJoin(gameId);
+      if (response === 'created') {
+        setJoinGameIds(prev => [...prev, gameId]);
+        Alert.alert('Success', 'Request sent to join game!');
+      } else if (response === 'already_requested') {
+        Alert.alert('Info', 'You have already requested to join this game.');
+      }
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to join game');
+    }
   };
 
   const handleShareGame = async () => {
@@ -796,164 +845,193 @@ export default function Games() {
           </>
         ) : (
           <>
-            {/* Hosting Section */}
+            {/* Available Games Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Hosting</Text>
+              <Text style={styles.sectionTitle}>Available Games</Text>
               <View style={styles.horizontalScrollContainer}>
-                {hostingScrollIndex > 0 && (
-                  <TouchableOpacity
-                    style={styles.scrollArrowLeft}
-                    onPress={() => scrollHosting('left')}
-                  >
-                    <Ionicons name="chevron-back" size={24} color="#000" />
-                  </TouchableOpacity>
-                )}
-                <ScrollView
-                  ref={hostingScrollRef}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  pagingEnabled
-                  onScroll={(e) => {
-                    const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
-                    setHostingScrollIndex(index);
-                  }}
-                  scrollEventThrottle={16}
-                >
-                  {hostingGamesList.map((game, index) => (
-                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === hostingGamesList.length - 1 && styles.lastCard]}>
-                    <View style={styles.cardHeader}>
-                        <Image source={{ uri: game.avatar }} style={styles.avatar} />
-                        <View style={styles.cardInfo}>
-                          <Text style={styles.cardTitle}>{game.title}</Text>
-                          <View style={styles.cardMetaRow}>
-                            <Text style={styles.cardLevel}>{game.level}</Text>
-                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
-                            <Text style={styles.cardDistance}>{game.distance}</Text>
+                {availableGamesList.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No available games</Text>
+                  </View>
+                ) : (
+                  <>
+                    {hostingScrollIndex > 0 && (
+                      <TouchableOpacity
+                        style={styles.scrollArrowLeft}
+                        onPress={() => scrollHosting('left')}
+                      >
+                        <Ionicons name="chevron-back" size={24} color="#000" />
+                      </TouchableOpacity>
+                    )}
+                    <ScrollView
+                      ref={hostingScrollRef}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      pagingEnabled
+                      onScroll={(e) => {
+                        const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
+                        setHostingScrollIndex(index);
+                      }}
+                      scrollEventThrottle={16}
+                    >
+                      {availableGamesList.map((game, index) => (
+                        <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === availableGamesList.length - 1 && styles.lastCard]}>
+                          <View style={styles.cardHeader}>
+                            <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                            <View style={styles.cardInfo}>
+                              <Text style={styles.cardTitle}>{game.title}</Text>
+                              <View style={styles.cardMetaRow}>
+                                <Text style={styles.cardLevel}>{game.level}</Text>
+                                {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                                <Text style={styles.cardDistance}>{game.distance}</Text>
+                              </View>
+                            </View>
                           </View>
-                        </View>
-                      </View>
-                      <View style={styles.cardDetails}>
-                        <Text style={styles.detailText}>
-                          {game.address} • {game.cost}
-                        </Text>
-                        <Text style={styles.detailText}>{game.time}</Text>
-                      </View>
-                      <View style={styles.statusContainer}>
-                        {game.statuses?.map((status: any, index: any) => (
-                          <View
-                            key={index}
-                            style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
+                          <View style={styles.cardDetails}>
+                            <Text style={styles.detailText}>
+                              {game.address} • {game.cost}
+                            </Text>
+                            <Text style={styles.detailText}>{game.time}</Text>
+                          </View>
+                          <View style={styles.statusContainer}>
+                            {game.statuses?.map((status: any, index: any) => (
+                              <View
+                                key={index}
+                                style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
+                              >
+                                <Ionicons name={status.icon as any} size={14} color={status.color} />
+                                <Text style={styles.statusText}>{status.label}</Text>
+                              </View>
+                            ))}
+                          </View>
+                          <TouchableOpacity 
+                            style={styles.joinButton} 
+                            onPress={() => handleJoinGame(game.id)}
                           >
-                            <Ionicons name={status.icon as any} size={14} color={status.color} />
-                            <Text style={styles.statusText}>{status.label}</Text>
-                          </View>
-                        ))}
-                      </View>
-                      <View style={styles.actionBar}>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleChatPress(game)}>
-                          <Ionicons name="chatbubble-outline" size={20} color="#000" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
-                          <Ionicons name="location-outline" size={20} color="#000" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleAddToCalendar(game)}>
-                          <Ionicons name="calendar-outline" size={20} color="#000" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>
-                          <Ionicons name="ellipsis-vertical" size={20} color="#000" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
-                {hostingScrollIndex < hostingGamesList.length - 1 && (
-                  <TouchableOpacity
-                    style={styles.scrollArrowRight}
-                    onPress={() => scrollHosting('right')}
-                  >
-                    <Ionicons name="chevron-forward" size={24} color="#000" />
-                  </TouchableOpacity>
+                            <Text style={styles.joinButtonText}>Join Game</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </ScrollView>
+                    {hostingScrollIndex < availableGamesList.length - 1 && (
+                      <TouchableOpacity
+                        style={styles.scrollArrowRight}
+                        onPress={() => scrollHosting('right')}
+                      >
+                        <Ionicons name="chevron-forward" size={24} color="#000" />
+                      </TouchableOpacity>
+                    )}
+                  </>
                 )}
               </View>
             </View>
 
-            {/* Playing Section */}
+            {/* My Games Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Playing</Text>
+              <Text style={styles.sectionTitle}>My Games</Text>
               <View style={styles.horizontalScrollContainer}>
-                {playingScrollIndex > 0 && (
-                  <TouchableOpacity
-                    style={styles.scrollArrowLeft}
-                    onPress={() => scrollPlaying('left')}
-                  >
-                    <Ionicons name="chevron-back" size={24} color="#000" />
-                  </TouchableOpacity>
-                )}
-                <ScrollView
-                  ref={playingScrollRef}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  pagingEnabled
-                  onScroll={(e) => {
-                    const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
-                    setPlayingScrollIndex(index);
-                  }}
-                  scrollEventThrottle={16}
-                >
-                  {playingGamesList.map((game, index) => (
-                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === playingGamesList.length - 1 && styles.lastCard]}>
-                    <View style={styles.cardHeader}>
-                        <Image source={{ uri: game.avatar }} style={styles.avatar} />
-                        <View style={styles.cardInfo}>
-                          <Text style={styles.cardTitle}>{game.title}</Text>
-                          <View style={styles.cardMetaRow}>
-                            <Text style={styles.cardLevel}>{game.level}</Text>
-                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
-                            <Text style={styles.cardDistance}>{game.distance}</Text>
+                {hostingGamesList.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No games hosted</Text>
+                  </View>
+                ) : (
+                  <>
+                    {playingScrollIndex > 0 && (
+                      <TouchableOpacity
+                        style={styles.scrollArrowLeft}
+                        onPress={() => scrollPlaying('left')}
+                      >
+                        <Ionicons name="chevron-back" size={24} color="#000" />
+                      </TouchableOpacity>
+                    )}
+                    <ScrollView
+                      ref={playingScrollRef}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      pagingEnabled
+                      onScroll={(e) => {
+                        const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
+                        setPlayingScrollIndex(index);
+                      }}
+                      scrollEventThrottle={16}
+                    >
+                      {hostingGamesList.map((game, index) => (
+                        <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === hostingGamesList.length - 1 && styles.lastCard]}>
+                          <View style={styles.cardHeader}>
+                            <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                            <View style={styles.cardInfo}>
+                              <Text style={styles.cardTitle}>{game.title}</Text>
+                              <View style={styles.cardMetaRow}>
+                                <Text style={styles.cardLevel}>{game.level}</Text>
+                                {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                                <Text style={styles.cardDistance}>{game.distance}</Text>
+                              </View>
+                            </View>
+                          </View>
+                          <View style={styles.cardDetails}>
+                            <Text style={styles.detailText}>
+                              {game.address} • {game.cost}
+                            </Text>
+                            <Text style={styles.detailText}>{game.time}</Text>
+                          </View>
+                          <View style={styles.statusContainer}>
+                            {game.statuses?.map((status: any, index: any) => (
+                              <View
+                                key={index}
+                                style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
+                              >
+                                <Ionicons name={status.icon as any} size={14} color={status.color} />
+                                <Text style={styles.statusText}>{status.label}</Text>
+                              </View>
+                            ))}
+                          </View>
+                          <View style={styles.actionBar}>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => handleChatPress(game)}>
+                              <Ionicons name="chatbubble-outline" size={20} color="#000" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
+                              <Ionicons name="location-outline" size={20} color="#000" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => handleAddToCalendar(game)}>
+                              <Ionicons name="calendar-outline" size={20} color="#000" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>
+                              <Ionicons name="ellipsis-vertical" size={20} color="#000" />
+                            </TouchableOpacity>
                           </View>
                         </View>
-                      </View>
-                      <View style={styles.cardDetails}>
-                        <Text style={styles.detailText}>
-                          {game.address} • {game.cost}
-                        </Text>
-                        <Text style={styles.detailText}>{game.time}</Text>
-                      </View>
-                      <View style={styles.statusContainer}>
-                        {game.statuses?.map((status: any, index: any) => (
-                          <View
-                            key={index}
-                            style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
-                          >
-                            <Ionicons name={status.icon as any} size={14} color={status.color} />
-                            <Text style={styles.statusText}>{status.label}</Text>
-                          </View>
-                        ))}
-                      </View>
-                      <View style={styles.actionBar}>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleChatPress(game)}>
-                          <Ionicons name="chatbubble-outline" size={20} color="#000" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
-                          <Ionicons name="location-outline" size={20} color="#000" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleAddToCalendar(game)}>
-                          <Ionicons name="calendar-outline" size={20} color="#000" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>
-                          <Ionicons name="ellipsis-vertical" size={20} color="#000" />
-                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                    {playingScrollIndex < hostingGamesList.length - 1 && (
+                      <TouchableOpacity
+                        style={styles.scrollArrowRight}
+                        onPress={() => scrollPlaying('right')}
+                      >
+                        <Ionicons name="chevron-forward" size={24} color="#000" />
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* Incoming Requests Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Incoming Requests</Text>
+              <View style={styles.requestsContainer}>
+                {incomingRequests.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No incoming requests</Text>
+                  </View>
+                ) : (
+                  incomingRequests.map((request) => (
+                    <View key={`${request.game_id}-${request.requester_user_id}`} style={styles.requestItem}>
+                      <View style={styles.requestContent}>
+                        <Text style={styles.requestGameTitle}>{request.game_title}</Text>
+                        <Text style={styles.requestStatus}>Status: {request.status}</Text>
                       </View>
                     </View>
-                  ))}
-                </ScrollView>
-                {playingScrollIndex < playingGamesList.length - 1 && (
-                  <TouchableOpacity
-                    style={styles.scrollArrowRight}
-                    onPress={() => scrollPlaying('right')}
-                  >
-                    <Ionicons name="chevron-forward" size={24} color="#000" />
-                  </TouchableOpacity>
+                  ))
                 )}
               </View>
             </View>
@@ -1594,5 +1672,54 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
+  },
+  joinButton: {
+    backgroundColor: '#19E675',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  joinButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 16,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
+  requestsContainer: {
+    paddingHorizontal: 16,
+  },
+  requestItem: {
+    backgroundColor: '#F9FAFB',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  requestContent: {
+    flex: 1,
+  },
+  requestGameTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  requestStatus: {
+    fontSize: 14,
+    color: '#666',
   },
 });

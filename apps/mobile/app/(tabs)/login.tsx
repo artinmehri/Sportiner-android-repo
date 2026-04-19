@@ -7,14 +7,17 @@ import { SafeAreaFrameContext, SafeAreaView } from 'react-native-safe-area-conte
 import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/scripts/GoogleIcon'
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '@/context/AuthContext';
 
 
 const login = () => {
   const router = useRouter();
+  const { signIn, isLoading } = useAuth();
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
 
   const handleGoogleLogin = () => {
@@ -32,7 +35,7 @@ const login = () => {
     router.push('/firstOnbPage?method=apple');
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email.trim()) {
         Alert.alert('Error', 'Please enter your email');
         return
@@ -41,13 +44,27 @@ const login = () => {
     if (!password.trim()) {
         Alert.alert('Error', 'Please enter your password');
         return
-    } 
+    }
 
-    router.replace('/');
-    AsyncStorage.setItem("signupValue", "signedUp")
+    setIsLoggingIn(true);
+    
+    try {
+      await signIn(email.trim(), password.trim());
+      
+      await AsyncStorage.setItem("signupValue", "signedUp");
+      
+      router.replace('/');
+    } catch (error: any) {
+      console.error('Login error:', error);
+      Alert.alert(
+        'Login Failed',
+        error?.message || 'Invalid email or password. Please try again.'
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
-  // renders
   return (
     <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
@@ -117,8 +134,16 @@ const login = () => {
                 </View>
               </View>
 
-            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-              <Text style={styles.loginBtnText}>Log In</Text>            
+            <TouchableOpacity 
+              style={[styles.loginBtn, isLoggingIn && styles.loginBtnDisabled]} 
+              onPress={handleLogin}
+              disabled={isLoggingIn || isLoading}
+            >
+              {isLoggingIn ? (
+                <Text style={styles.loginBtnText}>Signing In...</Text>
+              ) : (
+                <Text style={styles.loginBtnText}>Log In</Text>
+              )}
             </TouchableOpacity>
 
             <View style={styles.loginTxtContainer}>
@@ -290,6 +315,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 130,
     backgroundColor: '#19E675',
     marginTop: 20
+  },
+  loginBtnDisabled: {
+    backgroundColor: '#A0D8B5',
   },
   loginBtnText: {
     fontSize: 18,
