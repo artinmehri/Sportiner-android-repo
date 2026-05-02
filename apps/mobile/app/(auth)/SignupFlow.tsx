@@ -9,8 +9,7 @@ import FifthOnbPage from "./fifthOnbPage";
 import FourthOnbPage from "./fourthOnbPage";
 
 export default function SignupFlow() {
-    const { method } = useLocalSearchParams();
-    const [userId, setUserId] = useState('');
+    const { method } = useLocalSearchParams(); 
     const router = useRouter()
     type SignupData = {
         name: string,
@@ -19,14 +18,16 @@ export default function SignupFlow() {
         password: string,
         age_group: string,
         level: string,
-        availability: {},
-        city_id: string,
-        last_active_ad: string,
-        points: string,
-        level_score: string,
+        availability: string[],
+        city: string,
+        last_active_at: string,
+        elo: number,
         id: string,
         created_at: string,
+        gamesPlayed: number;
+        reliability_score: number;
     }
+    
     const [step, setStep] = useState(1);
     const [formData, setFormData] = useState<SignupData>({
         name: '',
@@ -35,13 +36,14 @@ export default function SignupFlow() {
         password: '',
         age_group: '',
         level: '',
-        availability: {},
-        city_id: '',
-        last_active_ad: '',
-        points: '',
-        level_score: '',
+        availability: [],
+        city: '',
+        last_active_at: '',
+        elo: 0,
         id: '',
         created_at: '',
+        gamesPlayed: 0,
+        reliability_score: 70
     })
 
     useEffect(() => {
@@ -51,14 +53,6 @@ export default function SignupFlow() {
         };
     }, []);
 
-
-    useEffect(() => {
-        if (step === 4) {
-            addData();
-        }
-    }, [step])
-
-
     const handleBack = () => {
         if (step === 1) {
             router.back()
@@ -67,9 +61,21 @@ export default function SignupFlow() {
         }
     }
 
+    async function handleSubmit() {
+        const success = await addData();
+        if (success) {
+            isOnboarding.current = false;
+            router.replace('/(tabs)');
+        } else {
+            Alert.alert('Error', 'Failed to sign up');
+        }
+        
+    }
+
+
     if (step === 1) {
         return (
-            <FirstOnbPage onNext={() => setStep(2)} changeData={setFormData} onBack={handleBack} />
+            <FirstOnbPage onNext={() => setStep(2)} changeData={setFormData} onBack={handleBack} method={method as string}/>
         ) 
     } else if (step === 2) {
         return (
@@ -81,60 +87,119 @@ export default function SignupFlow() {
         ) 
     } else if (step === 4) {
         return (
-            <FourthOnbPage onNext={() => setStep(5)} onBack={function (): void {
-                throw new Error("Function not implemented.");
-            } } changeData={function (value: any | ((prev: any) => any)): void {
-                throw new Error("Function not implemented.");
-            } } />
+            <FourthOnbPage 
+            onNext={() => setStep(5)} 
+            onBack={handleBack}
+            changeData={setFormData}
+        />
         ) 
     } else if (step === 5) {
         return (
-            <FifthOnbPage onNext={() => router.push('/(tabs)')} onBack={function (): void {
-                throw new Error("Function not implemented.");
-            } } changeData={function (value: any | ((prev: any) => any)): void {
-                throw new Error("Function not implemented.");
-            } } />
+            <FifthOnbPage 
+            onNext={handleSubmit} 
+            onBack={handleBack}
+            changeData={setFormData}
+        />
         ) 
     }
 
 
-    async function addData() {
-        const {data: authData, error: authError} = await supabase.auth.signUp({
+    async function addData(): Promise<boolean> {
+    let user;
+    let userEmail = formData.email;
+
+
+    if (!method || method === 'email') {
+        const {data, error} = await supabase.auth.signUp({
             email: formData.email,
-            password: formData.password
+            password: formData.password,
+            options: {
+                data: {
+                  display_name: formData.name,
+                  last_active_at : new Date().toISOString()
+
+                },
+              },
         })
 
-        if (authError) {
+        if (error || !data.user) {
             Alert.alert('Signup Failed')
-            console.log('signup failed, ', authError.message)
+            console.log('signup failed, ', error?.message)
+            return false
+        } 
+
+        user = data.user
+
+        userEmail = data.user.email ?? '';
+
+    } else {
+        
+        const { data, error } = await supabase.auth.getUser();
+
+        if (error || !data.user) {
+            Alert.alert('Error', 'User session not ready');
+            return false
         }
-        const authUID = authData.user?.id;
 
-        if (!authUID) {
-            console.log('could not retrieve user ID')
+        user = data.user;
+
+        userEmail = data.user.email ?? '';
+    }
+
+    if (!user) {
+        Alert.alert('Error', 'User missing');
+        return false;
+    }
+
+    let elo = 400;
+
+    if (formData.level === 'intermediate') {
+        elo = 800
+    } else if (formData.level === 'advanced') {
+        elo = 1200
+    } else if (formData.level === 'pro') {
+        elo = 1600
+    }
+
+    formData.elo = elo;
+
+    const { data: existing } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+    if (existing) {
+    console.log('User already exists, skipping insert');
+    return true
+    }
+
+    const { error: dbError } = await supabase.from('users')
+    .insert([
+        {
+            id: user.id,
+            name: formData.name,
+            profile_picture: formData.profile_picture,
+            email: userEmail,
+            age_group: formData.age_group,
+            level: formData.level,
+            availability: formData.availability,
+            city: 'Toronto',
+            elo: formData.elo,
+            last_active_at: new Date().toISOString(),
+            gamesPlayed: 0,
+            reliability_score: 70
         }
+    ]).select().single()
 
+    formData.password = '';
 
-        const {data: dbData, error: dbError} = await supabase.from('users')
-        .insert([
-            {
-                name: formData.name,
-                profile_picture: formData.profile_picture,
-                email: formData.email,
-                password: formData.password,
-                age_group: formData.age_group,
-                level: formData.level,
-                availability: formData.availability,
-                city_id: 'Toronto',
-                points: '0',
-                level_score: '0',
-                last_active_ad: new Date().toLocaleTimeString('en-GB'), // Matches timetz format
-                id: authUID,
-            }
-        ]).select().single()
+    if (dbError) {
+        console.log('oops, you got an error', dbError.message)
+        return false
+    }
+        
+    return true
 
-        if (dbError) {
-            console.log('oops, you got an error', dbError.message)
-        }
     }
 }

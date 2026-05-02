@@ -12,6 +12,7 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -37,6 +38,7 @@ export default function CongratsGame() {
     level?: string;
   }>();
 
+  // Create data object from params with defaults
   const data: ShareCardData = {
     name: params.name || 'User',
     profileImage: params.profileImage || '',
@@ -44,12 +46,12 @@ export default function CongratsGame() {
     level: params.level ? parseInt(params.level) : 3.5,
   };
 
-
+  // Animation values
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const starBounceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-
+    // Pulse animation
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -65,7 +67,7 @@ export default function CongratsGame() {
       ])
     ).start();
 
-
+    // Star bounce animation
     Animated.loop(
       Animated.sequence([
         Animated.timing(starBounceAnim, {
@@ -82,13 +84,13 @@ export default function CongratsGame() {
     ).start();
   }, []);
 
-
+  // When user taps "Share this Story"
   const captureCard = async () => {
     if (viewShotRef.current?.capture) {
       const uri = await viewShotRef.current.capture();
-   
+      // uri is the image file path
       
- 
+      // Open native share sheet
       await Sharing.shareAsync(uri, {
         mimeType: 'image/png',
         dialogTitle: 'Share your verified status!'
@@ -111,16 +113,25 @@ export default function CongratsGame() {
         showsVerticalScrollIndicator={false}
       >
         {/* Top gradient overlay */}
-        <View style={styles.topGradient} />
+        <LinearGradient
+          colors={['rgba(19, 236, 73, 0.1)', 'transparent', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.topGradient}
+        />
 
         <View style={styles.topSection}>
           <View style={styles.titleSection}>
             <MaskedView
               maskElement={<Text style={styles.title}>Challenge Complete! 🏆</Text>}
             >
-              <View style={{ backgroundColor: '#19E675' }}>
+              <LinearGradient
+                colors={['#C3E623', '#19E675']}
+                start={{ x: 1, y: 3 }}
+                end={{ x: 0, y: 1 }}
+              >
                 <Text style={[styles.title, { opacity: 0 }]}>Challenge Complete! 🏆</Text>
-              </View>
+              </LinearGradient>
             </MaskedView>
           </View>
 
@@ -152,7 +163,12 @@ export default function CongratsGame() {
     <ViewShot ref={viewShotRef}>
       <View style={styles.shareCardContainer}>
         {/* Background gradient overlay */}
-        <View style={styles.cardGradientOverlay} />
+        <LinearGradient
+          colors={['rgba(19, 236, 73, 0.1)', 'transparent', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.cardGradientOverlay}
+        />
         
         {/* Decorative blur circles */}
         <View style={styles.decorativeCircle1} />
@@ -196,9 +212,13 @@ export default function CongratsGame() {
             <MaskedView
               maskElement={<Text style={styles.nameText}>VERIFIED.</Text>}
             >
-              <View style={{ backgroundColor: '#d4f936' }}>
+              <LinearGradient
+                colors={['#13ec49', '#d4f936', '#13ec49']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
                 <Text style={[styles.nameText, { opacity: 0 }]}>VERIFIED.</Text>
-              </View>
+              </LinearGradient>
             </MaskedView>
           </View>
 
@@ -643,7 +663,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     textAlign: 'center',
     fontFamily: 'Lexend-Bold',
-    fontWeight: '900',
+    fontWeight: '900',  // or '800' - heaviest weight
   },
   card: {
     width: 350,
@@ -656,13 +676,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     marginTop: 270,
 
-   
+    // iOS shadows
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     
-   
+    // Android shadow
     elevation: 8,
   },
   footer: {

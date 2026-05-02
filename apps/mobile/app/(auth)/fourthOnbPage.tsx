@@ -12,7 +12,6 @@ import { SignupInterface } from '@/context/SignupInterface.type';
 
 
 export default function FourthOnbPage({onNext}: SignupInterface) {
-  const router = useRouter();
   
   return (
     <SafeAreaView style={styles.container}>

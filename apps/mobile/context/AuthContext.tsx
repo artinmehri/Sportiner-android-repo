@@ -39,4 +39,35 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+export async function userExists() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+        return
+    }
+
+    let user = data.user;
+
+    console.log("user data :")
+    console.log(data.user)
+
+    
+    if (!user) {
+        return
+    }
+
+    const { data: existing } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+    if (existing) {
+    console.log('User already exists!');
+        return true
+    } else {
+        return false
+    }
+}
+
 export const isOnboarding = { current: false}

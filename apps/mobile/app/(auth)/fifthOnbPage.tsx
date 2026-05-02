@@ -107,7 +107,7 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
               resizeMode="cover"
             />
             <View style={styles.gameInfo}>
-              <Text style={styles.gameTitle}>Alex's game</Text>
+              <Text style={styles.gameTitle}>Alex{"'"}s game</Text>
               <Text style={styles.gameLevel}>Level: Beginner</Text>
               
               <View style={styles.gameDetails}>
@@ -133,9 +133,11 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
 
         {/* Footer */}
         <TouchableOpacity onPress={onNext} style={styles.footer}>
-          <Text style={styles.footerText}>
-            Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
-          </Text>
+          <View style={{ padding: 20 }}>
+            <Text style={styles.footerText}>
+              Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
+            </Text>
+          </View>
         </TouchableOpacity>
       </ScrollView>
 

@@ -1,11 +1,21 @@
-import React, { useCallback, useMemo, useRef } from 'react';
-import { Image, Text, StyleSheet, StatusBar, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useRef } from 'react';
+import { Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
+import * as AppleAuthentication from 'expo-apple-authentication'
 import { SafeAreaFrameContext } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/scripts/GoogleIcon'
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { isOnboarding, supabase, userExists } from '@/context/AuthContext';
+import * as Crypto from 'expo-crypto'
+
+GoogleSignin.configure({
+  webClientId: '939148334598-u3nj7v0p1fvrgak8hg14rssm0incde6s.apps.googleusercontent.com',
+  iosClientId: '939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7.apps.googleusercontent.com',
+  scopes: ['profile', 'email'],
+});
 
 
 export default function SignUp() {
@@ -13,21 +23,115 @@ export default function SignUp() {
   // ref
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['34%', '40%'], []);
+  
 
-  const handleGoogleSignUp = () => {
-    console.log('Navigating to firstOnbPage with Google method');
-    router.push({ pathname: '/SignupFlow', params: { method: 'google' }})
-    };
+  const handleGoogleSignUp = async () => {
+    try {
+        await GoogleSignin.hasPlayServices();
+        const userInfo = await GoogleSignin.signIn();
+        const idToken = userInfo.data?.idToken;
+        
+        if (!idToken) {
+          console.log('user rejected')
+            return;
+        }
 
-  const handleFacebookSignUp = () => {
-    console.log('Navigating to firstOnbPage with Facebook method');
-    router.push({ pathname: '/SignupFlow', params: { method: 'facebook' }})
-  };
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: idToken,
+      });
 
-  const handleAppleSignUp = () => {
-    console.log('Navigating to firstOnbPage with Apple method');
-    router.push({ pathname: '/SignupFlow', params: { method: 'apple' }})
-  };
+        const response = await userExists()
+
+        // Checking if user exists
+        if (response == true) {
+          console.log('user already exists from signup.tsx!')
+          isOnboarding.current = false
+
+          console.log('redirecting the user to homepage!')
+
+          router.replace('/(tabs)');
+
+        } else {
+          console.log("user doesn't exist!")
+          isOnboarding.current = true
+
+
+          if (error) {
+            isOnboarding.current = false
+              Alert.alert('Google sign up failed', error.message);
+              return;
+          }
+  
+          console.log("redirecting the user to signup process!")
+          router.push({ pathname: '/SignupFlow', params: { method: 'google' }});
+  
+        }
+    } catch (error) {
+        Alert.alert('Error', 'Google sign in failed');
+    }
+};
+
+  const handleAppleSignUp = async () => {
+    try {
+
+      const rawNonce = Math.random().toString(36).substring(2, 10);
+
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce
+      );
+      
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce
+      });
+
+      if (!credential.identityToken) {
+        Alert.alert('Error', 'Could not get Apple token');
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+        nonce: rawNonce
+      });
+
+      const response = await userExists()
+
+      if (response == true) {
+        console.log("user already exists!")
+
+        isOnboarding.current = false
+
+        router.push('/(tabs)');
+      } else {
+      console.log("user doesn't exist! from apple signup in signup.tsx!")
+
+      isOnboarding.current = true;
+
+      if (error) {
+        isOnboarding.current = false;
+        Alert.alert('Apple sign up failed', error.message);
+        return;
+      }
+
+      router.push({ pathname: '/SignupFlow', params: { method: 'apple' }}); 
+    }
+
+  } catch(error: any) {
+        // Ignore user cancellation
+        if (error?.code !== 'ERR_REQUEST_CANCELED') {
+          Alert.alert('Error', error?.message || 'Apple sign in failed');
+          console.log('Apple error:', error);
+      }
+  }
+};
+
 
   const handleEmailSignUp = () => {
     router.push('/SignupFlow');
@@ -55,9 +159,6 @@ export default function SignUp() {
               </TouchableOpacity>
               <TouchableOpacity style={styles.socialBtn} onPress={handleGoogleSignUp}>
                 <GoogleIcon size={26} style={styles.socialBtnText}/>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookSignUp}>
-                <Ionicons  color="#1877F2" size={30} name="logo-facebook"></Ionicons>
               </TouchableOpacity>
             </View>
 

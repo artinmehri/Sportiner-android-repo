@@ -10,6 +10,7 @@ import {
   Dimensions,
   Animated,
   Pressable,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -37,6 +38,12 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
 
 
   const handleContinue = () => {
+
+    if (!selectedLevel) {
+      Alert.alert("Please pick a level!")
+      return
+    }
+
     changeData((prev: any) => ({
       ...prev,
       level: selectedLevel

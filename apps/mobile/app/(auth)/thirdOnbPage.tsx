@@ -7,6 +7,7 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -17,10 +18,6 @@ type DaySchedule = {
   [key in TimeSlot]: boolean;
 };
 
-type WeekSchedule = {
-  [key: string]: DaySchedule;
-};
-
 const daysOfWeek = [
   'Monday',
   'Tuesday', 
@@ -29,7 +26,7 @@ const daysOfWeek = [
   'Friday',
   'Saturday',
   'Sunday'
-];
+] as const;
 
 const dayLabels = {
   'Monday': 'Mon',
@@ -43,28 +40,38 @@ const dayLabels = {
 
 const timeSlots: TimeSlot[] = ['morning', 'afternoon', 'evening'];
 
+
 const timeSlotLabels: Record<TimeSlot, string> = {
   morning: 'Morning',
   afternoon: 'Afternoon', 
   evening: 'Evening'
 };
 
+
+
 export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterface) {
   const router = useRouter();
-  
+  type Day = typeof daysOfWeek[number];
+  type WeekSchedule = Record<Day, DaySchedule>;
+
+  const [trackSchedule, setTrackSchedule] = useState(false)
   const [schedule, setSchedule] = useState<WeekSchedule>(() => {
-    const initialSchedule: WeekSchedule = {};
-    daysOfWeek.forEach(day => {
-      initialSchedule[day] = {
+    return daysOfWeek.reduce((acc, day) => {
+      acc[day] = {
         morning: false,
         afternoon: false,
-        evening: false
+        evening: false,
       };
-    });
-    return initialSchedule;
+      return acc;
+    }, {} as WeekSchedule);
   });
-
   const handleContinue = () => {
+
+    if (!trackSchedule) {
+      Alert.alert("Indicate your availability!")
+      return
+    }
+
     changeData((prev: any) => ({
       ...prev, 
       availability: schedule
@@ -75,8 +82,9 @@ export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterfa
     console.log('data sent to signup flow')
   };
 
-  const toggleTimeSlot = (day: string, timeSlot: TimeSlot) => {
-    setSchedule(prev => ({
+  const toggleTimeSlot = (day: Day, timeSlot: TimeSlot) => {
+    setTrackSchedule(true)
+        setSchedule(prev => ({
       ...prev,
       [day]: {
         ...prev[day],
@@ -120,13 +128,13 @@ export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterfa
                     key={timeSlot}
                     style={[
                       styles.timeSlotButton,
-                      schedule[day][timeSlot] && styles.timeSlotButtonSelected
+                      schedule[day]?.[timeSlot] && styles.timeSlotButtonSelected
                     ]}
                     onPress={() => toggleTimeSlot(day, timeSlot)}
                   >
                     <Text style={[
                       styles.timeSlotText,
-                      schedule[day][timeSlot] && styles.timeSlotTextSelected
+                      schedule[day]?.[timeSlot] && styles.timeSlotTextSelected
                     ]}>
                       {timeSlotLabels[timeSlot]}
                     </Text>

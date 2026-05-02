@@ -4,7 +4,17 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/scripts/GoogleIcon'
-import { supabase } from '@/context/AuthContext';
+import { isOnboarding, supabase, userExists } from '@/context/AuthContext';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto'
+
+
+GoogleSignin.configure({
+  webClientId: '939148334598-u3nj7v0p1fvrgak8hg14rssm0incde6s.apps.googleusercontent.com',
+  iosClientId: '939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7.apps.googleusercontent.com',
+  scopes: ['profile', 'email'],
+});
 
 
 export default function Login () {
@@ -13,21 +23,106 @@ export default function Login () {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  
 
+  const handleGoogleLogin = async () => {
+    try {
+      // 1. Trigger Google login
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo.data?.idToken;
+  
+      if (!idToken) {
+        console.log('user rejected')
+        return;
+      }
 
-  const handleGoogleLogin = () => {
-    console.log('Navigating to firstOnbPage with Google method');
-    router.push('/firstOnbPage?method=google');
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+    });
+  
+      const response = await userExists()
+   
+    // 4. Route based on result
+    if (response == true) {
+      console.log("user exists from google login in login.tsx!")
+      // user exists → go to app
+      router.replace('/(tabs)');
+    } else {
+      console.log("user doesn't exist from google login in login.tsx!")
+      // user does NOT exist → onboarding
+      isOnboarding.current = true;
+      router.replace({
+      pathname: '/SignupFlow',
+      params: { method: 'google' }
+      });
+    }     
+    
+    } catch {
+      Alert.alert('Error', 'Google login failed');
+    }
   };
 
-  const handleFacebookLogin = () => {
-    console.log('Navigating to firstOnbPage with Facebook method');
-    router.push('/firstOnbPage?method=facebook');
-  };
 
-  const handleAppleLogin = () => {
-    console.log('Navigating to firstOnbPage with Apple method');
-    router.push('/firstOnbPage?method=apple');
+  const handleAppleLogin = async () => {
+    try {
+
+
+      const rawNonce = Math.random().toString(36).substring(2, 10);
+
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce
+      );
+      
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce
+      });
+
+
+      if (!credential.identityToken) {
+        Alert.alert('Error', 'Could not get Apple token');
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+        nonce: rawNonce
+      });
+
+      const response = await userExists()
+
+      if (response == true) {
+        console.log("user exists from apple login in login.tsx!")
+        isOnboarding.current = false; 
+        // user exists → go to app
+        router.replace('/(tabs)');
+      } else {
+        if (error) {
+          isOnboarding.current = false;
+          Alert.alert('Apple sign in failed', error.message);
+          return;
+        }
+
+        console.log("user doesn't exist in apple login from login.tsx")
+        isOnboarding.current = true
+        console.log("redirecting the user to signup process with apple set as default!")
+        router.push({ pathname: '/SignupFlow', params: { method: 'apple' }});
+      }
+      // sample response provided below
+    } catch (error: any) {
+       // Ignore user cancellation
+       if (error?.code !== 'ERR_REQUEST_CANCELED') {
+        Alert.alert('Error', error?.message || 'Apple sign in failed');
+        console.log('Apple error:', error);
+    }
+    }
   };
 
   const handleLogin = async () => {
@@ -44,8 +139,9 @@ export default function Login () {
     const {data, error} = await supabase.auth.signInWithPassword({email: email, password: password})
 
     if (error) {
-      Alert.alert('login not successful')
-      console.log('login failed buddy!', error.message)
+      if (error.message === "Invalid login credentials") {
+        Alert.alert("You don't seem to have an account, please make one!")
+      }
     } else {
       console.log('signed in', data.session)
     }
@@ -69,9 +165,6 @@ export default function Login () {
               </TouchableOpacity>
               <TouchableOpacity style={styles.socialBtn} onPress={handleGoogleLogin}>
                 <GoogleIcon size={26} style={styles.socialBtnText}/>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.socialBtn} onPress={handleFacebookLogin}>
-                <Ionicons  color="#1877F2" size={30} name="logo-facebook"></Ionicons>
               </TouchableOpacity>
             </View>
 

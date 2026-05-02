@@ -17,9 +17,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { SignupInterface } from '../../context/SignupInterface.type';
 
 
-type AuthMethod = 'email' | 'google' | 'facebook' | 'apple';
+export default function FirstOnbPage({onNext, changeData, onBack, method} : SignupInterface) {
 
-export default function FirstOnbPage({onNext, changeData, onBack} : SignupInterface) {
+
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,20 +27,17 @@ export default function FirstOnbPage({onNext, changeData, onBack} : SignupInterf
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const router = useRouter();
-  const params = useLocalSearchParams<{ method?: AuthMethod; email?: string }>();
-  const authMethod = params.method || 'email';
 
   const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
 
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!displayName.trim()) {
       Alert.alert('Error', 'Please enter your display name');
       return;
     }
 
-    if (authMethod === 'email') {
+    if (!method) {
       if (!email.trim()) {
         Alert.alert('Error', 'Please enter your email address');
         return;
@@ -68,7 +65,8 @@ export default function FirstOnbPage({onNext, changeData, onBack} : SignupInterf
       profile_picture: profileImage,
       email: email,
       password: password,
-      age_group: selectedAgeGroup
+      age_group: selectedAgeGroup,
+      method: method
     }))
 
     onNext();
@@ -94,12 +92,6 @@ export default function FirstOnbPage({onNext, changeData, onBack} : SignupInterf
       setProfileImage(result.assets[0].uri);
     }
   };
-
-  React.useEffect(() => {
-    if (params.email) {
-      setEmail(params.email);
-    }
-  }, [params.email]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -149,7 +141,7 @@ export default function FirstOnbPage({onNext, changeData, onBack} : SignupInterf
           </View>
 
           {/* Only show email/password fields for email auth */}
-          {authMethod === 'email' && (
+          {!method && (
             <>
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, focusedField === 'email' && styles.labelFocused]}>Email</Text>
