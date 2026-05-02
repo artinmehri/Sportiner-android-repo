@@ -14,11 +14,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
 import { SignupInterface } from '../../context/SignupInterface.type';
 
 
 export default function FirstOnbPage({onNext, changeData, onBack, method} : SignupInterface) {
 
+=======
+import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -27,6 +31,20 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
+=======
+  const router = useRouter();
+  const params = useLocalSearchParams<{ method?: AuthMethod; email?: string }>();
+  const {
+    setDisplayName: setOnboardingDisplayName,
+    setEmail: setOnboardingEmail,
+    setPassword: setOnboardingPassword,
+    setAgeGroup: setOnboardingAgeGroup,
+    setProfileImageUri: setOnboardingProfileImage,
+    setAuthMethod: setOnboardingAuthMethod,
+  } = useOnboarding();
+  const authMethod = params.method || 'email';
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
 
   const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
 
@@ -59,6 +77,7 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
       return;
     }
 
+<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
     changeData((prev: any) => ({
       ...prev,
       name: displayName,
@@ -71,6 +90,15 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
 
     onNext();
     console.log('data sent to signup flow')
+=======
+    setOnboardingAuthMethod(authMethod);
+    setOnboardingDisplayName(displayName.trim());
+    setOnboardingEmail(email.trim());
+    setOnboardingPassword(password);
+    setOnboardingAgeGroup(selectedAgeGroup);
+    setOnboardingProfileImage(profileImage);
+    router.push('/secondOnbPage');
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
   };
 
   const handleImagePick = async () => {
@@ -93,6 +121,25 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
     }
   };
 
+<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
+=======
+  React.useEffect(() => {
+    if (params.email) {
+      setEmail(params.email);
+    }
+  }, [params.email]);
+
+  React.useEffect(() => {
+    // Without ?method= we are on the email path — must reset context (e.g. user picked
+    // Google first, went back, then chose email).
+    if (params.method) {
+      setOnboardingAuthMethod(params.method);
+    } else {
+      setOnboardingAuthMethod('email');
+    }
+  }, [params.method, setOnboardingAuthMethod]);
+
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />

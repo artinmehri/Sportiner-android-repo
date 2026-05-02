@@ -131,7 +131,7 @@ export default function Login () {
     if (!password.trim()) {
         Alert.alert('Error', 'Please enter your password');
         return
-    } 
+    }
 
     const {data, error} = await supabase.auth.signInWithPassword({email: email, password: password})
 
@@ -144,7 +144,6 @@ export default function Login () {
     }
   };
 
-  // renders
   return (
     <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
@@ -211,10 +210,12 @@ export default function Login () {
                 </View>
               </View>
 
-            <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-              <Text style={styles.loginBtnText}>Log In</Text>            
+            <TouchableOpacity 
+              style={[styles.loginBtn]} 
+              onPress={handleLogin}
+            >
+            <Text style={styles.loginBtnText}>Log In</Text>
             </TouchableOpacity>
-
             <View style={styles.loginTxtContainer}>
               <Text style={styles.loginTxt}>Don't have an account? <Text onPress={() => router.replace('/SignUp')} style={styles.login}>Sign up</Text></Text>
             </View>
@@ -384,6 +385,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 130,
     backgroundColor: '#19E675',
     marginTop: 20
+  },
+  loginBtnDisabled: {
+    backgroundColor: '#A0D8B5',
   },
   loginBtnText: {
     fontSize: 18,

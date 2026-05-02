@@ -1,11 +1,26 @@
 import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Share, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+<<<<<<< HEAD
 import { useEffect, useState } from 'react';
+=======
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '@/context/AuthContext';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
 import ProfileSettingsScreen from './profileSettings';
 import { supabase } from '@/context/AuthContext';
 
+type UserRow = {
+  name: string | null;
+  points: number | null;
+  level: string | null;
+  availability: Record<string, unknown> | null;
+};
+
 export default function ProfileScreen() {
+<<<<<<< HEAD
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [name, setName] = useState('');
@@ -37,6 +52,21 @@ export default function ProfileScreen() {
     if (authError || !user) {
       Alert.alert("You've ran into an error")
       return;
+=======
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const [dbUser, setDbUser] = useState<UserRow | null>(null);
+  const [showFullScreenImage, setShowFullScreenImage] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [profileData, setProfileData] = useState({
+    displayName: 'Player',
+    location: 'Sportiner',
+    profileImage: 'https://picsum.photos/seed/tennis-court/120/120',
+    availability: {
+      morning: ['', '', '', '', '', '', ''],
+      afternoon: ['', '', '', '', '', '', ''],
+      night: ['', '', '', '', '', '', '']
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
     }
 
     // Step 2 — fetch their row from your users table
@@ -71,6 +101,20 @@ export default function ProfileScreen() {
 
   }
 
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isSupabaseConfigured || !user?.id) return;
+      supabase
+        .from('users')
+        .select('name, points, level, availability')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setDbUser(data as UserRow);
+        });
+    }, [user?.id])
+  );
 
   const handleShare = async () => {
     try {
@@ -114,13 +158,27 @@ export default function ProfileScreen() {
         />
 
         </TouchableOpacity>
+<<<<<<< HEAD
         <Text style={styles.profileName}>{name}</Text>
         <Text style={styles.profileLocation}>{city}</Text>
         <Text style={styles.skillLevel}>{level}</Text>
+=======
+        <Text style={styles.profileName}>{dbUser?.name ?? user?.name ?? profileData.displayName}</Text>
+        <Text style={styles.profileLocation}>
+          {dbUser?.level ? `${dbUser.level} • ` : ''}
+          {user?.email ?? profileData.location}
+        </Text>
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
       </View>
 
       <View style={styles.ratingSection}>
+<<<<<<< HEAD
         <Text style={styles.ratingNumber}>{elo}</Text>
+=======
+        <Text style={styles.ratingNumber}>
+          {dbUser?.points != null ? String(dbUser.points) : '—'}
+        </Text>
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
         <Text style={styles.ratingLabel}>Tennis Rating (ELO)</Text>
       </View>
 

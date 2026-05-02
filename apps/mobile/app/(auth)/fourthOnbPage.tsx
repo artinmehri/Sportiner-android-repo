@@ -1,3 +1,7 @@
+<<<<<<< HEAD:apps/mobile/app/(auth)/fourthOnbPage.tsx
+=======
+import React from 'react';
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/fourthOnbPage.tsx
 import {
   View,
   Text,
@@ -8,10 +12,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+<<<<<<< HEAD:apps/mobile/app/(auth)/fourthOnbPage.tsx
 import { SignupInterface } from '@/context/SignupInterface.type';
 
 
 export default function FourthOnbPage({onNext}: SignupInterface) {
+=======
+import { useOnboarding } from '@/context/OnboardingContext';
+
+
+export default function FourthOnbPage() {
+  const router = useRouter();
+  const { displayName } = useOnboarding();
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/fourthOnbPage.tsx
   
   return (
     <SafeAreaView style={styles.container}>
@@ -22,7 +35,7 @@ export default function FourthOnbPage({onNext}: SignupInterface) {
       <View style={styles.content}>
         <View style={styles.titleSection}>
           <Text style={styles.title}>Game On</Text>
-          <Text style={styles.title2}>Artin</Text>
+          <Text style={styles.title2}>{displayName.trim() || 'Player'}</Text>
           <Text style={styles.subtitle}>Ready for your first game?</Text>
         </View>
       </View>

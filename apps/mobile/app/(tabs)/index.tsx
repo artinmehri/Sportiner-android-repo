@@ -8,11 +8,15 @@ import {
   TouchableOpacity,
   Image,
   Modal,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
-import { useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
+import { useGames, type Game } from "@/context/GameContext";
+import { useAuth } from "@/context/AuthContext";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 
 type Event = {
@@ -30,7 +34,65 @@ type Event = {
   spotsFilled?: number;
   spotsTotal?: number;
   hasGreenBackground?: boolean;
+  gameId?: string;
 };
+
+function skillToEventLevel(skill: Game["skillLevel"]): Event["level"] {
+  switch (skill) {
+    case "Beginner":
+      return "Beginner(400-800)";
+    case "Intermediate":
+      return "Intermediate(800-1200)";
+    case "Advanced":
+      return "Advanced(1200-1600)";
+    default:
+      return "Intermediate(800-1200)";
+  }
+}
+
+function formatDiscoverTime(dateIso: string, timeStr: string): string {
+  if (!dateIso) {
+    return timeStr || "TBD";
+  }
+  const date = new Date(dateIso);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  let dayPart: string;
+  if (date.toDateString() === today.toDateString()) {
+    dayPart = "Today";
+  } else if (date.toDateString() === tomorrow.toDateString()) {
+    dayPart = "Tomorrow";
+  } else {
+    dayPart = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  const [hours, minutes = "00"] = (timeStr || "12:00").split(":");
+  const hour = parseInt(hours, 10);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+  return `${dayPart} • ${displayHour}:${minutes.padStart(2, "0")} ${ampm}`;
+}
+
+function gameToEvent(g: Game): Event {
+  const needsApproval = g.joinSetting.includes("Approval");
+  return {
+    title: g.title,
+    level: skillToEventLevel(g.skillLevel),
+    distance: "Nearby",
+    address: g.location,
+    status: "open",
+    time: formatDiscoverTime(g.date, g.time),
+    venue: g.courtType,
+    cost: g.isPaid && g.paymentAmount ? `$${g.paymentAmount} Entry` : "Free",
+    avatar: g.host.avatar,
+    primaryCta: "Message Host",
+    secondaryCta: needsApproval ? "Request Spot" : "Join Game",
+    spotsFilled: 1,
+    spotsTotal: g.numberOfPlayers,
+    hasGreenBackground: false,
+    gameId: g.id,
+  };
+}
 
 
 const events1v1: Event[] = [
@@ -104,24 +166,26 @@ const eventsGroup: Event[] = [
 
 export default function Index() {
  const [mode, setMode] = useState<"1-1" | "Group">("1-1");
- const [joinSingleGame, setJoinedSingleGame] = useState(false)
- const [joinEvent, setJoinedEvent] = useState(false)
- const [joinGroupGame, setJoinGroupGame] = useState(false)
  const [selectedFilter, setSelectedFilter] = useState("Today");
  const [searchQuery, setSearchQuery] = useState("");
  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
+ const { games, refreshGames } = useGames();
+ const { user } = useAuth();
 
-const handleJoin = (gameType: string) => {
-  if (gameType === 'single game') {
-    setJoinedSingleGame(true)
-  } else if (gameType === 'event') {
-    setJoinedEvent(true)
-  } else if (gameType === 'group game') {
-    setJoinGroupGame(true)
-  }
-}
+ useFocusEffect(
+   useCallback(() => {
+     refreshGames();
+   }, [refreshGames])
+ );
+
+ const dbEvents = useMemo(() => {
+   return games
+     .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
+     .filter((g) => (user?.id ? g.hostId !== user.id : true))
+     .map(gameToEvent);
+ }, [games, mode, user?.id]);
 
  return (
    <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -211,13 +275,24 @@ const handleJoin = (gameType: string) => {
        </ScrollView>
 
 
-       {((mode === "1-1" ? events1v1 : eventsGroup)
-         .filter(event => 
-           searchQuery === "" || 
-           event.title.toLowerCase().includes(searchQuery.toLowerCase())
+       {(
+         (isSupabaseConfigured
+           ? dbEvents
+           : [...dbEvents, ...(mode === "1-1" ? events1v1 : eventsGroup)]
+         ).filter(
+           (event) =>
+             searchQuery === "" ||
+             event.title.toLowerCase().includes(searchQuery.toLowerCase())
          )
-       ).map((event) => (
-         <EventCard key={event.title} event={event} mode={mode} router={router} requestJoinGame={requestJoinGame} setShowJoinedGameModal={setShowJoinedGameModal} />
+       ).map((event, idx) => (
+         <EventCard
+           key={event.gameId ?? `seed-${event.title}-${idx}`}
+           event={event}
+           mode={mode}
+           router={router}
+           requestJoinGame={requestJoinGame}
+           setShowJoinedGameModal={setShowJoinedGameModal}
+         />
        ))}
      </ScrollView>
 
@@ -263,40 +338,46 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
   requestJoinGame: (gameData: {
     gameId: string;
     gameTitle: string;
-    gameStatus: string;
+    gameStatus?: string;
     gameDetails?: {
       date: string;
       time: string;
       location: string;
       host: string;
     };
-  }) => void;
+  }) => Promise<{ error: string | null }>;
   setShowJoinedGameModal: (show: boolean) => void;
 }) {
  const isGroupMode = mode === "Group";
  const hasGreenBg = isGroupMode && event.hasGreenBackground;
 
  const cardStyle = hasGreenBg ? styles.cardGreen : styles.card;
- const titleColor = hasGreenBg ? "#FFFFFF" : "#303030";
- const dotColor = hasGreenBg ? "#FFFFFF" : "#4B5563";
 
- const handleJoinGame = () => {
+ const handleJoinGame = async () => {
     const hostName = event.title.split("'s")[0];
-    
-    requestJoinGame({
-      gameId: event.title.replace(/\s+/g, '-').toLowerCase(),
+    const gameId =
+      event.gameId ??
+      event.title.replace(/\s+/g, "-").toLowerCase();
+
+    const { error } = await requestJoinGame({
+      gameId,
       gameTitle: event.title,
       gameStatus: event.status,
       gameDetails: {
-        date: event.time.split(' • ')[0],
-        time: event.time.split(' • ')[1] || event.time,
+        date: event.time.split(" • ")[0],
+        time: event.time.split(" • ")[1] || event.time,
         location: event.address,
         host: hostName,
       },
     });
 
+    if (error) {
+      Alert.alert("Join request", error);
+      return;
+    }
+
     setShowJoinedGameModal(true);
-    
+
     setTimeout(() => {
       setShowJoinedGameModal(false);
     }, 2500);
@@ -305,7 +386,15 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
  return (
    <TouchableOpacity 
      style={cardStyle}
-     onPress={event.status === 'full' ? undefined : () => router.push('/(tabs)/EventDetails')}
+     onPress={
+      event.status === "full"
+        ? undefined
+        : () =>
+            router.push({
+              pathname: "/(tabs)/EventDetails",
+              params: event.gameId ? { id: event.gameId } : {},
+            })
+    }
    >
     <View style={styles.cardHeader}>
       <Image source={{ uri: event.avatar }} style={event.status === 'full' ? styles.avatarFull :styles.avatar} />

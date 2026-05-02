@@ -12,12 +12,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
-
-interface RNCSound {
-  play: () => void;
-  release: () => void;
-}
 
 const MatchVerif = () => {
   const router = useRouter();
@@ -111,7 +105,9 @@ const MatchVerif = () => {
 
           {/* Question 3 */}
           <View style={styles.questionCard}>
-            <Text style={styles.questionText}>How accurate was Artin's <Text style={styles.highlightText}>Intermediate(750)</Text> level?</Text>
+            <Text style={styles.questionText}>
+              How accurate was Artin{"'"}s <Text style={styles.highlightText}>Intermediate(750)</Text> level?
+            </Text>
             <View style={styles.ratingButtons}>
 
               <TouchableOpacity style={[styles.ratingButton, accuracyRating === 'stronger' && styles.selectedRating]} onPress={() => setAccuracyRating(accuracyRating === 'stronger' ? null : 'stronger')}>

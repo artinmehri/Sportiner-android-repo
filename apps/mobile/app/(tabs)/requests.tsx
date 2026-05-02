@@ -4,15 +4,15 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
   Image,
-  BackHandler,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
-import { useNavigation, useRouter } from "expo-router";
-
+import { useCallback, useEffect, useState } from "react";
+import { useNavigation } from "expo-router";
+import { useAuth } from "@/context/AuthContext";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type Request = {
   id: string;
@@ -22,106 +22,123 @@ type Request = {
   day: string;
   time: string;
   avatar: string;
+  gameTitle?: string;
 };
 
+const DEFAULT_AVATAR =
+  "https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60";
 
-const requests: Request[] = [
-  {
-    id: "1",
-    name: "Artin Mehri",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Tue",
-    time: "7PM",
-    avatar:
-      "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "2",
-    name: "Sara Dion",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Tue",
-    time: "7PM",
-    avatar:
-      "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "3",
-    name: "Dawson Frak",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Thu",
-    time: "10AM",
-    avatar:
-      "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "4",
-    name: "Artin Mehri",
-    level: "Intermediate",
-    reliability: "98% Reliable",
-    day: "Thu",
-    time: "10AM",
-    avatar:
-      "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60",
-  },
-];
+function formatRequestPill(
+  dateIso: string | null,
+  timeStr: string | null
+): { day: string; time: string } {
+  if (!dateIso) {
+    return { day: "—", time: timeStr || "—" };
+  }
+  const d = new Date(dateIso);
+  const day = d.toLocaleDateString("en-US", { weekday: "short" });
+  if (!timeStr) {
+    return { day, time: "—" };
+  }
+  const [h, m = "00"] = timeStr.split(":");
+  const hour = parseInt(h, 10);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+  return { day, time: `${displayHour}:${m.padStart(2, "0")} ${ampm}` };
+}
 
 export default function Requests() {
-  const router = useRouter();
-  const [requests, setRequests] = useState<Request[]>([
-    {
-      id: "1",
-      name: "Artin Mehri",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Tue",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "2",
-      name: "Sara Dion",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Tue",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "3",
-      name: "Dawson Frak",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Thu",
-      time: "10AM",
-      avatar:
-        "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "4",
-      name: "Artin Mehri",
-      level: "Intermediate",
-      reliability: "98% Reliable",
-      day: "Thu",
-      time: "10AM",
-      avatar:
-        "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60",
-    },
-  ]);
+  const { user } = useAuth();
+  const [requests, setRequests] = useState<Request[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleApproveRequest = (request: Request) => {
-    setRequests(requests.filter(r => r.id !== request.id));
-  };
-  
-  const handleDeclineRequest = (request: Request) => {
-    setRequests(requests.filter(r => r.id !== request.id));
+  const load = useCallback(async () => {
+    if (!isSupabaseConfigured || !user) {
+      setRequests([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data: hosted } = await supabase.from("games").select("id").eq("host_id", user.id);
+    const gameIds = (hosted ?? []).map((g: { id: string }) => g.id);
+    if (gameIds.length === 0) {
+      setRequests([]);
+      setLoading(false);
+      return;
+    }
+    const { data: rows, error } = await supabase
+      .from("game_requests")
+      .select("id, user_id, game_id")
+      .in("game_id", gameIds)
+      .eq("status", "pending");
+
+    if (error || !rows?.length) {
+      setRequests([]);
+      setLoading(false);
+      return;
+    }
+
+    const requesterIds = [...new Set(rows.map((r) => r.user_id as string))];
+    const gIds = [...new Set(rows.map((r) => r.game_id as string))];
+
+    const { data: profiles } = await supabase
+      .from("users")
+      .select("id, name, level")
+      .in("id", requesterIds);
+
+    const { data: games } = await supabase
+      .from("games")
+      .select("id, title, time")
+      .in("id", gIds);
+
+    const profMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
+    const gameMap = Object.fromEntries((games ?? []).map((g) => [g.id, g]));
+
+    const ui: Request[] = rows.map((r) => {
+      const p = profMap[r.user_id as string] as
+        | { name: string | null; level: string | null }
+        | undefined;
+      const g = gameMap[r.game_id as string] as { title: string | null; time: string | null } | undefined;
+      const iso = g?.time ?? null;
+      const d = iso ? new Date(iso) : null;
+      const timePart = d
+        ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+        : null;
+      const pill = formatRequestPill(iso, timePart);
+      return {
+        id: r.id as string,
+        name: p?.name ?? "Player",
+        level: p?.level ? String(p.level) : "—",
+        reliability: "New to Sportiner",
+        day: pill.day,
+        time: pill.time,
+        avatar: DEFAULT_AVATAR,
+        gameTitle: g?.title ?? undefined,
+      };
+    });
+    setRequests(ui);
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleApproveRequest = async (request: Request) => {
+    if (isSupabaseConfigured) {
+      await supabase.from("game_requests").update({ status: "accepted" }).eq("id", request.id);
+    }
+    setRequests((prev) => prev.filter((r) => r.id !== request.id));
   };
 
-  const navigation = useNavigation()
+  const handleDeclineRequest = async (request: Request) => {
+    if (isSupabaseConfigured) {
+      await supabase.from("game_requests").update({ status: "rejected" }).eq("id", request.id);
+    }
+    setRequests((prev) => prev.filter((r) => r.id !== request.id));
+  };
+
+  const navigation = useNavigation();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -132,27 +149,29 @@ export default function Requests() {
         >
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
-        <Text style={styles.title}>Rquests to Join</Text>
+        <Text style={styles.title}>Requests to Join</Text>
       </View>
 
+      {loading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="#19E675" />
+        </View>
+      ) : (
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.chatList}
         style={styles.ticketsScrollView}
       >
-        {(
-          requests
-            .map((request) => (
+        {requests.map((request) => (
             <RequestItem 
               key={request.id} 
               request={request} 
               onApprove={() => handleApproveRequest(request)}
               onDecline={() => handleDeclineRequest(request)}
             />
-          ))
-        )
-      }
+          ))}
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -164,6 +183,11 @@ function RequestItem({ request, onApprove, onDecline }: { request: Request; onAp
         <Image source={{ uri: request.avatar }} style={styles.avatar} />
         <View style={styles.requestContent}>
           <Text style={styles.requestName}>{request.name}</Text>
+          {request.gameTitle ? (
+            <Text style={styles.requestGameTitle} numberOfLines={1}>
+              {request.gameTitle}
+            </Text>
+          ) : null}
           <Text style={styles.requestDetails}>
             {request.level} • {request.reliability}
           </Text>
@@ -189,6 +213,12 @@ function RequestItem({ request, onApprove, onDecline }: { request: Request; onAp
 }
 
 const styles = StyleSheet.create({
+  loadingWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 48,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: "#FFFFFF",
@@ -333,6 +363,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#000000",
+    marginBottom: 4,
+  },
+  requestGameTitle: {
+    fontSize: 13,
+    color: "#374151",
     marginBottom: 4,
   },
   requestDetails: {

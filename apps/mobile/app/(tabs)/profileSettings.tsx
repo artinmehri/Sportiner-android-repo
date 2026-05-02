@@ -4,7 +4,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+<<<<<<< HEAD
 import { supabase } from '@/context/AuthContext';
+=======
+import { supabase } from '@/lib/supabase';
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
 
 export default function ProfileSettingsScreen({ 
   onClose, 
@@ -13,6 +17,7 @@ export default function ProfileSettingsScreen({
   onClose: () => void; 
   onSave: (data: { displayName?: string; availability?: any; profileImage?: string | null }) => void; 
 }) {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState('Artin Mehri');
   const [availability, setAvailability] = useState({
@@ -46,8 +51,22 @@ export default function ProfileSettingsScreen({
 
 
   const logout = async() => {
+<<<<<<< HEAD
     await supabase.auth.signOut();
     console.log('loged out')
+=======
+    try {
+      await supabase.auth.signOut();
+      
+      await AsyncStorage.removeItem("signupValue");
+      
+      router.replace('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      await AsyncStorage.removeItem("signupValue");
+      router.replace('/login');
+    }
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
   }
 
   const toggleAvailability = (timeOfDay: 'morning' | 'afternoon' | 'night', dayIndex: number) => {
@@ -262,7 +281,9 @@ export default function ProfileSettingsScreen({
                   <Ionicons name="search-outline" size={24} color="#19E675" />
                   <View style={styles.helpText}>
                     <Text style={styles.helpTitle}>Finding Tennis Partners</Text>
-                    <Text style={styles.helpDescription}>Use the availability grid to show when you're free to play. Other players can see your schedule and invite you to matches.</Text>
+                    <Text style={styles.helpDescription}>
+                      {`Use the availability grid to show when you're free to play. Other players can see your schedule and invite you to matches.`}
+                    </Text>
                   </View>
                 </View>
 
@@ -320,7 +341,9 @@ export default function ProfileSettingsScreen({
                 
                 <View style={styles.termsSection}>
                   <Text style={styles.termsSubtitle}>🔒 Your Privacy Matters</Text>
-                  <Text style={styles.termsText}>We only collect what's necessary to help you find tennis partners. Your profile, schedule, and match history are kept private and secure.</Text>
+                  <Text style={styles.termsText}>
+                    {`We only collect what's necessary to help you find tennis partners. Your profile, schedule, and match history are kept private and secure.`}
+                  </Text>
                 </View>
 
                 <View style={styles.termsSection}>

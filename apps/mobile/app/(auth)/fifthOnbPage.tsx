@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,17 +9,29 @@ import {
   SafeAreaView,
   ScrollView,
   Modal,
-  Vibration
+  Vibration,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+<<<<<<< HEAD:apps/mobile/app/(auth)/fifthOnbPage.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SignupInterface } from '@/context/SignupInterface.type';
 
+=======
+import { useOnboarding } from '@/context/OnboardingContext';
+import { useAuth } from '@/context/AuthContext';
+import { useGames } from '@/context/GameContext';
+import { isSupabaseConfigured } from '@/lib/supabase';
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/fifthOnbPage.tsx
 
 export default function FifthOnbPage ({onNext}: SignupInterface) {
   const router = useRouter();
+  const { refreshUser } = useAuth();
+  const { refreshGames } = useGames();
+  const { completeOnboarding, authMethod, email, password } = useOnboarding();
+  const [finishing, setFinishing] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
   const [JoinedGame, setJoinedGame] = useState(false);
   const [JoinedGame2, setJoinedGame2] = useState(false);
@@ -28,13 +40,8 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
     Vibration.vibrate()
   }
 
-  useEffect(() => {
-    AsyncStorage.setItem("signupValue", "signedUp");
-  }, []); 
-  
-
   const handleJoinGame = (num: number) => {
-    if (!JoinedGame && num == 1) {
+    if (!JoinedGame && num === 1) {
       setShowPopup(true);
       setJoinedGame(true);
       buzzPhone()
@@ -43,7 +50,7 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
         setShowPopup(false);
         onNext()
       }, 2500);
-    } else if (!JoinedGame2 && num == 2) {
+    } else if (!JoinedGame2 && num === 2) {
       setShowPopup(true);
       setJoinedGame2(true);
       buzzPhone()
@@ -54,7 +61,38 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
       }, 2500);
     }
   };
+<<<<<<< HEAD:apps/mobile/app/(auth)/fifthOnbPage.tsx
 
+=======
+  
+  const handleBrowseGames = async () => {
+    if (!isSupabaseConfigured) {
+      Alert.alert(
+        'Configuration Required',
+        'Please add your Supabase credentials to the .env file and restart the app. See supabase-setup.txt for instructions.'
+      );
+      return;
+    }
+    const hasEmailCredentials = email.trim().length > 0 && password.trim().length > 0;
+    if (authMethod !== 'email' && !hasEmailCredentials) {
+      Alert.alert(
+        'Sign up',
+        'Connect Google / Apple / Facebook in Supabase later. For now use Continue with Email so your account is saved.'
+      );
+      return;
+    }
+    setFinishing(true);
+    const { error } = await completeOnboarding();
+    setFinishing(false);
+    if (error) {
+      Alert.alert('Could not finish sign up', error);
+      return;
+    }
+    await refreshUser();
+    await refreshGames();
+    router.replace('/');
+  };
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/fifthOnbPage.tsx
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
@@ -132,12 +170,27 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
         </View>
 
         {/* Footer */}
+<<<<<<< HEAD:apps/mobile/app/(auth)/fifthOnbPage.tsx
         <TouchableOpacity onPress={onNext} style={styles.footer}>
           <View style={{ padding: 20 }}>
             <Text style={styles.footerText}>
               Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
             </Text>
           </View>
+=======
+        <TouchableOpacity
+          onPress={handleBrowseGames}
+          style={styles.footer}
+          disabled={finishing}
+        >
+          {finishing ? (
+            <ActivityIndicator color="#19E675" />
+          ) : (
+            <Text style={styles.footerText}>
+              Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
+            </Text>
+          )}
+>>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/fifthOnbPage.tsx
         </TouchableOpacity>
       </ScrollView>
 
