@@ -59,7 +59,7 @@ export default function SignUp() {
 
           if (error) {
             isOnboarding.current = false
-              Alert.alert('Google sign up failed', error.message);
+              Alert.alert('Google sign up failed');
               return;
           }
   
@@ -68,7 +68,7 @@ export default function SignUp() {
   
         }
     } catch (error) {
-        Alert.alert('Error', 'Google sign in failed');
+      console.log(error)
     }
 };
 
@@ -91,7 +91,7 @@ export default function SignUp() {
       });
 
       if (!credential.identityToken) {
-        Alert.alert('Error', 'Could not get Apple token');
+        Alert.alert('Error', 'Login failed, please try again!');
         return;
       }
 
@@ -110,13 +110,13 @@ export default function SignUp() {
 
         router.push('/(tabs)');
       } else {
-      console.log("user doesn't exist! from apple signup in signup.tsx!")
+        console.log("user doesn't exist! from apple signup in signup.tsx!")
 
       isOnboarding.current = true;
 
       if (error) {
         isOnboarding.current = false;
-        Alert.alert('Apple sign up failed', error.message);
+        Alert.alert('Apple sign up failed');
         return;
       }
 
@@ -124,11 +124,8 @@ export default function SignUp() {
     }
 
   } catch(error: any) {
-        // Ignore user cancellation
-        if (error?.code !== 'ERR_REQUEST_CANCELED') {
-          Alert.alert('Error', error?.message || 'Apple sign in failed');
-          console.log('Apple error:', error);
-      }
+    console.log('Apple error:', error);
+    
   }
 };
 

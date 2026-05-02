@@ -86,7 +86,8 @@ export default function Login () {
 
 
       if (!credential.identityToken) {
-        Alert.alert('Error', 'Could not get Apple token');
+        Alert.alert('Error', 'Login failed, please try again!');
+        console.log('could not get apple login token')
         return;
       }
 
@@ -106,7 +107,7 @@ export default function Login () {
       } else {
         if (error) {
           isOnboarding.current = false;
-          Alert.alert('Apple sign in failed', error.message);
+          Alert.alert('Apple sign in failed');
           return;
         }
 
@@ -117,11 +118,7 @@ export default function Login () {
       }
       // sample response provided below
     } catch (error: any) {
-       // Ignore user cancellation
-       if (error?.code !== 'ERR_REQUEST_CANCELED') {
-        Alert.alert('Error', error?.message || 'Apple sign in failed');
         console.log('Apple error:', error);
-    }
     }
   };
 
