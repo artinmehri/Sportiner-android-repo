@@ -15,7 +15,6 @@ import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game } from "@/context/GameContext";
-import { useAuth } from "@/context/AuthContext";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
 
@@ -172,8 +171,8 @@ export default function Index() {
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
  const { games, refreshGames } = useGames();
- const { user } = useAuth();
 
+ 
  useFocusEffect(
    useCallback(() => {
      refreshGames();

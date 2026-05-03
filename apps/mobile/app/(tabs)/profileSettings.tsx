@@ -4,11 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-<<<<<<< HEAD
 import { supabase } from '@/context/AuthContext';
-=======
-import { supabase } from '@/lib/supabase';
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
 
 export default function ProfileSettingsScreen({ 
   onClose, 
@@ -51,22 +47,12 @@ export default function ProfileSettingsScreen({
 
 
   const logout = async() => {
-<<<<<<< HEAD
     await supabase.auth.signOut();
     console.log('loged out')
-=======
-    try {
-      await supabase.auth.signOut();
-      
-      await AsyncStorage.removeItem("signupValue");
-      
-      router.replace('/login');
-    } catch (error) {
-      console.error('Logout error:', error);
-      await AsyncStorage.removeItem("signupValue");
-      router.replace('/login');
-    }
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
+  }
+
+  const deleteAccount = async() => {
+
   }
 
   const toggleAvailability = (timeOfDay: 'morning' | 'afternoon' | 'night', dayIndex: number) => {
@@ -240,6 +226,12 @@ export default function ProfileSettingsScreen({
 
 
         <TouchableOpacity onPress={logout} style={styles.logoutButton}>
+          <Ionicons style={styles.logoutLogo} name='log-out-outline' size={24}></Ionicons>
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+
+
+        <TouchableOpacity onPress={deleteAccount} style={styles.deleteButton}>
           <Ionicons style={styles.logoutLogo} name='log-out-outline' size={24}></Ionicons>
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
@@ -576,6 +568,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginRight: 10,
     marginLeft: -20
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    borderColor: '#EA4335',
+    borderWidth: 2,
+    minWidth: 10,
+    maxWidth: 200,
+    borderRadius: 90,
+    justifyContent: 'space-evenly',
+    minHeight: 40,
+    position: 'relative',
+    marginLeft: 90,
+    marginTop: 30,
+    marginBottom: 20
   },
   webContentContainer: {
     flex: 1,
