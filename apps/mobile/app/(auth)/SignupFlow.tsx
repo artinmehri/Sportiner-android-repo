@@ -9,7 +9,7 @@ import FifthOnbPage from "./fifthOnbPage";
 import FourthOnbPage from "./fourthOnbPage";
 
 export default function SignupFlow() {
-    const { method } = useLocalSearchParams(); 
+    const { method } = useLocalSearchParams();
     const router = useRouter()
     type SignupData = {
         name: string,
@@ -45,6 +45,8 @@ export default function SignupFlow() {
         gamesPlayed: 0,
         reliability_score: 70
     })
+
+    const name = formData.name
 
     useEffect(() => {
         isOnboarding.current = true; // entering signup onboarding
@@ -91,6 +93,7 @@ export default function SignupFlow() {
             onNext={() => setStep(5)} 
             onBack={handleBack}
             changeData={setFormData}
+            data={name}
         />
         ) 
     } else if (step === 5) {

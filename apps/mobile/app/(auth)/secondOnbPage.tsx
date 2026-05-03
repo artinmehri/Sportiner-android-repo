@@ -12,27 +12,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-<<<<<<< HEAD:apps/mobile/app/(auth)/secondOnbPage.tsx
-import { ComponentProps } from 'react';
 import { SignupInterface } from '../../context/SignupInterface.type';
-=======
-import { useOnboarding } from '@/context/OnboardingContext';
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/secondOnbPage.tsx
 
 
 const { width: screenWidth } = Dimensions.get('window');
 const sliderWidth = screenWidth - 80;
-<<<<<<< HEAD:apps/mobile/app/(auth)/secondOnbPage.tsx
 const thumbSize = 24;
 
-=======
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/secondOnbPage.tsx
 
 export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterface) {
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);  
-  const router = useRouter();
-  const { setTennisLevel } = useOnboarding();
-
   type IconName = ComponentProps<typeof Ionicons>['name'];
   
   const levels: { id: string; label: string; icon: IconName }[] = [    
@@ -44,7 +33,6 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
 
 
   const handleContinue = () => {
-<<<<<<< HEAD:apps/mobile/app/(auth)/secondOnbPage.tsx
 
     if (!selectedLevel) {
       Alert.alert("Please pick a level!")
@@ -57,14 +45,6 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
     }))
     onNext()
     console.log('data sent to signup flow')
-=======
-    if (!selectedLevel) {
-      Alert.alert('Select a level', 'Pick the option that best describes your tennis experience.');
-      return;
-    }
-    setTennisLevel(selectedLevel);
-    router.push('/thirdOnbPage');
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/secondOnbPage.tsx
   };
 
   return (

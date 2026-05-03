@@ -11,11 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-<<<<<<< HEAD:apps/mobile/app/(auth)/thirdOnbPage.tsx
 import { SignupInterface } from '../../context/SignupInterface.type';
-=======
-import { useOnboarding } from '@/context/OnboardingContext';
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/thirdOnbPage.tsx
 
 type TimeSlot = 'morning' | 'afternoon' | 'evening';
 type DaySchedule = {
@@ -55,15 +51,10 @@ const timeSlotLabels: Record<TimeSlot, string> = {
 
 export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterface) {
   const router = useRouter();
-<<<<<<< HEAD:apps/mobile/app/(auth)/thirdOnbPage.tsx
   type Day = typeof daysOfWeek[number];
   type WeekSchedule = Record<Day, DaySchedule>;
 
   const [trackSchedule, setTrackSchedule] = useState(false)
-=======
-  const { setSchedule: setOnboardingSchedule } = useOnboarding();
-  
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/thirdOnbPage.tsx
   const [schedule, setSchedule] = useState<WeekSchedule>(() => {
     return daysOfWeek.reduce((acc, day) => {
       acc[day] = {
@@ -75,7 +66,6 @@ export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterfa
     }, {} as WeekSchedule);
   });
   const handleContinue = () => {
-<<<<<<< HEAD:apps/mobile/app/(auth)/thirdOnbPage.tsx
 
     if (!trackSchedule) {
       Alert.alert("Indicate your availability!")
@@ -90,10 +80,6 @@ export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterfa
     console.log('Selected schedule:', schedule);
     onNext();
     console.log('data sent to signup flow')
-=======
-    setOnboardingSchedule(schedule);
-    router.push('/fourthOnbPage'); 
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/thirdOnbPage.tsx
   };
 
   const toggleTimeSlot = (day: Day, timeSlot: TimeSlot) => {

@@ -12,6 +12,7 @@
     "build:testflight": "eas build --profile testflight --platform ios",
     "submit:testflight": "eas submit --profile testflight --platform ios"
   },
+  
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "^5.2.8",

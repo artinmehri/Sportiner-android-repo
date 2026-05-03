@@ -1,30 +1,109 @@
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, TextInput, Alert, Image, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
+import { decode } from 'base64-arraybuffer';
+import { getUserId, supabase, getUser } from '@/context/AuthContext';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/context/AuthContext';
 
-export default function ProfileSettingsScreen({ 
-  onClose, 
-  onSave 
-}: { 
-  onClose: () => void; 
-  onSave: (data: { displayName?: string; availability?: any; profileImage?: string | null }) => void; 
-}) {
-  const router = useRouter();
+type ProfileSettingsData = {
+  displayName?: string;
+  availability?: any;
+  profileImage?: string | null;
+};
+
+type ProfileSettingsScreenProps = {
+  onClose: () => void;
+  onSave: (newData: ProfileSettingsData) => void;
+};
+
+const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
+type Day = typeof daysOfWeek[number];
+type TimeOfDay = 'morning' | 'afternoon' | 'evening';
+
+export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettingsScreenProps) {
   const insets = useSafeAreaInsets();
-  const [displayName, setDisplayName] = useState('Artin Mehri');
-  const [availability, setAvailability] = useState({
-    morning: ['', '', '', '', '', '', ''],
-    afternoon: ['', 'filled', '', '', '', 'filled', ''],
-    night: ['filled', '', '', '', '', '', 'filled']
-  });
+  const [displayName, setDisplayName] = useState('');
+  const [availability, setAvailability] = useState<{
+    morning: string[];
+    afternoon: string[];
+    evening: string[];
+}>({
+    morning: Array(daysOfWeek.length).fill(''),
+    afternoon: Array(daysOfWeek.length).fill(''),
+    evening: Array(daysOfWeek.length).fill(''),
+});
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [showWebModal, setShowWebModal] = useState(false);
   const [webContentType, setWebContentType] = useState('');
   const [rating, setRating] = useState(5);
+  const [userId, setUserId] = useState()
+  const router = useRouter()
+  useEffect(() => {
+    const loadUser = async () => {
+      // Getting user
+      const user = await getUser();
+
+      const userId = user.id;
+      setUserId(userId)
+
+      // Setting name
+      const name = user?.name;
+      setDisplayName(name ?? '');
+
+      // Setting availability
+      const availability = user?.availability;
+
+      if (availability) {
+        setAvailability({
+            morning: daysOfWeek.map(day => availability[day]?.morning ? 'filled' : ''),
+            afternoon: daysOfWeek.map(day => availability[day]?.afternoon ? 'filled' : ''),
+            evening: daysOfWeek.map(day => availability[day]?.evening ? 'filled' : ''),
+        });
+      }
+
+      const profilePicture = user?.profile_picture;
+      setProfileImage(profilePicture ?? null);
+    };
+
+    loadUser();
+  }, []);
+
+
+  const handleImageUpload = async (base64String: any) => {
+    try {
+
+    const user = await getUserId()
+    const userId = user?.id;
+
+  if (!userId) throw new Error("No user ID found");
+
+    const filePath = `avatars/${userId}.png`;
+
+    const { data, error } = await supabase.storage
+      .from('avatars') // Ensure this bucket exists in Supabase
+      .upload(filePath, decode(base64String), {
+        contentType: 'image/png',
+        upsert: true,
+      });
+
+    const { data: urlData } = supabase.storage
+    .from('avatars')
+    .getPublicUrl(filePath);
+
+
+    const publicUrl = urlData.publicUrl;
+
+    setProfileImage(publicUrl)
+
+    if (error) throw error;
+    return data.path
+    
+    } catch (err) {
+      Alert.alert("Couldn't upload image!");
+    }
+  }
 
   const pickImage = async () => {
     const result = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -38,10 +117,16 @@ export default function ProfileSettingsScreen({
       allowsEditing: true,
       aspect: [1, 1],
       quality: 1,
+      base64: true
     });
 
     if (!pickerResult.canceled) {
-      setProfileImage(pickerResult.assets[0].uri);
+      // The image data is inside the 'assets' array
+      const image = pickerResult.assets[0];
+      const base64 = image.base64; // This is what we need!
+      
+      // Now call your upload function
+      await handleImageUpload(base64);
     }
   };
 
@@ -51,23 +136,107 @@ export default function ProfileSettingsScreen({
     console.log('loged out')
   }
 
-  const deleteAccount = async() => {
+  const handleDeleteAccount = async () => {
+    const { data: authData } = await supabase.auth.getUser();
+    const currentUserId = authData?.user?.id ?? userId;
 
+    if (!currentUserId) {
+      Alert.alert('Error', 'Could not determine your user id. Please try again.');
+      return;
+    }
+
+    const { data, error } = await supabase.functions.invoke('delete-user', {
+      body: { userId: currentUserId },
+    });
+
+    if (error) {
+      console.error('Error calling function:', error);
+      Alert.alert(
+        'Delete failed',
+        `Edge Function failed: ${error.message ?? 'Unknown server error'}. Check Supabase logs for "delete-account".`
+      );
+      return;
+    }
+
+    if (!error) {
+    await supabase.auth.signOut();
+    console.log('Function response:', data?.message ?? data);
+    Alert.alert('Account deleted', 'Your account was deleted successfully.');
+    router.replace('/SignUp');
+    }
   }
 
-  const toggleAvailability = (timeOfDay: 'morning' | 'afternoon' | 'night', dayIndex: number) => {
-    const newAvailability = { ...availability };
-    newAvailability[timeOfDay][dayIndex] = newAvailability[timeOfDay][dayIndex] === 'filled' ? '' : 'filled';
-    setAvailability(newAvailability);
+
+  const deleteAccount = async() => {
+    Alert.alert(
+      "Delete Account", // Title
+      "Are you sure? This will permanently remove all your data.", // Message
+      [
+        {
+          text: "Cancel",
+          onPress: () => console.log("Cancel Pressed"),
+          style: "cancel" // Special styling on iOS
+        },
+        { 
+          text: "Delete", 
+          onPress: () => handleDeleteAccount(), // Call your deletion function
+          style: "destructive" // Red text on iOS
+        }
+      ],
+      { cancelable: false } // Prevents closing by tapping outside (Android)
+    );
+  }
+
+
+  const toggleAvailability = (timeOfDay: 'morning' | 'afternoon' | 'evening', dayIndex: number) => {
+    setAvailability((prev) => ({
+      ...prev,
+      [timeOfDay]: prev[timeOfDay].map((value, index) =>
+        index === dayIndex ? (value === 'filled' ? '' : 'filled') : value
+      ),
+    }));
   };
 
-  const handleSave = () => {
-    onSave({
-      displayName,
-      availability,
-      profileImage
+  const toDbAvailability = (
+    uiAvailability: { morning: string[]; afternoon: string[]; evening: string[] }
+  ) => {
+    const dbAvailability: Record<Day, Record<TimeOfDay, boolean>> = {} as Record<
+      Day,
+      Record<TimeOfDay, boolean>
+    >;
+
+    daysOfWeek.forEach((day, index) => {
+      dbAvailability[day] = {
+        morning: uiAvailability.morning[index] === 'filled',
+        afternoon: uiAvailability.afternoon[index] === 'filled',
+        evening: uiAvailability.evening[index] === 'filled',
+      };
     });
-    onClose();
+
+    return dbAvailability;
+  };
+
+  const handleSave = async () => {
+    const availabilityForDb = toDbAvailability(availability);
+    const {data, error} = await supabase.from('users')
+    .update({
+      name: displayName,
+      availability: availabilityForDb,
+      profile_picture: profileImage
+    }).eq('id', userId)
+
+    if (error) {
+      Alert.alert("There was an error saving your changes.")
+      console.log(error)
+    } else {
+      console.log("updated data: ", data)
+      onSave({
+        displayName,
+        availability: availabilityForDb,
+        profileImage,
+      });
+      onClose();
+    }
   };
 
   const openWebContent = (type: string) => {
@@ -181,11 +350,11 @@ export default function ProfileSettingsScreen({
                 <View style={styles.timeIconContainer}>
                   <Ionicons name="moon-outline" size={16} color="#666" />
                 </View>
-                {availability.night.map((status, index) => (
+                {availability.evening.map((status, index) => (
                   <TouchableOpacity 
                     key={index} 
                     style={styles.availabilityCell}
-                    onPress={() => toggleAvailability('night', index)}
+                    onPress={() => toggleAvailability('evening', index)}
                   >
                     <View style={status === 'filled' ? styles.filledCircle : styles.emptyCircle} />
                   </TouchableOpacity>
@@ -232,8 +401,7 @@ export default function ProfileSettingsScreen({
 
 
         <TouchableOpacity onPress={deleteAccount} style={styles.deleteButton}>
-          <Ionicons style={styles.logoutLogo} name='log-out-outline' size={24}></Ionicons>
-          <Text style={styles.logoutText}>Logout</Text>
+          <Text style={styles.deleteText}>Delete My Account</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -571,17 +739,26 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     flexDirection: 'row',
-    borderColor: '#EA4335',
-    borderWidth: 2,
+    backgroundColor: '#EA4335',
+    borderColor: '#fff',
     minWidth: 10,
     maxWidth: 200,
     borderRadius: 90,
     justifyContent: 'space-evenly',
-    minHeight: 40,
+    minHeight: 43,
     position: 'relative',
     marginLeft: 90,
     marginTop: 30,
     marginBottom: 20
+  },
+  deleteText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+    justifyContent: 'center',
+    marginTop: 12,
+    marginRight: 10,
+    marginLeft: 10
   },
   webContentContainer: {
     flex: 1,

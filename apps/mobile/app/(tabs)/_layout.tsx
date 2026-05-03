@@ -1,69 +1,19 @@
-<<<<<<< HEAD
-import { Tabs, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-=======
-import { Tabs, usePathname, useRouter } from 'expo-router';
-import { useEffect } from 'react';
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
+import { Tabs } from 'expo-router';
+import React from 'react';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAuth } from '@/context/AuthContext';
-
-const publicScreens = ['(tabs)/SignUp', '(tabs)/firstOnbPage', '(tabs)/secondOnbPage', '(tabs)/thirdOnbPage', '(tabs)/fourthOnbPage', '(tabs)/fifthOnbPage'];
-
-const AUTH_ONBOARDING_ROUTES = [
-  'SignUp',
-  'firstOnbPage',
-  'secondOnbPage',
-  'thirdOnbPage',
-  'fourthOnbPage',
-  'fifthOnbPage',
-];
-
-function isAuthOnboardingPath(pathname: string | null): boolean {
-  if (!pathname) return false;
-  return AUTH_ONBOARDING_ROUTES.some((r) => pathname.includes(r));
-}
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const router = useRouter();
-<<<<<<< HEAD
  
-=======
-  const pathname = usePathname();
-  const { session, isLoading } = useAuth();
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    if (!session) {
-      if (!isAuthOnboardingPath(pathname)) {
-        router.replace('/SignUp');
-      }
-      return;
-    }
-
-    if (pathname.includes('SignUp') && !pathname.includes('OnbPage')) {
-      router.replace('/');
-    }
-  }, [isLoading, session, pathname, router]);
-
-  const showNav = !isLoading && Boolean(session) && !isAuthOnboardingPath(pathname);
-
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
   return (
     <Tabs
       backBehavior="history"
       screenOptions={{
         tabBarStyle: {
-<<<<<<< HEAD
           display : 'flex'
-=======
-          display: showNav ? 'flex' : 'none',
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6
         },
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,

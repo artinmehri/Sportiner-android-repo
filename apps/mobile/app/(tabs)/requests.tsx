@@ -12,7 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigation } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { supabase } from "@/context/AuthContext";
 
 type Request = {
   id: string;
@@ -49,6 +49,7 @@ function formatRequestPill(
 
 export default function Requests() {
   const { user } = useAuth();
+  const isSupabaseConfigured = Boolean(supabase);
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -78,8 +79,8 @@ export default function Requests() {
       return;
     }
 
-    const requesterIds = [...new Set(rows.map((r) => r.user_id as string))];
-    const gIds = [...new Set(rows.map((r) => r.game_id as string))];
+    const requesterIds = [...new Set(rows.map((r: { user_id: string }) => r.user_id as string))];
+    const gIds = [...new Set(rows.map((r: { game_id: string; }) => r.game_id as string))];
 
     const { data: profiles } = await supabase
       .from("users")
@@ -91,10 +92,14 @@ export default function Requests() {
       .select("id, title, time")
       .in("id", gIds);
 
-    const profMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
-    const gameMap = Object.fromEntries((games ?? []).map((g) => [g.id, g]));
+    const profMap = Object.fromEntries(
+      (profiles ?? []).map((p: { id: string; name: string | null; level: string | null }) => [p.id, p])
+    );
+    const gameMap = Object.fromEntries(
+      (games ?? []).map((g: { id: string; title: string | null; time: string | null }) => [g.id, g])
+    );
 
-    const ui: Request[] = rows.map((r) => {
+    const ui: Request[] = rows.map((r: { id: string; user_id: string; game_id: string }) => {
       const p = profMap[r.user_id as string] as
         | { name: string | null; level: string | null }
         | undefined;

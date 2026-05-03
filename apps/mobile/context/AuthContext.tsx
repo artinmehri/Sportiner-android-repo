@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as SecureStore from 'expo-secure-store'
+import { useEffect, useState } from 'react'
+import type { Session, User } from '@supabase/supabase-js'
 
 class LargeSecureStore {
   async getItem(key: string) {
@@ -39,6 +41,60 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+export async function getUserId() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+        return
+    }
+
+    let user = data.user;
+
+    console.log("user data :")
+    console.log(data.user)
+
+    if (!user) {
+        return
+    }
+
+    const { data: userData } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+    if (userData) {
+        return userData
+    }
+}
+
+export async function getUser() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+        return
+    }
+
+    let user = data.user;
+
+    console.log("user data :")
+    console.log(data.user)
+
+    if (!user) {
+        return
+    }
+
+    const { data: userData } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle();
+
+    if (userData) {
+        return userData
+    }
+}
+
 export async function userExists() {
     const { data, error } = await supabase.auth.getUser();
 
@@ -71,3 +127,42 @@ export async function userExists() {
 }
 
 export const isOnboarding = { current: false}
+
+export function useAuth(): { session: Session | null; user: User | null; loading: boolean } {
+    const [session, setSession] = useState<Session | null>(null)
+    const [user, setUser] = useState<User | null>(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        let isMounted = true
+
+        const init = async () => {
+            const { data, error } = await supabase.auth.getSession()
+            if (!isMounted) return
+
+            if (error) {
+                setSession(null)
+                setUser(null)
+            } else {
+                setSession(data.session ?? null)
+                setUser(data.session?.user ?? null)
+            }
+            setLoading(false)
+        }
+
+        init()
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            setSession(nextSession ?? null)
+            setUser(nextSession?.user ?? null)
+            setLoading(false)
+        })
+
+        return () => {
+            isMounted = false
+            subscription.unsubscribe()
+        }
+    }, [])
+
+    return { session, user, loading }
+}

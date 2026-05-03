@@ -12,17 +12,14 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
 import { SignupInterface } from '../../context/SignupInterface.type';
+import { decode } from 'base64-arraybuffer';
+import { getUserId, supabase } from '@/context/AuthContext';
 
 
 export default function FirstOnbPage({onNext, changeData, onBack, method} : SignupInterface) {
 
-=======
-import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -31,20 +28,6 @@ import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
-=======
-  const router = useRouter();
-  const params = useLocalSearchParams<{ method?: AuthMethod; email?: string }>();
-  const {
-    setDisplayName: setOnboardingDisplayName,
-    setEmail: setOnboardingEmail,
-    setPassword: setOnboardingPassword,
-    setAgeGroup: setOnboardingAgeGroup,
-    setProfileImageUri: setOnboardingProfileImage,
-    setAuthMethod: setOnboardingAuthMethod,
-  } = useOnboarding();
-  const authMethod = params.method || 'email';
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
 
   const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
 
@@ -77,7 +60,6 @@ import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
       return;
     }
 
-<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
     changeData((prev: any) => ({
       ...prev,
       name: displayName,
@@ -90,16 +72,41 @@ import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
 
     onNext();
     console.log('data sent to signup flow')
-=======
-    setOnboardingAuthMethod(authMethod);
-    setOnboardingDisplayName(displayName.trim());
-    setOnboardingEmail(email.trim());
-    setOnboardingPassword(password);
-    setOnboardingAgeGroup(selectedAgeGroup);
-    setOnboardingProfileImage(profileImage);
-    router.push('/secondOnbPage');
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
   };
+
+  const handleImageUpload = async (base64String: any) => {
+    try {
+
+    const user = await getUserId()
+    const userId = user?.id;
+
+  if (!userId) throw new Error("No user ID found");
+
+    const filePath = `avatars/${userId}.png`;
+
+    const { data, error } = await supabase.storage
+      .from('avatars') // Ensure this bucket exists in Supabase
+      .upload(filePath, decode(base64String), {
+        contentType: 'image/png',
+        upsert: true,
+      });
+
+    const { data: urlData } = supabase.storage
+    .from('avatars')
+    .getPublicUrl(filePath);
+
+
+    const publicUrl = urlData.publicUrl;
+
+    setProfileImage(publicUrl)
+
+    if (error) throw error;
+    return data.path
+    
+    } catch (err) {
+      Alert.alert("Couldn't upload image!");
+    }
+  }
 
   const handleImagePick = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -113,33 +120,21 @@ import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
+      quality: 1,
+      base64: true
     });
 
-    if (!result.canceled && result.assets[0]) {
-      setProfileImage(result.assets[0].uri);
+    if (!result.canceled) {
+      // The image data is inside the 'assets' array
+      const image = result.assets[0];
+      const base64 = image.base64; // This is what we need!
+      
+      // Now call your upload function
+      await handleImageUpload(base64);
     }
-  };
+  }
 
-<<<<<<< HEAD:apps/mobile/app/(auth)/firstOnbPage.tsx
-=======
-  React.useEffect(() => {
-    if (params.email) {
-      setEmail(params.email);
-    }
-  }, [params.email]);
-
-  React.useEffect(() => {
-    // Without ?method= we are on the email path — must reset context (e.g. user picked
-    // Google first, went back, then chose email).
-    if (params.method) {
-      setOnboardingAuthMethod(params.method);
-    } else {
-      setOnboardingAuthMethod('email');
-    }
-  }, [params.method, setOnboardingAuthMethod]);
-
->>>>>>> 9b8c7f1e84da425159ef2248069f713aa8930bd6:apps/mobile/app/(tabs)/firstOnbPage.tsx
+    
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -287,6 +282,7 @@ import { useOnboarding, type AuthMethod } from '@/context/OnboardingContext';
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

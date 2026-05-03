@@ -78,7 +78,6 @@ export default function ProfileScreen() {
 
   }
 
-
   const handleShare = async () => {
     try {
       await Share.share({
@@ -92,8 +91,10 @@ export default function ProfileScreen() {
 
 
   const handleSaveSettings = (newData: { displayName?: string; availability?: any; profileImage?: string | null }) => {
-
+    setShowSettings(false);
+    getUser();
   };
+
 
   return (
     <SafeAreaView style={styles.container}>

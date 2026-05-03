@@ -11,11 +11,11 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game } from "@/context/GameContext";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { getUserId, supabase } from "@/context/AuthContext";
 
 
 type Event = {
@@ -168,10 +168,11 @@ export default function Index() {
  const [selectedFilter, setSelectedFilter] = useState("Today");
  const [searchQuery, setSearchQuery] = useState("");
  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
+ const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
  const { games, refreshGames } = useGames();
-
+ const isSupabaseConfigured = Boolean(supabase);
  
  useFocusEffect(
    useCallback(() => {
@@ -179,12 +180,31 @@ export default function Index() {
    }, [refreshGames])
  );
 
- const dbEvents = useMemo(() => {
-   return games
-     .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
-     .filter((g) => (user?.id ? g.hostId !== user.id : true))
-     .map(gameToEvent);
- }, [games, mode, user?.id]);
+ useEffect(() => {
+  let isMounted = true;
+
+  const loadCurrentUserId = async () => {
+   const user = await getUserId();
+   if (isMounted) {
+    setCurrentUserId(user?.id);
+   }
+  };
+
+  loadCurrentUserId();
+
+  return () => {
+   isMounted = false;
+  };
+ }, []);
+
+ const dbEvents = useMemo(
+  () =>
+   games
+    .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
+    .filter((g) => (currentUserId ? g.hostId !== currentUserId : true))
+    .map(gameToEvent),
+  [games, mode, currentUserId]
+ );
 
  return (
    <SafeAreaView style={styles.safeArea} edges={["top"]}>

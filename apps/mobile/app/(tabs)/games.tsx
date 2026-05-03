@@ -10,7 +10,6 @@ import {
   Dimensions,
   Alert,
   Linking,
-  Platform,
   Share,
   Modal,
   TouchableWithoutFeedback,
@@ -20,9 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames, Game } from '@/context/GameContext';
-import { useAuth } from '@/context/AuthContext';
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+
 import ProfileDetailsScreen from './profileDetails';
+import { getUserId, supabase } from '@/context/AuthContext';
 
 interface GameRequest {
   game_id: string;
@@ -202,11 +201,11 @@ const pastPlayedGamesData: GameCard[] = [
 export default function Games() {
   const router = useRouter();
   const { games, refreshGames, requestToJoin, getMyGames, getIncomingRequests } = useGames();
-  const { user } = useAuth();
   const [joinGameIds, setJoinGameIds] = useState<string[]>([]);
   const [myGames, setMyGames] = useState<Game[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<GameRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<{ id: string } | undefined>(undefined)
   const [error, setError] = useState<string | null>(null);
   const { feedbackSubmitted } = useLocalSearchParams<{ feedbackSubmitted?: string }>();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
@@ -223,6 +222,8 @@ export default function Games() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const isSupabaseConfigured = Boolean(supabase);
+
   const [pastHostedGames, setPastHostedGames] = useState<GameCard[]>(() =>
     isSupabaseConfigured ? [] : pastHostedGamesData
   );
@@ -232,6 +233,7 @@ export default function Games() {
   const feedbackShownRef = useRef(false);
 
   useEffect(() => {
+    
     if (feedbackSubmitted === 'true' && !feedbackShownRef.current) {
       feedbackShownRef.current = true;
       
@@ -250,12 +252,16 @@ export default function Games() {
   useFocusEffect(
     useCallback(() => {
       const loadData = async () => {
+
+        const userProfile = await getUserId()
+        setUser(userProfile)
+        
         setLoading(true);
         setError(null);
         try {
           await refreshGames();
           
-          if (isSupabaseConfigured && user?.id) {
+          if (user?.id) {
             const { data, error } = await supabase
               .from('game_requests')
               .select('game_id')
@@ -1011,27 +1017,6 @@ export default function Games() {
                       </TouchableOpacity>
                     )}
                   </>
-                )}
-              </View>
-            </View>
-
-            {/* Incoming Requests Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Incoming Requests</Text>
-              <View style={styles.requestsContainer}>
-                {incomingRequests.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No incoming requests</Text>
-                  </View>
-                ) : (
-                  incomingRequests.map((request) => (
-                    <View key={`${request.game_id}-${request.requester_user_id}`} style={styles.requestItem}>
-                      <View style={styles.requestContent}>
-                        <Text style={styles.requestGameTitle}>{request.game_title}</Text>
-                        <Text style={styles.requestStatus}>Status: {request.status}</Text>
-                      </View>
-                    </View>
-                  ))
                 )}
               </View>
             </View>

@@ -3,4 +3,5 @@ export interface SignupInterface {
     onBack: () => void;
     changeData: (value: any | ((prev: any) => any)) => void;     
     method?: any
+    data?: any;
 }
