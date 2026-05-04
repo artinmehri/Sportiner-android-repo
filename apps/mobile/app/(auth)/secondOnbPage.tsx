@@ -11,14 +11,11 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { SignupInterface } from '../../context/SignupInterface.type';
 
 
 const { width: screenWidth } = Dimensions.get('window');
 const sliderWidth = screenWidth - 80;
-const thumbSize = 24;
-
 
 export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterface) {
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);  
