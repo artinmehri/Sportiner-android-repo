@@ -191,7 +191,7 @@ export default function SignupFlow() {
         console.log('User already exists, skipping insert');
         return true
         }
-    
+
         const { error: dbError } = await supabase.from('users')
         .insert([
             {

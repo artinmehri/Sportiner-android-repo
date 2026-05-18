@@ -166,3 +166,4 @@ export function useAuth(): { session: Session | null; user: User | null; loading
 
     return { session, user, loading }
 }
+
