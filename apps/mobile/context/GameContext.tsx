@@ -1,8 +1,27 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 
 import { useAuth } from '@/context/AuthContext';
-import { appendGameMeta, combineDateAndTimeToIso, parseGameMeta, type GameMeta } from '@/lib/gameMeta';
+import {
+  createGameRow,
+  fetchAllGameRows,
+  fetchGameRowsForHost,
+  fetchHostProfiles,
+  fetchPastGamesForUser,
+  fetchPendingRequestsForHost,
+  fetchPlayerCounts,
+  fetchUpcomingGameRowsForPlayer,
+  fetchUserGameMembership,
+  joinGame as joinGameDb,
+  resolvePlayerCount,
+  type GameRow,
+  type JoinResult,
+  type PlayerCounts,
+  type UserRow,
+} from '@/lib/gamesDb';
+import { parseGameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+
+export type { JoinResult };
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -25,6 +44,7 @@ export interface Game {
   courtType: CourtType;
   isBooked: boolean;
   numberOfPlayers: number;
+  playerCount: number;
   gameDescription: string;
   isPaid: boolean;
   paymentAmount?: string;
@@ -51,18 +71,24 @@ export interface Game {
   avatar?: string;
 }
 
-export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players'>;
+export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players' | 'playerCount'>;
 
 interface GameContextType {
   games: Game[];
+  joinedGameIds: string[];
+  pendingGameIds: string[];
   isLoading: boolean;
   error: string | null;
   refreshGames: () => Promise<void>;
+  refreshMembership: () => Promise<void>;
   addGame: (game: GameInsert) => Promise<void>;
   getGameById: (id: string) => Game | undefined;
   getAllGames: () => Promise<Game[]>;
   getMyGames: () => Promise<Game[]>;
+  getMyPlayingGames: () => Promise<Game[]>;
+  getPastGames: () => Promise<{ hosted: Game[]; played: Game[] }>;
   createGame: (gameData: GameInsert) => Promise<Game>;
+  joinGame: (gameId: string) => Promise<JoinResult>;
   requestToJoin: (gameId: string) => Promise<string>;
   getIncomingRequests: () => Promise<Array<{
     game_id: string;
@@ -74,30 +100,12 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
-type GameRow = {
-  id: string;
-  host_id: string;
-  title: string | null;
-  description: string | null;
-  category: string | null;
-  time: string | null;
-  level: string | null;
-  public: boolean | null;
-  capacity: number | null;
-  players_list: unknown;
-  created_at: string;
-};
-
-type UserRow = {
-  id: string;
-  name: string | null;
-  profile_picture: number | null;
-};
-
-function rowToGame(row: GameRow, host?: UserRow | null): Game {
+function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: PlayerCounts): Game {
   const { cleanDescription, meta } = parseGameMeta(row.description);
   const skillLevel = (row.level as SkillLevel) ?? 'Beginner';
-  const spotsLeft = Math.max(0, (row.capacity ?? 2) - 1);
+  const capacity = row.capacity ?? 2;
+  const playerCount = resolvePlayerCount(row, counts);
+  const spotsLeft = Math.max(0, capacity - playerCount);
 
   const t = row.time ? new Date(row.time) : new Date();
   const dateIso = row.time ?? '';
@@ -116,6 +124,23 @@ function rowToGame(row: GameRow, host?: UserRow | null): Game {
   const paymentAmount = meta?.paymentAmount;
   const location = meta?.location ?? '';
 
+  const spotStatus =
+    spotsLeft === 0
+      ? {
+          type: 'full' as const,
+          label: 'Full',
+          color: '#FF3B30',
+          backgroundcolor: 'rgba(255, 59, 48, 0.15)',
+          icon: 'person',
+        }
+      : {
+          type: 'spots' as const,
+          label: `${spotsLeft} Left`,
+          color: '#FF9500',
+          backgroundcolor: 'rgba(255, 179, 71, 0.2)',
+          icon: 'person',
+        };
+
   return {
     id: row.id,
     hostId: row.host_id,
@@ -128,7 +153,8 @@ function rowToGame(row: GameRow, host?: UserRow | null): Game {
     location,
     courtType,
     isBooked,
-    numberOfPlayers: row.capacity ?? 2,
+    numberOfPlayers: capacity,
+    playerCount,
     gameDescription: cleanDescription,
     isPaid,
     paymentAmount,
@@ -137,13 +163,7 @@ function rowToGame(row: GameRow, host?: UserRow | null): Game {
       avatar: DEFAULT_AVATAR,
     },
     statuses: [
-      {
-        type: 'spots',
-        label: `${spotsLeft} Left`,
-        color: '#FF9500',
-        backgroundcolor: 'rgba(255, 179, 71, 0.2)',
-        icon: 'person',
-      },
+      spotStatus,
       {
         type: 'booked',
         label: isBooked ? 'Court booked' : 'Court TBD',
@@ -158,12 +178,35 @@ function rowToGame(row: GameRow, host?: UserRow | null): Game {
   };
 }
 
+async function mapRowsToGames(rows: GameRow[]): Promise<Game[]> {
+  const hostIds = [...new Set(rows.map((r) => r.host_id))];
+  const gameIds = rows.map((r) => r.id);
+  const [profileMap, counts] = await Promise.all([
+    fetchHostProfiles(hostIds),
+    fetchPlayerCounts(gameIds),
+  ]);
+  return rows.map((r) => rowToGame(r, profileMap[r.host_id], counts));
+}
+
 export function GameProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const authUserId = session?.user?.id ?? null;
   const [games, setGames] = useState<Game[]>([]);
+  const [joinedGameIds, setJoinedGameIds] = useState<string[]>([]);
+  const [pendingGameIds, setPendingGameIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshMembership = useCallback(async () => {
+    if (!isSupabaseConfigured || !authUserId) {
+      setJoinedGameIds([]);
+      setPendingGameIds([]);
+      return;
+    }
+    const membership = await fetchUserGameMembership(authUserId);
+    setJoinedGameIds(membership.joinedGameIds);
+    setPendingGameIds(membership.pendingGameIds);
+  }, [authUserId]);
 
   const refreshGames = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -172,33 +215,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(true);
     setError(null);
-    const { data: rows, error: qErr } = await supabase
-      .from('games')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (qErr) {
-      setError(qErr.message);
+    try {
+      const rows = await fetchAllGameRows();
+      const mapped = await mapRowsToGames(rows);
+      setGames(mapped);
+      await refreshMembership();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load games');
       setGames([]);
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    const list = (rows ?? []) as GameRow[];
-    const hostIds = [...new Set(list.map((r) => r.host_id))];
-    let profileMap: Record<string, UserRow> = {};
-
-    if (hostIds.length > 0) {
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name, profile_picture')
-        .in('id', hostIds);
-      profileMap = Object.fromEntries((users ?? []).map((p: UserRow) => [p.id, p]));
-    }
-
-    setGames(list.map((r) => rowToGame(r, profileMap[r.host_id])));
-    setIsLoading(false);
-  }, []);
+  }, [refreshMembership]);
 
   useEffect(() => {
     refreshGames();
@@ -211,6 +239,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           ...gameData,
           id: String(Date.now()),
           hostId: 'local',
+          playerCount: 1,
           host: { name: 'You', avatar: DEFAULT_AVATAR },
           statuses: [
             {
@@ -238,35 +267,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
         throw new Error('Sign in to create a game.');
       }
 
-      const meta: GameMeta = {
+      await createGameRow(userData.user.id, {
+        title: gameData.title,
+        gameDescription: gameData.gameDescription,
         gameType: gameData.gameType,
+        skillLevel: gameData.skillLevel,
         joinSetting: gameData.joinSetting,
         courtType: gameData.courtType,
         isBooked: gameData.isBooked,
         isPaid: gameData.isPaid,
         paymentAmount: gameData.paymentAmount,
         location: gameData.location,
-      };
-      const fullDescription = appendGameMeta(gameData.gameDescription, meta);
-      const gameTime = combineDateAndTimeToIso(gameData.date, gameData.time);
-
-      const row = {
-        host_id: userData.user.id,
-        title: gameData.title,
-        description: fullDescription,
-        category: `${gameData.gameType} · ${gameData.courtType}`,
-        time: gameTime,
-        level: gameData.skillLevel,
-        public: gameData.joinSetting === '👥 Open to Anyone',
-        capacity: gameData.numberOfPlayers,
-        players_list: [userData.user.id],
-        city_id: null,
-      };
-
-      const { error: insErr } = await supabase.from('games').insert(row);
-      if (insErr) {
-        throw new Error(insErr.message);
-      }
+        date: gameData.date,
+        time: gameData.time,
+        numberOfPlayers: gameData.numberOfPlayers,
+      });
       await refreshGames();
     },
     [refreshGames]
@@ -281,60 +296,41 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseConfigured) {
       return [];
     }
-    const { data: rows, error: qErr } = await supabase
-      .from('games')
-      .select('*')
-      .order('time', { ascending: true });
-
-    if (qErr) {
-      throw new Error(qErr.message);
-    }
-
-    const list = (rows ?? []) as GameRow[];
-    const hostIds = [...new Set(list.map((r) => r.host_id))];
-    let profileMap: Record<string, UserRow> = {};
-
-    if (hostIds.length > 0) {
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name, profile_picture')
-        .in('id', hostIds);
-      profileMap = Object.fromEntries((users ?? []).map((p: UserRow) => [p.id, p]));
-    }
-
-    return list.map((r) => rowToGame(r, profileMap[r.host_id]));
+    const rows = await fetchAllGameRows();
+    return mapRowsToGames(rows);
   }, []);
 
   const getMyGames = useCallback(async (): Promise<Game[]> => {
+    if (!isSupabaseConfigured) {
+      return [];
+    }
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userData.user) {
       throw new Error('User not authenticated');
     }
-
-    const { data: rows, error: qErr } = await supabase
-      .from('games')
-      .select('*')
-      .eq('host_id', userData.user.id)
-      .order('time', { ascending: true });
-
-    if (qErr) {
-      throw new Error(qErr.message);
-    }
-
-    const list = (rows ?? []) as GameRow[];
-    const hostIds = [...new Set(list.map((r) => r.host_id))];
-    let profileMap: Record<string, UserRow> = {};
-
-    if (hostIds.length > 0) {
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name, profile_picture')
-        .in('id', hostIds);
-      profileMap = Object.fromEntries((users ?? []).map((p: UserRow) => [p.id, p]));
-    }
-
-    return list.map((r) => rowToGame(r, profileMap[r.host_id]));
+    const rows = await fetchGameRowsForHost(userData.user.id);
+    return mapRowsToGames(rows);
   }, []);
+
+  const getMyPlayingGames = useCallback(async (): Promise<Game[]> => {
+    if (!isSupabaseConfigured || !authUserId) {
+      return [];
+    }
+    const rows = await fetchUpcomingGameRowsForPlayer(authUserId);
+    return mapRowsToGames(rows);
+  }, [authUserId]);
+
+  const getPastGames = useCallback(async (): Promise<{ hosted: Game[]; played: Game[] }> => {
+    if (!isSupabaseConfigured || !authUserId) {
+      return { hosted: [], played: [] };
+    }
+    const { hosted, played } = await fetchPastGamesForUser(authUserId);
+    const [hostedGames, playedGames] = await Promise.all([
+      mapRowsToGames(hosted),
+      mapRowsToGames(played),
+    ]);
+    return { hosted: hostedGames, played: playedGames };
+  }, [authUserId]);
 
   const createGame = useCallback(async (gameData: GameInsert): Promise<Game> => {
     const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -342,79 +338,77 @@ export function GameProvider({ children }: { children: ReactNode }) {
       throw new Error('Sign in to create a game.');
     }
 
-    const meta: GameMeta = {
+    const inserted = await createGameRow(userData.user.id, {
+      title: gameData.title,
+      gameDescription: gameData.gameDescription,
       gameType: gameData.gameType,
+      skillLevel: gameData.skillLevel,
       joinSetting: gameData.joinSetting,
       courtType: gameData.courtType,
       isBooked: gameData.isBooked,
       isPaid: gameData.isPaid,
       paymentAmount: gameData.paymentAmount,
       location: gameData.location,
-    };
-    const fullDescription = appendGameMeta(gameData.gameDescription, meta);
-    const gameTime = combineDateAndTimeToIso(gameData.date, gameData.time);
-
-    const row = {
-      host_id: userData.user.id,
-      title: gameData.title,
-      description: fullDescription,
-      category: `${gameData.gameType} · ${gameData.courtType}`,
-      time: gameTime,
-      level: gameData.skillLevel,
-      public: gameData.joinSetting === '👥 Open to Anyone',
-      capacity: gameData.numberOfPlayers,
-      players_list: [userData.user.id],
-      city_id: null,
-    };
-
-    const { data: insertedRow, error: insErr } = await supabase
-      .from('games')
-      .insert(row)
-      .select()
-      .single();
-
-    if (insErr) {
-      throw new Error(insErr.message);
-    }
-
-    const { data: host } = await supabase
-      .from('users')
-      .select('id, name, profile_picture')
-      .eq('id', userData.user.id)
-      .single();
-
-    return rowToGame(insertedRow as GameRow, host as UserRow);
-  }, []);
-
-  const requestToJoin = useCallback(async (gameId: string): Promise<string> => {
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData.user) {
-      throw new Error('User not authenticated');
-    }
-
-    const { data: existingRequest } = await supabase
-      .from('game_requests')
-      .select('*')
-      .eq('game_id', gameId)
-      .eq('user_id', userData.user.id)
-      .maybeSingle();
-
-    if (existingRequest) {
-      return 'already_requested';
-    }
-
-    const { error: insErr } = await supabase.from('game_requests').insert({
-      game_id: gameId,
-      user_id: userData.user.id,
-      status: 'pending',
+      date: gameData.date,
+      time: gameData.time,
+      numberOfPlayers: gameData.numberOfPlayers,
     });
 
-    if (insErr) {
-      throw new Error(insErr.message);
-    }
+    const [profileMap, counts] = await Promise.all([
+      fetchHostProfiles([userData.user.id]),
+      fetchPlayerCounts([inserted.id]),
+    ]);
 
-    return 'created';
+    return rowToGame(inserted, profileMap[userData.user.id], counts);
   }, []);
+
+  const joinGame = useCallback(
+    async (gameId: string): Promise<JoinResult> => {
+      if (!isSupabaseConfigured) {
+        return 'not_configured';
+      }
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData.user) {
+        return 'not_authenticated';
+      }
+      const result = await joinGameDb(gameId, userData.user.id);
+      if (result === 'joined') {
+        setJoinedGameIds((prev) => (prev.includes(gameId) ? prev : [...prev, gameId]));
+        setPendingGameIds((prev) => prev.filter((id) => id !== gameId));
+      } else if (result === 'requested') {
+        setPendingGameIds((prev) => (prev.includes(gameId) ? prev : [...prev, gameId]));
+      }
+      await refreshGames();
+      return result;
+    },
+    [refreshGames]
+  );
+
+  const requestToJoin = useCallback(
+    async (gameId: string): Promise<string> => {
+      const result = await joinGame(gameId);
+      if (result === 'joined') {
+        return 'joined';
+      }
+      if (result === 'requested') {
+        return 'created';
+      }
+      if (result === 'already_requested') {
+        return 'already_requested';
+      }
+      if (result === 'already_member') {
+        return 'already_member';
+      }
+      if (result === 'full') {
+        throw new Error('This game is full.');
+      }
+      if (result === 'not_authenticated') {
+        throw new Error('User not authenticated');
+      }
+      throw new Error('Configure Supabase to join games.');
+    },
+    [joinGame]
+  );
 
   const getIncomingRequests = useCallback(async () => {
     const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -422,39 +416,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       throw new Error('User not authenticated');
     }
 
-    const { data: hostedGames, error: gamesErr } = await supabase
-      .from('games')
-      .select('id')
-      .eq('host_id', userData.user.id);
-
-    if (gamesErr) {
-      throw new Error(gamesErr.message);
-    }
-
-    const gameIds = (hostedGames ?? []).map((g: { id: string }) => g.id);
-    if (gameIds.length === 0) {
-      return [];
-    }
-
-    const { data: requests, error: reqErr } = await supabase
-      .from('game_requests')
-      .select('game_id, user_id, status')
-      .in('game_id', gameIds);
-
-    if (reqErr) {
-      throw new Error(reqErr.message);
-    }
-
-    const { data: games } = await supabase
-      .from('games')
-      .select('id, title')
-      .in('id', gameIds);
-
-    const gameMap = Object.fromEntries((games ?? []).map((g: { id: string; title: string | null }) => [g.id, g.title || 'Game']));
-
-    return (requests ?? []).map((r: { game_id: string; user_id: string; status: string }) => ({
+    const pending = await fetchPendingRequestsForHost(userData.user.id);
+    return pending.map((r) => ({
       game_id: r.game_id,
-      game_title: gameMap[r.game_id] || 'Game',
+      game_title: r.game_title,
       requester_user_id: r.user_id,
       status: r.status,
     }));
@@ -462,18 +427,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   return (
     <GameContext.Provider
-      value={{ 
-        games, 
-        isLoading, 
-        error, 
-        refreshGames, 
-        addGame, 
+      value={{
+        games,
+        joinedGameIds,
+        pendingGameIds,
+        isLoading,
+        error,
+        refreshGames,
+        refreshMembership,
+        addGame,
         getGameById,
         getAllGames,
         getMyGames,
+        getMyPlayingGames,
+        getPastGames,
         createGame,
+        joinGame,
         requestToJoin,
-        getIncomingRequests
+        getIncomingRequests,
       }}
     >
       {children}
