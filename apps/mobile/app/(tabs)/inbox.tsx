@@ -11,95 +11,15 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { useRouter } from "expo-router";
-
-type Chat = {
-  id: string;
-  name: string;
-  lastMessage: string;
-  timeElapsed: string;
-  day: string;
-  time: string;
-  avatar: string;
-};
+import { getConversations } from "@/context/ChatContext";
 
 
-export default function Inbox() {
+
+export default async function Inbox() {
   const [selectedFilter, setSelectedFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
-  const [chats, setChats] = useState<Chat[]>([
-    {
-      id: "1",
-      name: "Boys Tennis Game",
-      lastMessage: "Artin: I'm almost there",
-      timeElapsed: "1h",
-      day: "Tue",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "2",
-      name: "Alex Joe",
-      lastMessage: "Almost there!",
-      timeElapsed: "5h",
-      day: "Wed",
-      time: "3PM",
-      avatar:
-        "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "3",
-      name: "Seb Mira",
-      lastMessage: "Do u have a racket?",
-      timeElapsed: "10h",
-      day: "Mon",
-      time: "1PM",
-      avatar:
-        "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "4",
-      name: "Sara Dion",
-      lastMessage: "Are you here?",
-      timeElapsed: "3d",
-      day: "Fri",
-      time: "11Am",
-      avatar:
-        "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "5",
-      name: "Dawson Frak",
-      lastMessage: "Can't find the court",
-      timeElapsed: "7d",
-      day: "Sat",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "6",
-      name: "Safwan Mukhtar",
-      lastMessage: "Let me know",
-      timeElapsed: "1w",
-      day: "Sun",
-      time: "2PM",
-      avatar:
-        "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "7",
-      name: "John Smith",
-      lastMessage: "Sure",
-      timeElapsed: "2w",
-      day: "Thu",
-      time: "10AM",
-      avatar:
-        "https://images.unsplash.com/photo-1505142468610-359e7d316be0?auto=format&fit=crop&w=200&q=60",
-    },
-  ]);
-  
+  const chats = (await getConversations()) ?? [];
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -179,7 +99,7 @@ export default function Inbox() {
   );
 }
 
-function ChatItem({ chat, router }: { chat: Chat; router: any }) {
+function ChatItem({ chat, router }: { chat: any; router: any }) {
   const isUnread = chat.id === "1" || chat.id === "4";
   const isGroupChat = chat.id === "1" || chat.name.toLowerCase().includes('group') || 
                      chat.name.toLowerCase().includes('team') ||

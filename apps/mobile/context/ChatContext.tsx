@@ -100,7 +100,7 @@ export async function addUserToChat(gameId: string) {
     }
 }
 
-export async function sendMessage(message: any, type: string, chatId: string) {
+export async function sendMessage(message: string, type: string, chatId: string) {
     const userId = await getUserId();
 
     const { data, error } = await supabase
@@ -234,9 +234,8 @@ export async function getUnreadCount(chatId: string) {
     return count ?? 0;
 }
 
-type CreateChatMember = { id: string; level: number };
 
-export async function createChat(type: string, name: string, photo: string, gameId: string, members: CreateChatMember[]) {
+export async function createChat(type: string, name: string, photo: string, gameId: string, members: any) {
 
     let chatId = '';
 
