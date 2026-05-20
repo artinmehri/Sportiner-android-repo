@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useNavigation, useRouter } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker'
 import { useScrollEventsHandlersDefault } from '@gorhom/bottom-sheet';
@@ -55,10 +55,6 @@ type ReplyInfo = {
   type: MessageType;
   mediaUrl?: string;
 };
-
-const navigateToProfile = () => {
-  router.push('/(tabs)/profileDetails')
-}
 
 const SWIPE_THRESHOLD = 80;
 
@@ -110,6 +106,21 @@ const copyToClipboard = async (message: any) => {
  
 const ChatScreen = () => {
   const router = useRouter();
+  const { gameId, gameTitle, peerName } = useLocalSearchParams<{
+    gameId?: string;
+    gameTitle?: string;
+    peerName?: string;
+  }>();
+  const fromGame = Boolean(gameId && String(gameId).length > 0);
+  const headerName =
+    (peerName && String(peerName)) ||
+    (gameTitle && String(gameTitle)) ||
+    'Behrad';
+  const headerSubtitle = fromGame
+    ? gameTitle && peerName
+      ? String(gameTitle)
+      : 'Game chat'
+    : 'Wed · 3PM @ Saint-Louis Park';
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -295,16 +306,33 @@ const ChatScreen = () => {
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigateToProfile()}>
+        <TouchableOpacity
+          onPress={() => {
+            if (!fromGame) {
+              router.push('/(tabs)/profileDetails');
+            }
+          }}
+          disabled={fromGame}
+        >
           <Image source={{ uri: 'https://picsum.photos/seed/behrad/100/100.jpg' }} style={styles.avatar} />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigateToProfile()} style={styles.contactInfo}>
+        <TouchableOpacity
+          onPress={() => {
+            if (!fromGame) {
+              router.push('/(tabs)/profileDetails');
+            }
+          }}
+          disabled={fromGame}
+          style={styles.contactInfo}
+        >
           <View style={styles.contactNameRow}>
-            <Text style={styles.contactName}>Behrad</Text>
-            <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
+            <Text style={styles.contactName}>{headerName}</Text>
+            {!fromGame && (
+              <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
+            )}
           </View>
-          <Text style={styles.contactSubtitle}>Wed · 3PM @ Saint-Louis Park</Text>
+          <Text style={styles.contactSubtitle}>{headerSubtitle}</Text>
         </TouchableOpacity>
       </View>
     </View>

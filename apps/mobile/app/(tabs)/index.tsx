@@ -15,7 +15,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game } from "@/context/GameContext";
-import { getUserId, supabase } from "@/context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
+import { isWithinDateFilter } from "@/lib/gamesDb";
+import { openGameChat } from "@/lib/openGameChat";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 
 type Event = {
@@ -86,7 +89,7 @@ function gameToEvent(g: Game): Event {
     avatar: g.host.avatar,
     primaryCta: "Message Host",
     secondaryCta: needsApproval ? "Request Spot" : "Join Game",
-    spotsFilled: 1,
+    spotsFilled: g.playerCount,
     spotsTotal: g.numberOfPlayers,
     hasGreenBackground: false,
     gameId: g.id,
@@ -171,40 +174,28 @@ export default function Index() {
  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
- const { games, refreshGames } = useGames();
- const isSupabaseConfigured = Boolean(supabase);
- 
+ const { games, refreshGames, joinedGameIds, pendingGameIds } = useGames();
+ const { user } = useAuth();
+
  useFocusEffect(
    useCallback(() => {
      refreshGames();
    }, [refreshGames])
  );
 
- useEffect(() => {
-  let isMounted = true;
-
-  const loadCurrentUserId = async () => {
-   const user = await getUserId();
-   if (isMounted) {
-    setCurrentUserId(user?.id);
-   }
-  };
-
-  loadCurrentUserId();
-
-  return () => {
-   isMounted = false;
-  };
- }, []);
-
- const dbEvents = useMemo(
-  () =>
-   games
-    .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
-    .filter((g) => (currentUserId ? g.hostId !== currentUserId : true))
-    .map(gameToEvent),
-  [games, mode, currentUserId]
- );
+ const dbEvents = useMemo(() => {
+   return games
+     .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
+     .filter((g) => (user?.id ? g.hostId !== user.id : true))
+     .filter((g) => !joinedGameIds.includes(g.id) && !pendingGameIds.includes(g.id))
+     .filter((g) =>
+       isWithinDateFilter(
+         g.date,
+         selectedFilter as "Today" | "Tomorrow" | "This Weekend"
+       )
+     )
+     .map(gameToEvent);
+ }, [games, mode, user?.id, joinedGameIds, pendingGameIds, selectedFilter]);
 
  return (
    <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -310,6 +301,7 @@ export default function Index() {
            mode={mode}
            router={router}
            requestJoinGame={requestJoinGame}
+           refreshGames={refreshGames}
            setShowJoinedGameModal={setShowJoinedGameModal}
          />
        ))}
@@ -350,7 +342,7 @@ export default function Index() {
 }
 
 
-function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModal }: { 
+function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShowJoinedGameModal }: { 
   event: Event; 
   mode: "1-1" | "Group"; 
   router: any; 
@@ -364,7 +356,8 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
       location: string;
       host: string;
     };
-  }) => Promise<{ error: string | null }>;
+  }) => Promise<{ error: string | null; result?: string }>;
+  refreshGames: () => Promise<void>;
   setShowJoinedGameModal: (show: boolean) => void;
 }) {
  const isGroupMode = mode === "Group";
@@ -378,7 +371,7 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
       event.gameId ??
       event.title.replace(/\s+/g, "-").toLowerCase();
 
-    const { error } = await requestJoinGame({
+    const { error, result } = await requestJoinGame({
       gameId,
       gameTitle: event.title,
       gameStatus: event.status,
@@ -395,6 +388,7 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
       return;
     }
 
+    await refreshGames();
     setShowJoinedGameModal(true);
 
     setTimeout(() => {
@@ -416,7 +410,25 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
     }
    >
     <View style={styles.cardHeader}>
-      <Image source={{ uri: event.avatar }} style={event.status === 'full' ? styles.avatarFull :styles.avatar} />
+      <TouchableOpacity
+        disabled={event.status === 'full'}
+        onPress={() => {
+          if (!event.gameId) {
+            router.push('/(tabs)/chat');
+            return;
+          }
+          const hostName = event.title.includes("'s")
+            ? event.title.split("'s")[0]
+            : 'Host';
+          openGameChat({
+            gameId: event.gameId,
+            gameTitle: event.title,
+            peerName: hostName,
+          });
+        }}
+      >
+        <Image source={{ uri: event.avatar }} style={event.status === 'full' ? styles.avatarFull :styles.avatar} />
+      </TouchableOpacity>
       <View style={styles.cardInfo}>
         <View style={{flexDirection: 'row'}}>
         <Text style={event.status === 'full' ? styles.cardTitleFull : styles.cardTitle}>{event.title}</Text>
@@ -487,7 +499,24 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
          style={[
           event.status === 'full' ? styles.secondaryButtonFull : styles.secondaryButton,
          ]}
-         onPress={ event.status === 'full' ? undefined : () => router.push('/(tabs)/chat')}
+         onPress={
+           event.status === 'full'
+             ? undefined
+             : () => {
+                 if (!event.gameId) {
+                   router.push('/(tabs)/chat');
+                   return;
+                 }
+                 const hostName = event.title.includes("'s")
+                   ? event.title.split("'s")[0]
+                   : 'Host';
+                 openGameChat({
+                   gameId: event.gameId,
+                   gameTitle: event.title,
+                   peerName: hostName,
+                 });
+               }
+         }
        >
          <Text
            style={[

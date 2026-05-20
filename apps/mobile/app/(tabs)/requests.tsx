@@ -12,7 +12,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigation } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/context/AuthContext";
+import { approveJoinRequest, declineJoinRequest } from "@/lib/gamesDb";
+import { openGameChat } from "@/lib/openGameChat";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type Request = {
   id: string;
@@ -22,7 +24,9 @@ type Request = {
   day: string;
   time: string;
   avatar: string;
+  gameId: string;
   gameTitle?: string;
+  requesterUserId: string;
 };
 
 const DEFAULT_AVATAR =
@@ -118,7 +122,9 @@ export default function Requests() {
         day: pill.day,
         time: pill.time,
         avatar: DEFAULT_AVATAR,
+        gameId: r.game_id as string,
         gameTitle: g?.title ?? undefined,
+        requesterUserId: r.user_id as string,
       };
     });
     setRequests(ui);
@@ -130,17 +136,29 @@ export default function Requests() {
   }, [load]);
 
   const handleApproveRequest = async (request: Request) => {
-    if (isSupabaseConfigured) {
-      await supabase.from("game_requests").update({ status: "accepted" }).eq("id", request.id);
+    if (!isSupabaseConfigured) {
+      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+      return;
     }
-    setRequests((prev) => prev.filter((r) => r.id !== request.id));
+    try {
+      await approveJoinRequest(request.id);
+      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+    } catch {
+      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+    }
   };
 
   const handleDeclineRequest = async (request: Request) => {
-    if (isSupabaseConfigured) {
-      await supabase.from("game_requests").update({ status: "rejected" }).eq("id", request.id);
+    if (!isSupabaseConfigured) {
+      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+      return;
     }
-    setRequests((prev) => prev.filter((r) => r.id !== request.id));
+    try {
+      await declineJoinRequest(request.id);
+      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+    } catch {
+      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+    }
   };
 
   const navigation = useNavigation();
@@ -182,11 +200,22 @@ export default function Requests() {
 }
 
 function RequestItem({ request, onApprove, onDecline }: { request: Request; onApprove: () => void; onDecline: () => void }) {
+  const openChat = () => {
+    openGameChat({
+      gameId: request.gameId,
+      gameTitle: request.gameTitle,
+      peerName: request.name,
+      peerUserId: request.requesterUserId,
+    });
+  };
+
   return (
     <View style={styles.requestItem}>
       <View style={styles.requestHeader}>
-        <Image source={{ uri: request.avatar }} style={styles.avatar} />
-        <View style={styles.requestContent}>
+        <TouchableOpacity onPress={openChat}>
+          <Image source={{ uri: request.avatar }} style={styles.avatar} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={openChat} style={styles.requestContent}>
           <Text style={styles.requestName}>{request.name}</Text>
           {request.gameTitle ? (
             <Text style={styles.requestGameTitle} numberOfLines={1}>
@@ -196,7 +225,7 @@ function RequestItem({ request, onApprove, onDecline }: { request: Request; onAp
           <Text style={styles.requestDetails}>
             {request.level} • {request.reliability}
           </Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.requestTimePill}>
           <Text style={styles.requestTimePillText}>
             {request.day} • {request.time}

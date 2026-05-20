@@ -19,9 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames, Game } from '@/context/GameContext';
-
-import ProfileDetailsScreen from './profileDetails';
-import { getUserId, supabase } from '@/context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { openGameChat } from '@/lib/openGameChat';
 
 interface GameRequest {
   game_id: string;
@@ -198,11 +198,47 @@ const pastPlayedGamesData: GameCard[] = [
   },
 ];
 
+function gameToPastCard(game: Game, section: 'hosted' | 'played'): GameCard {
+  const playedLabel = game.date
+    ? `Played ${new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    : 'Played';
+  return {
+    id: game.id,
+    title: game.title,
+    level: game.skillLevel,
+    distance: 'Nearby',
+    verified: false,
+    date: playedLabel,
+    image:
+      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
+    status: {
+      type: 'verify',
+      label: 'Verify Game & Levels',
+      color: '#002000',
+      backgroundcolor: '#19E675',
+      icon: 'checkmark',
+    },
+    players: [],
+    section,
+  };
+}
+
 export default function Games() {
   const router = useRouter();
-  const { games, refreshGames, requestToJoin, getMyGames, getIncomingRequests } = useGames();
-  const [joinGameIds, setJoinGameIds] = useState<string[]>([]);
+  const {
+    games,
+    refreshGames,
+    requestToJoin,
+    getMyGames,
+    getMyPlayingGames,
+    getPastGames,
+    getIncomingRequests,
+    joinedGameIds,
+    pendingGameIds,
+  } = useGames();
+  const { user } = useAuth();
   const [myGames, setMyGames] = useState<Game[]>([]);
+  const [myPlayingGames, setMyPlayingGames] = useState<Game[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<GameRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<{ id: string } | undefined>(undefined)
@@ -219,7 +255,6 @@ export default function Games() {
   const [pastPlayingScrollIndex, setPastPlayingScrollIndex] = useState(0);
   const [selectedGame, setSelectedGame] = useState<GameCard | Game | null>(null);
   const [showPlayers, setShowPlayers] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const isSupabaseConfigured = Boolean(supabase);
@@ -260,25 +295,18 @@ export default function Games() {
         setError(null);
         try {
           await refreshGames();
-          
-          if (user?.id) {
-            const { data, error } = await supabase
-              .from('game_requests')
-              .select('game_id')
-              .eq('user_id', user.id)
-              .in('status', ['pending', 'accepted']);
-            if (!error) {
-              setJoinGameIds((data ?? []).map((r: { game_id: string }) => r.game_id));
-            }
-          }
 
-          if (user?.id) {
-            const myGamesList = await getMyGames();
+          if (user?.id && isSupabaseConfigured) {
+            const [myGamesList, playingList, pastGames, requests] = await Promise.all([
+              getMyGames(),
+              getMyPlayingGames(),
+              getPastGames(),
+              getIncomingRequests(),
+            ]);
             setMyGames(myGamesList);
-          }
-
-          if (user?.id) {
-            const requests = await getIncomingRequests();
+            setMyPlayingGames(playingList);
+            setPastHostedGames(pastGames.hosted.map((g) => gameToPastCard(g, 'hosted')));
+            setPastPlayedGames(pastGames.played.map((g) => gameToPastCard(g, 'played')));
             setIncomingRequests(requests);
           }
         } catch (err) {
@@ -289,7 +317,7 @@ export default function Games() {
       };
 
       loadData();
-    }, [refreshGames, user?.id, getMyGames, getIncomingRequests])
+    }, [refreshGames, user?.id, getMyGames, getMyPlayingGames, getPastGames, getIncomingRequests])
   );
 
   const formatGameDate = (dateString: string | undefined) => {
@@ -342,7 +370,7 @@ export default function Games() {
       id: game.id,
       title: game.title,
       level: game.skillLevel,
-      distance: '1.0km',
+      distance: 'Nearby',
       address: game.location,
       cost: game.isPaid ? `$${game.paymentAmount} Entry` : 'Free',
       time: `${formatDate(game.date)} • ${formatTime(game.time)}`,
@@ -358,10 +386,11 @@ export default function Games() {
         .filter((g) => 
           user?.id && 
           g.hostId !== user.id && 
-          !joinGameIds.includes(g.id)
+          !joinedGameIds.includes(g.id) &&
+          !pendingGameIds.includes(g.id)
         )
         .map(gameToCard),
-    [games, user?.id, joinGameIds]
+    [games, user?.id, joinedGameIds, pendingGameIds]
   );
 
   const hostingGamesList: GameCard[] = useMemo(
@@ -371,16 +400,13 @@ export default function Games() {
   );
 
   const playingGamesList: GameCard[] = useMemo(
-    () =>
-      games
-        .filter(
-          (g) =>
-            Boolean(user?.id) &&
-            joinGameIds.includes(g.id) &&
-            g.hostId !== user?.id
-        )
-        .map(gameToCard),
-    [games, user?.id, joinGameIds]
+    () => myPlayingGames.map(gameToCard),
+    [myPlayingGames]
+  );
+
+  const pendingRequestCount = useMemo(
+    () => incomingRequests.filter((r) => r.status === 'pending').length,
+    [incomingRequests]
   );
 
   const getLevelColor = (level: string) => {
@@ -569,11 +595,16 @@ export default function Games() {
   const handleJoinGame = async (gameId: string) => {
     try {
       const response = await requestToJoin(gameId);
-      if (response === 'created') {
-        setJoinGameIds(prev => [...prev, gameId]);
-        Alert.alert('Success', 'Request sent to join game!');
+      if (response === 'joined') {
+        const playingList = await getMyPlayingGames();
+        setMyPlayingGames(playingList);
+        Alert.alert('Success', 'You joined this game.');
+      } else if (response === 'created') {
+        Alert.alert('Success', 'Request sent to join game.');
       } else if (response === 'already_requested') {
         Alert.alert('Info', 'You have already requested to join this game.');
+      } else if (response === 'already_member') {
+        Alert.alert('Info', 'You are already in this game.');
       }
     } catch (err) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Failed to join game');
@@ -605,15 +636,17 @@ export default function Games() {
     setSelectedGame(null);
   };
 
-  const handleChatPress = (game: GameCard) => {
-    router.push({
-      pathname: '/(tabs)/chat',
-      params: {
-        gameId: game.id,
-        gameTitle: game.title,
-        isDirectChat: 'true'
-      }
+  const openChatForGame = (game: GameCard, peerName?: string) => {
+    closeAllPopups();
+    openGameChat({
+      gameId: game.id,
+      gameTitle: game.title,
+      peerName,
     });
+  };
+
+  const handleChatPress = (game: GameCard) => {
+    openChatForGame(game);
   };
 
   const handleViewPlayers = (game: GameCard) => {
@@ -622,7 +655,11 @@ export default function Games() {
     setShowPlayers(true);
   };
 
-  const handleViewPlayersPress = (game: GameCard) => {
+  const handleViewPlayersPress = (game: GameCard, peerName?: string) => {
+    if (peerName) {
+      openChatForGame(game, peerName);
+      return;
+    }
     setSelectedGame(game);
     setShowMenu(false);
     setShowPlayers(true);
@@ -663,9 +700,11 @@ export default function Games() {
         </View>
         <TouchableOpacity style={styles.notificationButton} onPress={ () => router.push('/(tabs)/requests')}>
           <Ionicons name="file-tray-outline" size={30} color="#000"/>
-          <View style={styles.notificationBadge}>
-            <Text style={styles.notificationText}>3</Text>
-          </View>
+          {pendingRequestCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationText}>{pendingRequestCount}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -707,7 +746,9 @@ export default function Games() {
                   {pastHostedGames.map((game, index) => (
                     <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === pastHostedGames.length - 1 && styles.lastCard]}>
                       <View style={styles.cardHeader}>
-                        <Image source={{ uri: game.image }} style={styles.avatar} />
+                        <TouchableOpacity onPress={() => openChatForGame(game)}>
+                          <Image source={{ uri: game.image }} style={styles.avatar} />
+                        </TouchableOpacity>
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
                           <View style={styles.cardMetaRow}>
@@ -734,7 +775,10 @@ export default function Games() {
                       <View style={styles.playersSection}>
                         <View style={styles.playersContainer}>
                           {game.players?.slice(0, 3).map((player, index) => (
-                            <TouchableOpacity key={index} onPress={() => handleViewPlayersPress(game)}>
+                            <TouchableOpacity
+                              key={index}
+                              onPress={() => handleViewPlayersPress(game, player.name)}
+                            >
                               <Image
                                 source={{ uri: player.avatar }}
                                 style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
@@ -799,7 +843,9 @@ export default function Games() {
                       ]}
                     >
                       <View style={styles.cardHeader}>
-                        <Image source={{ uri: game.image }} style={styles.avatar} />
+                        <TouchableOpacity onPress={() => openChatForGame(game)}>
+                          <Image source={{ uri: game.image }} style={styles.avatar} />
+                        </TouchableOpacity>
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
                           <View style={styles.cardMetaRow}>
@@ -826,7 +872,10 @@ export default function Games() {
                       <View style={styles.playersSection}>
                         <View style={styles.playersContainer}>
                           {game.players?.slice(0, 3).map((player, index) => (
-                            <TouchableOpacity key={index} onPress={() => handleViewPlayersPress(game)}>
+                            <TouchableOpacity
+                              key={index}
+                              onPress={() => handleViewPlayersPress(game, player.name)}
+                            >
                               <Image
                                 source={{ uri: player.avatar }}
                                 style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
@@ -883,7 +932,9 @@ export default function Games() {
                       {availableGamesList.map((game, index) => (
                         <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === availableGamesList.length - 1 && styles.lastCard]}>
                           <View style={styles.cardHeader}>
-                            <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                            <TouchableOpacity onPress={() => openChatForGame(game)}>
+                              <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                            </TouchableOpacity>
                             <View style={styles.cardInfo}>
                               <Text style={styles.cardTitle}>{game.title}</Text>
                               <View style={styles.cardMetaRow}>
@@ -932,13 +983,13 @@ export default function Games() {
               </View>
             </View>
 
-            {/* My Games Section */}
+            {/* Games You're In */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>My Games</Text>
+              <Text style={styles.sectionTitle}>Games You&apos;re In</Text>
               <View style={styles.horizontalScrollContainer}>
-                {hostingGamesList.length === 0 ? (
+                {playingGamesList.length === 0 ? (
                   <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No games hosted</Text>
+                    <Text style={styles.emptyStateText}>No joined games yet</Text>
                   </View>
                 ) : (
                   <>
@@ -961,10 +1012,78 @@ export default function Games() {
                       }}
                       scrollEventThrottle={16}
                     >
+                      {playingGamesList.map((game, index) => (
+                        <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === playingGamesList.length - 1 && styles.lastCard]}>
+                          <View style={styles.cardHeader}>
+                            <TouchableOpacity onPress={() => openChatForGame(game)}>
+                              <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                            </TouchableOpacity>
+                            <View style={styles.cardInfo}>
+                              <Text style={styles.cardTitle}>{game.title}</Text>
+                              <View style={styles.cardMetaRow}>
+                                <Text style={styles.cardLevel}>{game.level}</Text>
+                                {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                                <Text style={styles.cardDistance}>{game.distance}</Text>
+                              </View>
+                            </View>
+                          </View>
+                          <View style={styles.cardDetails}>
+                            <Text style={styles.detailText}>
+                              {game.address} • {game.cost}
+                            </Text>
+                            <Text style={styles.detailText}>{game.time}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </ScrollView>
+                    {playingScrollIndex < playingGamesList.length - 1 && (
+                      <TouchableOpacity
+                        style={styles.scrollArrowRight}
+                        onPress={() => scrollPlaying('right')}
+                      >
+                        <Ionicons name="chevron-forward" size={24} color="#000" />
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* My Games Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>My Games</Text>
+              <View style={styles.horizontalScrollContainer}>
+                {hostingGamesList.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No games hosted</Text>
+                  </View>
+                ) : (
+                  <>
+                    {hostingScrollIndex > 0 && (
+                      <TouchableOpacity
+                        style={styles.scrollArrowLeft}
+                        onPress={() => scrollHosting('left')}
+                      >
+                        <Ionicons name="chevron-back" size={24} color="#000" />
+                      </TouchableOpacity>
+                    )}
+                    <ScrollView
+                      ref={hostingScrollRef}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      pagingEnabled
+                      onScroll={(e) => {
+                        const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
+                        setHostingScrollIndex(index);
+                      }}
+                      scrollEventThrottle={16}
+                    >
                       {hostingGamesList.map((game, index) => (
                         <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === hostingGamesList.length - 1 && styles.lastCard]}>
                           <View style={styles.cardHeader}>
-                            <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                            <TouchableOpacity onPress={() => openChatForGame(game)}>
+                              <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                            </TouchableOpacity>
                             <View style={styles.cardInfo}>
                               <Text style={styles.cardTitle}>{game.title}</Text>
                               <View style={styles.cardMetaRow}>
@@ -1008,15 +1127,45 @@ export default function Games() {
                         </View>
                       ))}
                     </ScrollView>
-                    {playingScrollIndex < hostingGamesList.length - 1 && (
+                    {hostingScrollIndex < hostingGamesList.length - 1 && (
                       <TouchableOpacity
                         style={styles.scrollArrowRight}
-                        onPress={() => scrollPlaying('right')}
+                        onPress={() => scrollHosting('right')}
                       >
                         <Ionicons name="chevron-forward" size={24} color="#000" />
                       </TouchableOpacity>
                     )}
                   </>
+                )}
+              </View>
+            </View>
+
+            {/* Incoming Requests Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Incoming Requests</Text>
+              <View style={styles.requestsContainer}>
+                {incomingRequests.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No incoming requests</Text>
+                  </View>
+                ) : (
+                  incomingRequests.map((request) => (
+                    <TouchableOpacity
+                      key={`${request.game_id}-${request.requester_user_id}`}
+                      style={styles.requestItem}
+                      onPress={() =>
+                        openGameChat({
+                          gameId: request.game_id,
+                          gameTitle: request.game_title,
+                        })
+                      }
+                    >
+                      <View style={styles.requestContent}>
+                        <Text style={styles.requestGameTitle}>{request.game_title}</Text>
+                        <Text style={styles.requestStatus}>Status: {request.status}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
                 )}
               </View>
             </View>
@@ -1111,7 +1260,14 @@ export default function Games() {
                 </View>
                 <View style={styles.requestsContent}>
                   {selectedGame?.players?.map((player, index) => (
-                    <TouchableOpacity key={index} onPress={() => { setShowPlayers(false); setShowProfileModal(true); }}>
+                    <TouchableOpacity
+                      key={index}
+                      onPress={() => {
+                        if (selectedGame) {
+                          openChatForGame(selectedGame, player.name);
+                        }
+                      }}
+                    >
                       <View style={styles.playerItem}>
                         <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} />
                         <View style={styles.playerInfo}>
@@ -1139,7 +1295,14 @@ export default function Games() {
                 </View>
                 <View style={styles.playersContent}>
                   {selectedGame?.players?.map((player, index) => (
-                    <TouchableOpacity key={index} onPress={() => { setShowPlayers(false); setShowProfileModal(true); }}>
+                    <TouchableOpacity
+                      key={index}
+                      onPress={() => {
+                        if (selectedGame) {
+                          openChatForGame(selectedGame, player.name);
+                        }
+                      }}
+                    >
                       <View style={styles.playerItem}>
                         <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} />
                         <View style={styles.playerInfo}>
@@ -1154,15 +1317,6 @@ export default function Games() {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* Profile Details Modal */}
-      <Modal
-        visible={showProfileModal}
-        animationType="slide"
-        onRequestClose={() => setShowProfileModal(false)}
-      >
-        <ProfileDetailsScreen onClose={() => setShowProfileModal(false)} />
       </Modal>
 
       {/* Feedback Modal */}

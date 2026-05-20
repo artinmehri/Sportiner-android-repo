@@ -2,16 +2,50 @@ import { Image } from 'expo-image';
 import { View, StyleSheet, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { useGames } from '@/context/GameContext';
-import { useGameTickets } from '@/context/GameTicketsContext';
+import { useAuth } from '@/context/AuthContext';
+import { openGameChat } from '@/lib/openGameChat';
 
 export default function EventDetails() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const { getGameById } = useGames();
-  const { requestJoinGame } = useGameTickets();
+  const { user } = useAuth();
+  const {
+    getGameById,
+    joinGame,
+    refreshGames,
+    refreshMembership,
+    joinedGameIds,
+    pendingGameIds,
+  } = useGames();
+  const [submitting, setSubmitting] = useState(false);
 
   const game = id ? getGameById(String(id)) : undefined;
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshGames();
+      refreshMembership();
+    }, [refreshGames, refreshMembership])
+  );
+
+  const membership = useMemo(() => {
+    if (!game || !user?.id) {
+      return 'none' as const;
+    }
+    if (game.hostId === user.id) {
+      return 'host' as const;
+    }
+    if (joinedGameIds.includes(game.id)) {
+      return 'joined' as const;
+    }
+    if (pendingGameIds.includes(game.id)) {
+      return 'pending' as const;
+    }
+    return 'none' as const;
+  }, [game, user?.id, joinedGameIds, pendingGameIds]);
 
   const title = game?.title ?? "Event";
   const courtLabel = (game?.courtType ?? 'Public').toUpperCase();
@@ -27,8 +61,55 @@ export default function EventDetails() {
     game?.gameDescription?.trim() ||
     'Details for this match will appear here when loaded from the server.';
 
+  const spotsLeft = game
+    ? Math.max(0, game.numberOfPlayers - game.playerCount)
+    : 0;
+  const isFull = spotsLeft === 0;
+  const needsApproval = game?.joinSetting.includes('Approval') ?? true;
+
+  const joinLabel = useMemo(() => {
+    if (membership === 'host') {
+      return 'You are hosting';
+    }
+    if (membership === 'joined') {
+      return 'You are in this game';
+    }
+    if (membership === 'pending') {
+      return 'Request pending';
+    }
+    if (isFull) {
+      return 'Game is full';
+    }
+    return needsApproval ? 'Request Spot' : 'Join Game';
+  }, [membership, isFull, needsApproval]);
+
+  const joinDisabled =
+    submitting ||
+    membership === 'host' ||
+    membership === 'joined' ||
+    membership === 'pending' ||
+    isFull;
+
   const handleMessageHost = () => {
-    router.push('/(tabs)/chat');
+    if (!game) {
+      return;
+    }
+    openGameChat({
+      gameId: game.id,
+      gameTitle: game.title,
+      peerName: game.host?.name ?? 'Host',
+    });
+  };
+
+  const handleOpenHostChat = () => {
+    if (!game) {
+      return;
+    }
+    openGameChat({
+      gameId: game.id,
+      gameTitle: game.title,
+      peerName: game.host?.name ?? 'Host',
+    });
   };
 
   const handleJoinEvent = async () => {
@@ -36,22 +117,39 @@ export default function EventDetails() {
       Alert.alert('Event', 'No game data loaded.');
       return;
     }
-    const hostName = game.host?.name ?? 'Host';
-    const { error } = await requestJoinGame({
-      gameId: game.id,
-      gameTitle: game.title,
-      gameDetails: {
-        date: game.date,
-        time: game.time,
-        location: game.location,
-        host: hostName,
-      },
-    });
-    if (error) {
-      Alert.alert('Join request', error);
-      return;
+    setSubmitting(true);
+    try {
+      const result = await joinGame(game.id);
+      if (result === 'joined') {
+        Alert.alert('Success', 'You joined this game.');
+        return;
+      }
+      if (result === 'requested') {
+        Alert.alert('Success', 'Your join request was sent to the host.');
+        return;
+      }
+      if (result === 'already_member') {
+        Alert.alert('Info', 'You are already in this game.');
+        return;
+      }
+      if (result === 'already_requested') {
+        Alert.alert('Info', 'You already requested this game.');
+        return;
+      }
+      if (result === 'full') {
+        Alert.alert('Game full', 'No spots left in this game.');
+        return;
+      }
+      if (result === 'not_authenticated') {
+        Alert.alert('Sign in', 'Sign in to join games.');
+        return;
+      }
+      Alert.alert('Join request', 'Configure Supabase to sync join requests.');
+    } catch (err) {
+      Alert.alert('Join request', err instanceof Error ? err.message : 'Could not join game.');
+    } finally {
+      setSubmitting(false);
     }
-    Alert.alert('Success', 'Your join request was sent to the host.');
   };
 
   return (
@@ -77,7 +175,7 @@ export default function EventDetails() {
               </View>
 
               <View style={styles.weatherPill}>
-              <Text style={{fontWeight: '600', color: '#EA580C'}}>—</Text>
+              <Text style={{fontWeight: '600', color: '#EA580C'}}>{spotsLeft} spots</Text>
               </View>
 
               <View style={styles.levelPill}>
@@ -132,7 +230,7 @@ export default function EventDetails() {
           <View style={styles.section}>
             <Text style={styles.playingTitle}>Who's Playing</Text>
 
-            <TouchableOpacity onPress={() => router.navigate('/(tabs)/profileDetails')} style={styles.playerCard}>
+            <TouchableOpacity onPress={handleOpenHostChat} style={styles.playerCard}>
               <Image source={{ uri: game?.host.avatar ?? 'https://picsum.photos/seed/sarah/100/100.jpg' }} style={styles.playerImage} />
               <View style={styles.playerInfo}>
                 <Text style={styles.playerName}>{game?.host.name ?? 'Host'}</Text>
@@ -140,14 +238,23 @@ export default function EventDetails() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => router.navigate('/(tabs)/profileDetails')} style={styles.playerCard}>
-              <Image source={'https://picsum.photos/seed/you/100/100.jpg'} style={styles.playerImage} />
-              <View style={styles.playerInfo}>
-                <Text style={styles.playerName}>Players</Text>
-                <Text style={styles.playerRole}>See game list</Text>
-              </View>
-            </TouchableOpacity>
+            {membership === 'joined' && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (!game) return;
+                  openGameChat({ gameId: game.id, gameTitle: game.title, peerName: 'You' });
+                }}
+                style={styles.playerCard}
+              >
+                <Image source={'https://picsum.photos/seed/you/100/100.jpg'} style={styles.playerImage} />
+                <View style={styles.playerInfo}>
+                  <Text style={styles.playerName}>You</Text>
+                  <Text style={styles.playerRole}>Player</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
+            {spotsLeft > 0 && membership !== 'joined' && (
             <View style={styles.emptySlotCard}>
               <Image source={'https://www.movetopuntagorda.com/wp-content/uploads/2020/09/55-Icon.png'} style={styles.playerImage} />
               <View style={styles.playerInfo}>
@@ -155,11 +262,16 @@ export default function EventDetails() {
                 <Text style={styles.emptySlotStatus}>Waiting...</Text>
               </View>
             </View>
+            )}
           </View>
 
           <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.requestSpotButton} onPress={handleJoinEvent}>
-            <Text style={styles.requestSpotText}>Request Spot</Text>
+          <TouchableOpacity
+            style={[styles.requestSpotButton, joinDisabled && styles.requestSpotButtonDisabled]}
+            onPress={handleJoinEvent}
+            disabled={joinDisabled}
+          >
+            <Text style={styles.requestSpotText}>{joinLabel}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.messageHostButton} onPress={handleMessageHost}>
@@ -237,21 +349,21 @@ const styles = StyleSheet.create({
     maxWidth: 130,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 999, // THIS makes it a pill
+    borderRadius: 999,
     backgroundColor: 'rgba(25, 230, 117, 0.1)',
   },
   weatherPill: {
     maxWidth: 95,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 999, // THIS makes it a pill
+    borderRadius: 999,
     backgroundColor: '#FFEDD5',
   },
   levelPill: {
     maxWidth: 105,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 999, // THIS makes it a pill
+    borderRadius: 999,
     backgroundColor: '#E4E4E7',
   },
   detailItemContainer: {
@@ -272,14 +384,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
-  
-    // iOS shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
-  
-    // Android shadow
     elevation: 6,
   },
   lableText: {
@@ -319,37 +427,31 @@ const styles = StyleSheet.create({
   emptySlotCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF', // ✅ REQUIRED (you’re missing this)
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    borderWidth: 2, // slightly thinner looks more modern
+    borderWidth: 2,
     borderColor: '#C7C1C1',
-    padding: 12, // ✅ gives that “card” feel
-    marginVertical: 8, // ✅ creates separation between cards
-    // iOS shadow
+    padding: 12,
+    marginVertical: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
-  
-    // Android
     elevation: 8,
   },
   playerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF', // ✅ REQUIRED (you’re missing this)
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    borderWidth: 2, // slightly thinner looks more modern
+    borderWidth: 2,
     borderColor: '#121212',
-    padding: 12, // ✅ gives that “card” feel
-    marginVertical: 8, // ✅ creates separation between cards
-    // iOS shadow
+    padding: 12,
+    marginVertical: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
-  
-    // Android
     elevation: 8,
   },
   playerImage: {
@@ -381,17 +483,6 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 2,
   },
-  attendeesContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  attendeeImage: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: 'white',
-  },
   buttonContainer: {
     paddingHorizontal: 16,
     paddingBottom: 60,
@@ -414,6 +505,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
+  },
+  requestSpotButtonDisabled: {
+    backgroundColor: '#E5E7EB',
+    borderColor: '#D1D5DB',
+    shadowOpacity: 0,
   },
   messageHostButton: {
     backgroundColor: 'white',
