@@ -1,3 +1,7 @@
 {
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "kotlin.languageServer.enabled": false,
+    "files.exclude": {
+        "**/node_modules": true
+    }
 }

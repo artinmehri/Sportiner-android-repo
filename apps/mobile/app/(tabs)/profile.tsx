@@ -1,11 +1,9 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Share } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Share, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useCallback, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
-import { useAuth } from '@/context/AuthContext';
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { useEffect, useState } from 'react';
 import ProfileSettingsScreen from './profileSettings';
+import { supabase } from '@/context/AuthContext';
 
 type UserRow = {
   name: string | null;
@@ -15,55 +13,88 @@ type UserRow = {
 };
 
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
-  const { user } = useAuth();
-  const [dbUser, setDbUser] = useState<UserRow | null>(null);
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [profileData, setProfileData] = useState({
-    displayName: 'Player',
-    location: 'Sportiner',
-    profileImage: 'https://picsum.photos/seed/tennis-court/120/120',
-    availability: {
-      morning: ['', '', '', '', '', '', ''],
-      afternoon: ['', '', '', '', '', '', ''],
-      night: ['', '', '', '', '', '', '']
-    }
-  });
+  const [name, setName] = useState('');
+  const [city, setCity] = useState('');
+  const [level, setLevel] = useState('');
+  const [elo, setElo] = useState('');
+  const [gamesPlayed, setGamesPlayed] = useState();
+  const [reliability_score, setReliabilityScore] = useState();
+  const [availability, setAvailability] = useState<{
+    morning: string[];
+    afternoon: string[];
+    evening: string[];
+}>({
+    morning: [],
+    afternoon: [],
+    evening: [],
+});
+  const [profileImage, setProfileImage] = useState('');
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!isSupabaseConfigured || !user?.id) return;
-      supabase
-        .from('users')
-        .select('name, points, level, availability')
-        .eq('id', user.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data) setDbUser(data as UserRow);
-        });
-    }, [user?.id])
-  );
+
+  useEffect(() => {
+    getUser()
+  }, [])
+
+  async function getUser() {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    const user = authData?.user;
+
+    if (authError || !user) {
+      Alert.alert("You've ran into an error")
+      return;
+    }
+
+    // Step 2 — fetch their row from your users table
+    const { data, error: dbError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (dbError) {
+      Alert.alert('Error', dbError.message);
+      return;
+    }
+    // Step 3 — populate state with the data
+    setName(data.name);
+    setCity(data.city);
+    setLevel(data.level);
+    setElo(data.elo);
+    setGamesPlayed(data.gamesPlayed);
+    setReliabilityScore(data.reliability_score);
+    setProfileImage(data.profile_picture);
+    // ProfileScreen — convert object to 7-item arrays for display
+    if (data.availability) {
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      
+      setAvailability({
+          morning: days.map(day => data.availability[day]?.morning ? 'filled' : ''),
+          afternoon: days.map(day => data.availability[day]?.afternoon ? 'filled' : ''),
+          evening: days.map(day => data.availability[day]?.evening ? 'filled' : ''),
+      });
+    }
+
+  }
 
   const handleShare = async () => {
     try {
       await Share.share({
         message: `🎾 Looking for tennis players in Toronto\n\nJoin me on Sportiner:`,
-        url: 'https://sportiner.app', 
+        url: 'https://sportiner.com/app', 
       });
     } catch (error) {
       console.log('Error sharing:', error);
     }
   };
 
+
   const handleSaveSettings = (newData: { displayName?: string; availability?: any; profileImage?: string | null }) => {
-    setProfileData(prev => ({
-      ...prev,
-      displayName: newData.displayName || prev.displayName,
-      profileImage: newData.profileImage || prev.profileImage,
-      availability: newData.availability || prev.availability
-    }));
+    setShowSettings(false);
+    getUser();
   };
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -84,23 +115,20 @@ export default function ProfileScreen() {
       {/* Profile Info */}
       <View style={styles.profileSection}>
         <TouchableOpacity onPress={() => setShowFullScreenImage(true)}>
-          <Image 
-            source={{ uri: profileData.profileImage }} 
-            style={styles.profileImage} 
-          />
+          
+        <Image 
+          source={{ uri: profileImage || 'https://via.placeholder.com/150' }} 
+          style={styles.profileImage} 
+        />
+
         </TouchableOpacity>
-        <Text style={styles.profileName}>{dbUser?.name ?? user?.name ?? profileData.displayName}</Text>
-        <Text style={styles.profileLocation}>
-          {dbUser?.level ? `${dbUser.level} • ` : ''}
-          {user?.email ?? profileData.location}
-        </Text>
+        <Text style={styles.profileName}>{name}</Text>
+        <Text style={styles.profileLocation}>{city}</Text>
+        <Text style={styles.skillLevel}>{level}</Text>
       </View>
 
-      {/* NTP Rating */}
       <View style={styles.ratingSection}>
-        <Text style={styles.ratingNumber}>
-          {dbUser?.points != null ? String(dbUser.points) : '—'}
-        </Text>
+        <Text style={styles.ratingNumber}>{elo}</Text>
         <Text style={styles.ratingLabel}>Tennis Rating (ELO)</Text>
       </View>
 
@@ -110,7 +138,7 @@ export default function ProfileScreen() {
           <View style={styles.statIconContainer}>
             <Ionicons name="checkmark" size={16} color="white" />
           </View>
-          <Text style={styles.statValue}>98%</Text>
+          <Text style={styles.statValue}>{reliability_score}%</Text>
           <Text style={styles.statLabel}>Reliability</Text>
         </View>
         <View style={styles.statDivider} />
@@ -118,7 +146,7 @@ export default function ProfileScreen() {
           <View style={styles.statIconContainer}>
             <Ionicons name="tennisball-outline" size={16} color="white" />
           </View>
-          <Text style={styles.statValue}>12</Text>
+          <Text style={styles.statValue}>{gamesPlayed}</Text>
           <Text style={styles.statLabel}>Games Played</Text>
         </View>
       </View>
@@ -143,7 +171,7 @@ export default function ProfileScreen() {
             <View style={styles.timeIconContainer}>
               <Ionicons name="sunny-outline" size={16} color="#666" />
             </View>
-            {profileData.availability.morning.map((status, index) => (
+            {availability?.morning?.map((status: string, index: number) => (
               <View key={index} style={styles.availabilityCell}>
                 <View style={status === 'filled' ? styles.filledCircle : styles.emptyCircle} />
               </View>
@@ -158,7 +186,8 @@ export default function ProfileScreen() {
                 <View style={styles.horizonLine} />
               </View>
             </View>
-            {profileData.availability.afternoon.map((status, index) => (
+
+            {availability?.afternoon?.map((status: string, index: number) => (
               <View key={index} style={styles.availabilityCell}>
                 <View style={status === 'filled' ? styles.filledCircle : styles.emptyCircle} />
               </View>
@@ -170,7 +199,7 @@ export default function ProfileScreen() {
             <View style={styles.timeIconContainer}>
               <Ionicons name="moon-outline" size={16} color="#666" />
             </View>
-            {profileData.availability.night.map((status, index) => (
+            {availability?.evening?.map((status: string, index: number) => (
               <View key={index} style={styles.availabilityCell}>
                 <View style={status === 'filled' ? styles.filledCircle : styles.emptyCircle} />
               </View>
@@ -195,7 +224,7 @@ export default function ProfileScreen() {
             <Ionicons name="close" size={28} color="white" />
           </TouchableOpacity>
           <Image 
-            source={{ uri: profileData.profileImage }} 
+            source={{ uri: profileImage }} 
             style={styles.fullScreenImage} 
             resizeMode="contain"
           />
@@ -263,6 +292,12 @@ const styles = StyleSheet.create({
   profileLocation: {
     fontSize: 16,
     color: '#666',
+  },
+  skillLevel: {
+    marginTop: 10,
+    marginBottom: 5,
+    fontSize: 26,
+    color: '#19E675',
   },
   ratingSection: {
     justifyContent: 'center',

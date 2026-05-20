@@ -11,7 +11,7 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game } from "@/context/GameContext";
@@ -171,6 +171,7 @@ export default function Index() {
  const [selectedFilter, setSelectedFilter] = useState("Today");
  const [searchQuery, setSearchQuery] = useState("");
  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
+ const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
  const { games, refreshGames, joinedGameIds, pendingGameIds } = useGames();

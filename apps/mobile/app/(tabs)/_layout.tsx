@@ -1,56 +1,19 @@
-import { Tabs, usePathname, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { Tabs } from 'expo-router';
+import React from 'react';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAuth } from '@/context/AuthContext';
-
-const publicScreens = ['(tabs)/SignUp', '(tabs)/firstOnbPage', '(tabs)/secondOnbPage', '(tabs)/thirdOnbPage', '(tabs)/fourthOnbPage', '(tabs)/fifthOnbPage'];
-
-const AUTH_ONBOARDING_ROUTES = [
-  'SignUp',
-  'firstOnbPage',
-  'secondOnbPage',
-  'thirdOnbPage',
-  'fourthOnbPage',
-  'fifthOnbPage',
-];
-
-function isAuthOnboardingPath(pathname: string | null): boolean {
-  if (!pathname) return false;
-  return AUTH_ONBOARDING_ROUTES.some((r) => pathname.includes(r));
-}
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const router = useRouter();
-  const pathname = usePathname();
-  const { session, isLoading } = useAuth();
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    if (!session) {
-      if (!isAuthOnboardingPath(pathname)) {
-        router.replace('/SignUp');
-      }
-      return;
-    }
-
-    if (pathname.includes('SignUp') && !pathname.includes('OnbPage')) {
-      router.replace('/');
-    }
-  }, [isLoading, session, pathname, router]);
-
-  const showNav = !isLoading && Boolean(session) && !isAuthOnboardingPath(pathname);
-
+ 
   return (
     <Tabs
       backBehavior="history"
       screenOptions={{
         tabBarStyle: {
-          display: showNav ? 'flex' : 'none',
+          display : 'flex'
         },
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
@@ -214,5 +177,5 @@ export default function TabLayout() {
       }}
       />
     </Tabs>
-  );
-}
+  )
+};
