@@ -48,11 +48,7 @@ export async function getUserId() {
         return
     }
 
-    let user = data.user;
-
-    console.log("user data :")
-    console.log(data.user)
-
+    const user = data.user;
     if (!user) {
         return
     }
@@ -75,11 +71,7 @@ export async function getUser() {
         return
     }
 
-    let user = data.user;
-
-    console.log("user data :")
-    console.log(data.user)
-
+    const user = data.user;
     if (!user) {
         return
     }
@@ -102,12 +94,7 @@ export async function userExists() {
         return
     }
 
-    let user = data.user;
-
-    console.log("user data :")
-    console.log(data.user)
-
-    
+    const user = data.user;
     if (!user) {
         return
     }
@@ -119,7 +106,6 @@ export async function userExists() {
     .maybeSingle();
 
     if (existing) {
-    console.log('User already exists!');
         return true
     } else {
         return false

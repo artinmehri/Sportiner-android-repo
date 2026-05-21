@@ -14,6 +14,8 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGames } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { createChat } from '@/context/ChatContext';
+import { useAuth } from '@/context/AuthContext';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -24,7 +26,7 @@ export default function CreateGame() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { addGame } = useGames();
-
+  const { user } = useAuth();
   const [gameType, setGameType] = useState<GameType>('1v1');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('Beginner');
   const [joinSetting, setJoinSetting] = useState<JoinSetting>('👥 Open to Anyone');
@@ -77,6 +79,11 @@ export default function CreateGame() {
       setTempDate(selectedDate);
     }
   };
+
+  const getGamePhoto = () => {
+
+  }
+
 
   const confirmDateSelection = () => {
     if (datePickerMode === 'date') {
@@ -160,10 +167,16 @@ export default function CreateGame() {
     };
 
     try {
-      await addGame(gameData);
+
+      const game = await addGame(gameData);
+
+      const chatType = gameData.gameType === '1v1' ? 'private' : 'group';
+      const members = user ? [{ id: user.id, level: skillLevel }] : [];
+      await createChat(chatType, gameData.title, '', game.id, members);
       router.push('/(tabs)/GameConfirmation');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Something went wrong';
+      console.log(message)
       Alert.alert('Could not create game', message);
     }
   };

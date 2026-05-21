@@ -58,7 +58,7 @@ interface GameContextType {
   isLoading: boolean;
   error: string | null;
   refreshGames: () => Promise<void>;
-  addGame: (game: GameInsert) => Promise<void>;
+  addGame: (game: GameInsert) => Promise<Game>;
   getGameById: (id: string) => Game | undefined;
   getAllGames: () => Promise<Game[]>;
   getMyGames: () => Promise<Game[]>;
@@ -74,18 +74,26 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
+type GeographyPoint = {
+  type: 'Point';
+  coordinates: [number, number]; 
+};
+
 type GameRow = {
   id: string;
+  created_at: string;
   host_id: string;
   title: string | null;
   description: string | null;
   category: string | null;
+  location: GeographyPoint;
   time: string | null;
   level: string | null;
   public: boolean | null;
   capacity: number | null;
   players_list: unknown;
-  created_at: string;
+  booked: boolean;
+  payment_amount: string;
 };
 
 type UserRow = {
@@ -230,7 +238,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           ],
         };
         setGames((prev) => [newGame, ...prev]);
-        return;
+        return newGame;
       }
 
       const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -263,11 +271,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
         city_id: null,
       };
 
-      const { error: insErr } = await supabase.from('games').insert(row);
+      const { data: insertedRow, error: insErr } = await supabase
+        .from('games')
+        .insert(row)
+        .select()
+        .single();
       if (insErr) {
         throw new Error(insErr.message);
       }
+
+      const { data: host } = await supabase
+        .from('users')
+        .select('id, name, profile_picture')
+        .eq('id', userData.user.id)
+        .single();
+
+      const game = rowToGame(insertedRow as GameRow, host as UserRow);
       await refreshGames();
+      return game;
     },
     [refreshGames]
   );
