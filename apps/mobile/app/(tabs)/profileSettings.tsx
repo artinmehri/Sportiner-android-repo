@@ -35,6 +35,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
     evening: Array(daysOfWeek.length).fill(''),
 });
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [profileImageRead, setProfileImageRead] = useState<any | null>(null)
   const [showWebModal, setShowWebModal] = useState(false);
   const [webContentType, setWebContentType] = useState('');
   const [rating, setRating] = useState(5);
@@ -79,31 +80,52 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
 
   if (!userId) throw new Error("No user ID found");
 
-    const filePath = `avatars/${userId}.png`;
-
+  const filePath = `${userId}/avatar_${Date.now()}.png`;
+  
+  
     const { data, error } = await supabase.storage
-      .from('avatars') // Ensure this bucket exists in Supabase
+      .from('files') 
       .upload(filePath, decode(base64String), {
         contentType: 'image/png',
         upsert: true,
       });
 
+    if (error) {
+        Alert.alert('Error occured while uploading your profile picture!')
+    }
+
     const { data: urlData } = supabase.storage
-    .from('avatars')
+    .from('files')
     .getPublicUrl(filePath);
 
 
     const publicUrl = urlData.publicUrl;
 
-    setProfileImage(publicUrl)
 
+    const {data: dbData, error: dbError} = await supabase.from('users')
+    .update({
+        profile_picture: publicUrl
+    }).eq('id', userId)
+
+
+    if (dbError) {
+        Alert.alert('error updating profile image')
+        console.log(dbError)
+        console.log(dbError.message)
+    }
+
+    if (dbData) {
+        console.log('image successfully updated!')
+    }
+    
     if (error) throw error;
     return data.path
     
     } catch (err) {
       Alert.alert("Couldn't upload image!");
+      console.log(err)
     }
-  }
+}
 
   const pickImage = async () => {
     const result = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -113,12 +135,16 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
     }
 
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'], 
       allowsEditing: true,
       aspect: [1, 1],
       quality: 1,
       base64: true
     });
+
+
+    const uri = pickerResult.assets?.[0]?.uri
+    setProfileImageRead(uri);
 
     if (!pickerResult.canceled) {
       // The image data is inside the 'assets' array
@@ -271,7 +297,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
         <View style={styles.section}>
           <TouchableOpacity style={styles.profileImageContainer} onPress={pickImage}>
             {profileImage ? (
-              <Image source={{ uri: profileImage }} style={styles.profileImagePreview} />
+              <Image source={{ uri: profileImageRead }} style={styles.profileImagePreview} />
             ) : (
               <View style={styles.profileImagePlaceholder}>
                 <Ionicons name="camera" size={24} color="#666" />

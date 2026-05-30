@@ -16,44 +16,34 @@ import {
   Image,
   Modal,
 } from 'react-native';
-import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker'
-import { useScrollEventsHandlersDefault } from '@gorhom/bottom-sheet';
 import * as Clipboard from 'expo-clipboard';
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { NativeGesture } from 'react-native-gesture-handler/lib/typescript/handlers/gestures/nativeGesture';
-
-
+import { deleteMessage, editMessage, findOtherPlayer, getGameInfo, getMessages, replyMessage, sendMessage } from '@/context/ChatContext';
+import { getCurrentUserId, getUser, } from '@/context/AuthContext';
+import { formatGameSubtitle, type GameRow } from '@/context/GameContext';
+import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 const { width, height } = Dimensions.get('window');
 
-type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
-type MessageType = 'text' | 'image' | 'video' | 'location' | 'document';
-type Message = {
-  id: string;
-  text: string;
-  sender: 'me' | 'other';
-  senderName: string;
-  senderLevel?: string;
-  senderLevelColor?: string;
-  senderAvatar?: string;
-  time: string;
-  status: MessageStatus;
-  type: MessageType;
-  isEdited?: boolean;
-  replyTo?: string;
-  mediaUrl?: string;
-};
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80';
 
-type ReplyInfo = {
-  id: string;
-  text: string;
-  sender: 'me' | 'other';
-  senderName: string;
-  type: MessageType;
-  mediaUrl?: string;
+type Message = {
+  id?: string;
+  sender_id: string;
+  message: string
+  image?: string;
+  type: string;
+  reply_to?: string;
+  is_reply?: boolean,
+  created_at?: Timestamp;
+  updated_at?: Timestamp;
+  is_edited?: boolean;
+  status?: string
 };
 
 const SWIPE_THRESHOLD = 80;
@@ -64,6 +54,7 @@ type SwipeableMessageProps = {
   onSwipeProgress?: (message: Message | null) => void;
   children: React.ReactNode;
 };
+
 
 const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: SwipeableMessageProps) => {
   const translateX = useSharedValue(0);
@@ -103,60 +94,116 @@ const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: Swipe
 const copyToClipboard = async (message: any) => {
   await Clipboard.setStringAsync(message)
 }
- 
+
+
 const ChatScreen = () => {
-  const router = useRouter();
-  const { gameId, gameTitle, peerName } = useLocalSearchParams<{
-    gameId?: string;
-    gameTitle?: string;
-    peerName?: string;
-  }>();
-  const fromGame = Boolean(gameId && String(gameId).length > 0);
-  const headerName =
-    (peerName && String(peerName)) ||
-    (gameTitle && String(gameTitle)) ||
-    'Behrad';
-  const headerSubtitle = fromGame
-    ? gameTitle && peerName
-      ? String(gameTitle)
-      : 'Game chat'
-    : 'Wed · 3PM @ Saint-Louis Park';
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: 'Hey there! How are you doing?',
-      sender: 'other',
-      senderName: 'Behrad',
-      senderAvatar: 'https://picsum.photos/seed/behrad/100/100.jpg',
-      time: '10:30 AM',
-      status: 'read',
-      type: 'text',
-    },
-    {
-      id: '2',
-      text: "I'm good, thanks for asking! How about you?",
-      sender: 'me',
-      senderName: 'You',
-      senderAvatar: 'https://picsum.photos/seed/you/100/100.jpg',
-      time: '10:32 AM',
-      status: 'read',
-      type: 'text',
-    },
-    {
-      id: '3',
-      text: 'I was just working on this new chat UI. What do you think?',
-      sender: 'other',
-      senderName: 'Behrad',
-      senderAvatar: 'https://picsum.photos/seed/behrad/100/100.jpg',
-      time: '10:33 AM',
-      status: 'read',
-      type: 'text',
-    },
-  ]);
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [game, setGame] = useState<GameRow | null>(null);
+  const [otherUserId, setOtherUserId] = useState('');
+  const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [currentUserId, setCurrentUserId] = useState()
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
+
+
+  useEffect(() => {
+    const loadUserNames = async () => {
+      const uniqueUserIds = [...new Set(messages.map(m => m.sender_id))];
+  
+      const missingUserIds = uniqueUserIds.filter(
+        id => !userNames[id]
+      );
+  
+      if (missingUserIds.length === 0) return;
+  
+      const users = await Promise.all(
+        missingUserIds.map(id => getUser(id))
+      );
+  
+      const newNames: Record<string, string> = {};
+      users.forEach(user => {
+        if (user) {
+          newNames[user.id] = user.name;
+        }
+      });
+  
+      setUserNames(prev => ({
+        ...prev,
+        ...newNames,
+      }));
+    };
+  
+    loadUserNames();
+  }, [messages]);
+
+
+  useEffect(() => {
+    if (!id) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const [messages, currentUser, gameRows] = await Promise.all([
+        getMessages(id),
+        getCurrentUserId(),
+        getGameInfo(id),
+      ]);
+
+      setCurrentUserId(currentUser?.id)
+
+      const gameRow = gameRows?.[0] as GameRow | undefined;
+      if (!cancelled) {
+        console.log(gameRow)
+        setGame(gameRow ?? null);
+      }
+
+      const otherPlayerId = await findOtherPlayer(id);
+      if (cancelled || !otherPlayerId) return;
+
+      const otherPlayer = await getUser(otherPlayerId);
+      if (cancelled || !otherPlayer) return;
+
+      setOtherUserId(otherPlayer.id);
+      setName(otherPlayer.name);
+      setAvatar(otherPlayer.profile_picture ?? DEFAULT_AVATAR);
+
+      if (messages) {
+        setMessages(
+          messages.map((message) => {
+            return {
+              id: message.id,
+              sender_id: message.sender_id,
+              message: message.message,
+              type: message.type,
+              image: message.image,
+              reply_to: message.reply_to,
+              is_reply: message.is_reply,
+              created_at: message.created_at,
+              updated_at: message.updated_at,
+              is_edited: message.is_edited,
+              status: message.status
+            };
+          })
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+
+  const navigateToProfile = () => {
+    if (!otherUserId) return;
+    router.push({ pathname: "/(tabs)/profileDetails", params: { id: otherUserId } });
+  };
+
 
   const [inputText, setInputText] = useState('');
   const [isReplying, setIsReplying] = useState(false);
-  const [replyInfo, setReplyInfo] = useState<ReplyInfo | null>(null);
+  const [replyInfo, setReplyInfo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [showContextMenu, setShowContextMenu] = useState({
     visible: false,
@@ -190,85 +237,103 @@ const ChatScreen = () => {
   }
 
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if ((!inputText.trim() && !selectedMedia && !isReplying && !editingMessage) || (isReplying && !inputText.trim() && !selectedMedia)) {
       return;
     }
 
+    // Editing a message
     if (editingMessage) {
       setMessages(messages.map(msg => 
         msg.id === editingMessage.id 
-          ? { ...msg, text: inputText, isEdited: true }
+          ? { ...msg, message: inputText, is_edited: true }
           : msg
       ));
-      setEditingMessage(null);
-    } else {
-      const newMessage: Message = {
-        id: Date.now().toString(),
-        text: inputText.trim(),
-        sender: 'me',
-        senderName: 'You',
-        senderAvatar: 'https://picsum.photos/seed/you/100/100.jpg',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: 'sent',
-        type: selectedMedia ? 'image' : 'text',
-        mediaUrl: selectedMedia || undefined,
-        replyTo: replyInfo?.id,
-      };
-      
-      setMessages([...messages, newMessage]);
 
-      // Reseting both text and media after sending
-      setInputText('')
-      setSelectedMedia(null)
-      
-      setTimeout(() => {
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === newMessage.id 
-              ? { ...msg, status: 'delivered' }
-              : msg
-          )
-        );
-        
-        setTimeout(() => {
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === newMessage.id 
-                ? { ...msg, status: 'read' }
-                : msg
-            )
-          );
-        }, 1000);
-      }, 500);
+      if (editingMessage.id) {
+      await editMessage(editingMessage.id, inputText.trim())
+      setEditingMessage(null);
+      setInputText('');
+      }
+
+
+      // Replying to a message
+    } else if (isReplying && replyInfo) {
+
+    if (currentUserId && replyInfo?.id && id) {
+      console.log('replying message')
+      await replyMessage(replyInfo.id, 'text', inputText.trim(), id)
+      setIsReplying(false);
+      inputRef.current?.focus();
     }
+
+    if (currentUserId) {
+    const newReply: Message = {
+      sender_id: currentUserId,
+      message: inputText.trim(),
+      type: 'text',
+      reply_to: replyInfo.id,
+      is_reply: true,
+    };
+
+    setMessages([...messages, newReply]);
+  }
 
     setInputText('');
     setSelectedMedia(null);
     setReplyInfo(null);
     setIsReplying(false);
-    
+    setSwipeReplyMessage(null); 
+
+
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
-  };
+
+    // Sending a normal message 
+    } else {
+      if (currentUserId) {
+      const newMessage: Message = {
+        sender_id: currentUserId,
+        message: inputText.trim(),
+        type: 'text'
+      };
+    
+      if (id) {
+      await sendMessage(inputText.trim(), 'text', id)
+      }
+      
+      setMessages([...messages, newMessage]);
+
+
+      // Reseting both text and media after sending
+      setInputText('');
+      setSelectedMedia(null);
+      setReplyInfo(null);
+      setIsReplying(false);
+      
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    };
+  }
+}   
+
+  const getOriginalMessage = (messageId: string) => {
+    const foundMessage = messages.find((message) => message.id === messageId);
+    return foundMessage?.message ?? 'Original message deleted';
+  }
 
   const handleReply = (message: Message) => {
-    setReplyInfo({
-      id: message.id,
-      text: message.text,
-      mediaUrl: message.mediaUrl || undefined,
-      sender: message.sender,
-      senderName: message.senderName,
-      type: message.type,
-    });
-    setIsReplying(true);
+    setSwipeReplyMessage(null)
+    setReplyInfo(message)
+    setIsReplying(true)
     inputRef.current?.focus();
-  };
+};
 
   const handleEdit = (message: Message) => {
     setEditingMessage(message);
-    setInputText(message.text);
+    setInputText(message.message);
     setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
     inputRef.current?.focus();
   };
@@ -306,15 +371,8 @@ const ChatScreen = () => {
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => {
-            if (!fromGame) {
-              router.push('/(tabs)/profileDetails');
-            }
-          }}
-          disabled={fromGame}
-        >
-          <Image source={{ uri: 'https://picsum.photos/seed/behrad/100/100.jpg' }} style={styles.avatar} />
+        <TouchableOpacity onPress={() => navigateToProfile()}>
+          <Image source={{ uri: avatar }} style={styles.avatar} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -327,12 +385,10 @@ const ChatScreen = () => {
           style={styles.contactInfo}
         >
           <View style={styles.contactNameRow}>
-            <Text style={styles.contactName}>{headerName}</Text>
-            {!fromGame && (
-              <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
-            )}
+            <Text style={styles.contactName}>{name}</Text>
+            <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
-          <Text style={styles.contactSubtitle}>{headerSubtitle}</Text>
+          <Text style={styles.contactSubtitle}>{formatGameSubtitle(game)}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -340,8 +396,8 @@ const ChatScreen = () => {
 
 
   const renderMessage = ({ item }: { item: Message }) => {
-    const isMe = item.sender === 'me';
-    const repliedMessage = item.replyTo ? messages.find(m => m.id === item.replyTo) : null;
+    const isMe = item.sender_id === currentUserId;
+    const repliedMessage = item.is_reply
     const isSwipeReplying = swipeReplyMessage?.id === item.id;
 
     return (
@@ -350,13 +406,17 @@ const ChatScreen = () => {
         onReply={handleReply}
         onSwipeProgress={setSwipeReplyMessage}
       >
+
+        
         <View style={styles.messageWrapper}>
+
 
         {isSwipeReplying && (
                 <View style={styles.swipeReplyIndicator}>
                   <Ionicons style={styles.swipeReplyIcon} name="arrow-undo" size={30} color="#22C55E" />
                 </View>
             )}
+
 
           <TouchableOpacity
             onLongPress={(e) => handleLongPress(item, e)}
@@ -367,29 +427,38 @@ const ChatScreen = () => {
             ]}
           >
     
-            {repliedMessage && (
+            {repliedMessage && item.reply_to && (
               <View style={styles.messageReplyPreview}>
                 <Text style={styles.messageReplyText}>
-                  {`${repliedMessage.senderName}: "${repliedMessage.text}"`}
+                {(() => {
+                  const original = messages.find(m => m.id === item.reply_to);
+                  const originalSender = userNames[original?.sender_id ?? ''] || 'User';
+                  return `${originalSender}: "${getOriginalMessage(item.reply_to)}"`;
+                })()}                
                 </Text>
               </View>
             )}
             {item.type === 'image' && (
               <TouchableOpacity
                 onPress={() => {
-                  if (item.mediaUrl) {
-                    setShowImage(item.mediaUrl);
+                  if (item.type === 'image' && item.image) {
+                    setShowImage(item.image);
                     setShowFullScreenImage(true);
                   }
                 }}
               >
-                <Image source={{ uri: item.mediaUrl }} style={styles.messageImage} />
+                <Image source={{ uri: item.image }} style={styles.messageImage} />
               </TouchableOpacity>
             )}
 
-            {item.text ? (
-              <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.text}</Text>
+            {item.type === 'text' ? (
+              <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.message}</Text>
             ) : null}
+
+            {item.is_edited && (
+                  <Text style={[styles.editedLabel, isMe && styles.editedLabelSent]}>edited</Text>
+            )}
+
           </TouchableOpacity>
         </View>
       </SwipeableMessage>
@@ -414,24 +483,23 @@ const ChatScreen = () => {
     
     return (
       <View style={styles.replyPreview}>
-        {replyInfo.mediaUrl ?     
+        {replyInfo.image ?     
         <View style={styles.replyWrapper}>
           <View>
             <Text style={styles.replySender}>
-                {replyInfo.senderName}
-              </Text>
+              {userNames[replyInfo.sender_id] || 'User'}              </Text>
               <Text style={styles.replyPreviewText}>
                   Photo
               </Text>
             </View>
-            <Image source={{ uri: replyInfo.mediaUrl}} style={styles.replyImage}/>
+            <Image source={{ uri: replyInfo.image}} style={styles.replyImage}/>
           </View>
         :     
         <><Text style={styles.replySender}>
-           {replyInfo.senderName}
+            {userNames[replyInfo.sender_id] || 'User'}          
           </Text>
           <Text style={styles.replyPreviewText}>
-          {replyInfo.text}
+          {replyInfo.message}
         </Text></> 
         }
     
@@ -536,7 +604,7 @@ const ChatScreen = () => {
     const message = showContextMenu.message;
     const menuItems = [
       { id: 'copy', icon: 'copy-outline', iconSet: 'Ionicons', label: 'Copy', color: '#6B7280' },
-      ...(message.sender === 'me' ? [{ id: 'edit', icon: 'create-outline', iconSet: 'Ionicons', label: 'Edit', color: '#3B82F6' }] : []),
+      ...(message.sender_id === currentUserId ? [{ id: 'edit', icon: 'create-outline', iconSet: 'Ionicons', label: 'Edit', color: '#3B82F6' }] : []),
       { id: 'delete', icon: 'trash-outline', iconSet: 'Ionicons', label: 'Delete', color: '#EF4444' },
       { id: 'pin', icon: 'pin-outline', iconSet: 'Ionicons', label: 'Pin', color: '#F59E0B' },
     ];
@@ -569,8 +637,8 @@ const ChatScreen = () => {
                       if (item.id === 'edit') {
                         handleEdit(message);
                       } else if (item.id === 'copy') {
-                        copyToClipboard(message.text)
-                        Alert.alert('Copied to clipboard', message.text);
+                        copyToClipboard(message.message)
+                        Alert.alert('Copied to clipboard', message.message);
                       } else if (item.id === 'delete') {
                         Alert.alert(
                           'Delete message',
@@ -580,8 +648,11 @@ const ChatScreen = () => {
                             {
                               text: 'Delete',
                               style: 'destructive',
-                              onPress: () => {
-                                setMessages(messages.filter(m => m.id !== message.id));
+                              onPress: async () => {
+                                if (message.id) {
+                                await deleteMessage(message.id)
+                                setMessages(prev => prev.filter(m => m.id !== message.id));
+                                }
                               },
                             },
                           ]
@@ -621,7 +692,7 @@ const ChatScreen = () => {
             ref={flatListRef}
             data={messages}
             renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item, index) => item.id || `message-${index}`}
             contentContainerStyle={[
               styles.messagesContainer,
               { paddingBottom: 80 + (replyInfo || editingMessage ? 60 : 0) + insets.bottom },
@@ -669,8 +740,8 @@ const ChatScreen = () => {
     
       </KeyboardAvoidingView>
     </GestureHandlerRootView>
-  );
-};
+    );
+  }
 
 const styles = StyleSheet.create({
   container: {
@@ -687,7 +758,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     paddingHorizontal: 14,
     paddingBottom: 10,
-    paddingTop: 50,
+    paddingTop: 60,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E7EB',
   },
@@ -749,6 +820,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#000',
     lineHeight: 20,
+  },
+  editedLabel: {
+    fontSize: 11,
+    color: 'rgba(0, 0, 0, 0.35)',
+    marginTop: 3,
+    alignSelf: 'flex-end',
+  },
+  editedLabelSent: {
+    color: 'rgba(255, 255, 255, 0.55)',
   },
   sentMessageText: {
     color: '#fff',
@@ -1111,7 +1191,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   swipeReplyIndicator: {
-    position: 'fixed',
+    position: 'absolute',
     flexDirection: 'row',
     marginRight: 10,
     justifyContent: 'center',
@@ -1139,4 +1219,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ChatScreen;
+export default ChatScreen

@@ -14,8 +14,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { SignupInterface } from '../../context/SignupInterface.type';
-import { decode } from 'base64-arraybuffer';
-import { getUserId, supabase } from '@/context/AuthContext';
 
 
 export default function FirstOnbPage({onNext, changeData, onBack, method} : SignupInterface) {
@@ -26,7 +24,8 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
   const [password, setPassword] = useState('');
   const [selectedAgeGroup, setSelectedAgeGroup] = useState('15-18');
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [profileImageRead, setProfileImageRead] = useState<any | null>(null)
+  const [profileImage, setProfileImage] = useState<any | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
@@ -74,39 +73,6 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
     console.log('data sent to signup flow')
   };
 
-  const handleImageUpload = async (base64String: any) => {
-    try {
-
-    const user = await getUserId()
-    const userId = user?.id;
-
-  if (!userId) throw new Error("No user ID found");
-
-    const filePath = `avatars/${userId}.png`;
-
-    const { data, error } = await supabase.storage
-      .from('avatars') // Ensure this bucket exists in Supabase
-      .upload(filePath, decode(base64String), {
-        contentType: 'image/png',
-        upsert: true,
-      });
-
-    const { data: urlData } = supabase.storage
-    .from('avatars')
-    .getPublicUrl(filePath);
-
-
-    const publicUrl = urlData.publicUrl;
-
-    setProfileImage(publicUrl)
-
-    if (error) throw error;
-    return data.path
-    
-    } catch (err) {
-      Alert.alert("Couldn't upload image!");
-    }
-  }
 
   const handleImagePick = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -117,20 +83,23 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'], 
       allowsEditing: true,
       aspect: [1, 1],
       quality: 1,
       base64: true
     });
 
+
+    const uri = result.assets?.[0]?.uri
+    setProfileImageRead(uri);
+    
     if (!result.canceled) {
       // The image data is inside the 'assets' array
       const image = result.assets[0];
       const base64 = image.base64; // This is what we need!
       
-      // Now call your upload function
-      await handleImageUpload(base64);
+      setProfileImage(base64)
     }
   }
 
@@ -155,7 +124,7 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
           <TouchableOpacity style={styles.photoContainer} onPress={handleImagePick}>
             <View style={styles.photoCircle}>
               {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                <Image source={{ uri: profileImageRead }} style={styles.profileImage} />
               ) : (
                 <>
                   <Ionicons name="camera" size={32} color="#19E675" />

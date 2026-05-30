@@ -5,8 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames } from '@/context/GameContext';
-import { useAuth } from '@/context/AuthContext';
-import { openGameChat } from '@/lib/openGameChat';
+import { useGameTickets } from '@/context/GameTicketsContext';
+import { addUserToChat, getChatId, userInChat } from '@/context/ChatContext';
 
 export default function EventDetails() {
   const router = useRouter();
@@ -61,44 +61,17 @@ export default function EventDetails() {
     game?.gameDescription?.trim() ||
     'Details for this match will appear here when loaded from the server.';
 
-  const spotsLeft = game
-    ? Math.max(0, game.numberOfPlayers - game.playerCount)
-    : 0;
-  const isFull = spotsLeft === 0;
-  const needsApproval = game?.joinSetting.includes('Approval') ?? true;
+  const handleMessageHost = async () => {
+    if (id !== undefined) {
+      const response = await userInChat(id)
 
-  const joinLabel = useMemo(() => {
-    if (membership === 'host') {
-      return 'You are hosting';
+      if (!response) {
+        addUserToChat(id)
+      } else {
+        const chatId = getChatId(id)
+        router.push({ pathname: "/(tabs)/chat", params: { id: `${chatId}` } });
+      }
     }
-    if (membership === 'joined') {
-      return 'You are in this game';
-    }
-    if (membership === 'pending') {
-      return 'Request pending';
-    }
-    if (isFull) {
-      return 'Game is full';
-    }
-    return needsApproval ? 'Request Spot' : 'Join Game';
-  }, [membership, isFull, needsApproval]);
-
-  const joinDisabled =
-    submitting ||
-    membership === 'host' ||
-    membership === 'joined' ||
-    membership === 'pending' ||
-    isFull;
-
-  const handleMessageHost = () => {
-    if (!game) {
-      return;
-    }
-    openGameChat({
-      gameId: game.id,
-      gameTitle: game.title,
-      peerName: game.host?.name ?? 'Host',
-    });
   };
 
   const handleOpenHostChat = () => {

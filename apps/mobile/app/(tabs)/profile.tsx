@@ -30,7 +30,7 @@ export default function ProfileScreen() {
     afternoon: [],
     evening: [],
 });
-  const [profileImage, setProfileImage] = useState('');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -65,6 +65,8 @@ export default function ProfileScreen() {
     setGamesPlayed(data.gamesPlayed);
     setReliabilityScore(data.reliability_score);
     setProfileImage(data.profile_picture);
+    console.log("profile image: ")
+    console.log(data.profile_picture)
     // ProfileScreen — convert object to 7-item arrays for display
     if (data.availability) {
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -117,10 +119,9 @@ export default function ProfileScreen() {
         <TouchableOpacity onPress={() => setShowFullScreenImage(true)}>
           
         <Image 
-          source={{ uri: profileImage || 'https://via.placeholder.com/150' }} 
+          source={{ uri: profileImage ?? undefined }} 
           style={styles.profileImage} 
         />
-
         </TouchableOpacity>
         <Text style={styles.profileName}>{name}</Text>
         <Text style={styles.profileLocation}>{city}</Text>
@@ -224,7 +225,7 @@ export default function ProfileScreen() {
             <Ionicons name="close" size={28} color="white" />
           </TouchableOpacity>
           <Image 
-            source={{ uri: profileImage }} 
+            source={{ uri: profileImage ?? undefined }} 
             style={styles.fullScreenImage} 
             resizeMode="contain"
           />
@@ -294,9 +295,11 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   skillLevel: {
-    marginTop: 10,
+    marginTop: 30,
     marginBottom: 5,
-    fontSize: 26,
+    fontSize: 23,
+    fontWeight: '700',
+    textTransform: 'uppercase',
     color: '#19E675',
   },
   ratingSection: {

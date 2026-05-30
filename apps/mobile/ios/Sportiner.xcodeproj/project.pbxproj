@@ -7,26 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		064D3100693DBD7FB319AD3F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9A65D1FE9B5049479B906BB8 /* PrivacyInfo.xcprivacy */; };
+		0F788BA76EF3903C0A6B39D2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BBDA6184F2440143B352886F /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		3B76057983221C23F8C46D90 /* libPods-Sportiner.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 16B86F294F2EEABF27568FCC /* libPods-Sportiner.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		8995FD7418C3481C230A85A8 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5AC46AE4B68D627D2F8CFB /* ExpoModulesProvider.swift */; };
+		AB171C4099362D8039AD3D6C /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642D6E2B1F643A03CBCF8DB6 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		C0630CC19276C39F6B063DE4 /* libPods-Sportiner.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 7AE7916697AF1669028532B5 /* libPods-Sportiner.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0B545F4908955C6BB5A1FE9D /* Pods-Sportiner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Sportiner.release.xcconfig"; path = "Target Support Files/Pods-Sportiner/Pods-Sportiner.release.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Sportiner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sportiner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Sportiner/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Sportiner/Info.plist; sourceTree = "<group>"; };
-		16B86F294F2EEABF27568FCC /* libPods-Sportiner.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Sportiner.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		27948A97EFBB1025FEB24393 /* Pods-Sportiner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Sportiner.debug.xcconfig"; path = "Target Support Files/Pods-Sportiner/Pods-Sportiner.debug.xcconfig"; sourceTree = "<group>"; };
-		57022C9D7E1D2B8909523C37 /* Pods-Sportiner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Sportiner.release.xcconfig"; path = "Target Support Files/Pods-Sportiner/Pods-Sportiner.release.xcconfig"; sourceTree = "<group>"; };
-		9A65D1FE9B5049479B906BB8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Sportiner/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		642D6E2B1F643A03CBCF8DB6 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Sportiner/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		7AE7916697AF1669028532B5 /* libPods-Sportiner.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Sportiner.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Sportiner/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		DF5AC46AE4B68D627D2F8CFB /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Sportiner/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		BBDA6184F2440143B352886F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Sportiner/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		DADDEAECA6A678E42A95E1BE /* Pods-Sportiner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Sportiner.debug.xcconfig"; path = "Target Support Files/Pods-Sportiner/Pods-Sportiner.debug.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Sportiner/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Sportiner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Sportiner-Bridging-Header.h"; path = "Sportiner/Sportiner-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -37,13 +37,30 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3B76057983221C23F8C46D90 /* libPods-Sportiner.a in Frameworks */,
+				C0630CC19276C39F6B063DE4 /* libPods-Sportiner.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0224E1AFE76B281CBFABD69A /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				F1F78AB8DC0B2EB8D36237A6 /* Sportiner */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
+		0C9FB53A074C6B4757973F30 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				DADDEAECA6A678E42A95E1BE /* Pods-Sportiner.debug.xcconfig */,
+				0B545F4908955C6BB5A1FE9D /* Pods-Sportiner.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		13B07FAE1A68108700A75B9A /* Sportiner */ = {
 			isa = PBXGroup;
 			children = (
@@ -53,24 +70,16 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				9A65D1FE9B5049479B906BB8 /* PrivacyInfo.xcprivacy */,
+				BBDA6184F2440143B352886F /* PrivacyInfo.xcprivacy */,
 			);
 			name = Sportiner;
-			sourceTree = "<group>";
-		};
-		1DC25CADC4CEA09C314D8792 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				972EDDD7D9D2D27C4C9334BE /* Sportiner */,
-			);
-			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				16B86F294F2EEABF27568FCC /* libPods-Sportiner.a */,
+				7AE7916697AF1669028532B5 /* libPods-Sportiner.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -89,8 +98,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				9D8E970C3EBDB1E55B80C913 /* Pods */,
-				1DC25CADC4CEA09C314D8792 /* ExpoModulesProviders */,
+				0C9FB53A074C6B4757973F30 /* Pods */,
+				0224E1AFE76B281CBFABD69A /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -105,23 +114,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		972EDDD7D9D2D27C4C9334BE /* Sportiner */ = {
-			isa = PBXGroup;
-			children = (
-				DF5AC46AE4B68D627D2F8CFB /* ExpoModulesProvider.swift */,
-			);
-			name = Sportiner;
-			sourceTree = "<group>";
-		};
-		9D8E970C3EBDB1E55B80C913 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				27948A97EFBB1025FEB24393 /* Pods-Sportiner.debug.xcconfig */,
-				57022C9D7E1D2B8909523C37 /* Pods-Sportiner.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -129,6 +121,14 @@
 			);
 			name = Supporting;
 			path = Sportiner/Supporting;
+			sourceTree = "<group>";
+		};
+		F1F78AB8DC0B2EB8D36237A6 /* Sportiner */ = {
+			isa = PBXGroup;
+			children = (
+				642D6E2B1F643A03CBCF8DB6 /* ExpoModulesProvider.swift */,
+			);
+			name = Sportiner;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -139,13 +139,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Sportiner" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				52D638C883A0EF0A04D7062D /* [Expo] Configure project */,
+				6A377DD9CDA022356AB8C599 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				4C449C1EFCBC365CE12400DE /* [CP] Embed Pods Frameworks */,
+				EA4DCBF579431728F81BE4AF /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -195,7 +195,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				064D3100693DBD7FB319AD3F /* PrivacyInfo.xcprivacy in Resources */,
+				0F788BA76EF3903C0A6B39D2 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -241,29 +241,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		4C449C1EFCBC365CE12400DE /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Sportiner/Pods-Sportiner-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Sportiner/Pods-Sportiner-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		52D638C883A0EF0A04D7062D /* [Expo] Configure project */ = {
+		6A377DD9CDA022356AB8C599 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -373,6 +351,28 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Sportiner/Pods-Sportiner-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		EA4DCBF579431728F81BE4AF /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Sportiner/Pods-Sportiner-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Sportiner/Pods-Sportiner-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -381,7 +381,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				8995FD7418C3481C230A85A8 /* ExpoModulesProvider.swift in Sources */,
+				AB171C4099362D8039AD3D6C /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -390,7 +390,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 27948A97EFBB1025FEB24393 /* Pods-Sportiner.debug.xcconfig */;
+			baseConfigurationReference = DADDEAECA6A678E42A95E1BE /* Pods-Sportiner.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -427,7 +427,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 57022C9D7E1D2B8909523C37 /* Pods-Sportiner.release.xcconfig */;
+			baseConfigurationReference = 0B545F4908955C6BB5A1FE9D /* Pods-Sportiner.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

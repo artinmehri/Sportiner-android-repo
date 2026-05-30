@@ -123,7 +123,7 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
 
         {/* Footer */}
         <TouchableOpacity onPress={onNext} style={styles.footer}>
-          <View style={{ padding: 20 }}>
+          <View style={{ padding: 10 }}>
             <Text style={styles.footerText}>
               Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
             </Text>
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
   footer: {
     alignItems: 'center',
     paddingVertical: 20,
-    paddingBottom: 40,
+    paddingBottom: 30,
   },
   footerText: {
     fontSize: 16,

@@ -41,18 +41,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
-export async function getUserId() {
+export async function getCurrentUserId() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
         return
     }
 
-    let user = data.user;
-
-    console.log("user data :")
-    console.log(data.user)
-
+    const user = data.user;
     if (!user) {
         return
     }
@@ -68,18 +64,27 @@ export async function getUserId() {
     }
 }
 
-export async function getUser() {
+export async function getUser(userId: string) {
+
+    const { data: userData } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+    if (userData) {
+        return userData
+    }
+}
+
+export async function getCurrentUser() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
         return
     }
 
-    let user = data.user;
-
-    console.log("user data :")
-    console.log(data.user)
-
+    const user = data.user;
     if (!user) {
         return
     }
@@ -102,12 +107,7 @@ export async function userExists() {
         return
     }
 
-    let user = data.user;
-
-    console.log("user data :")
-    console.log(data.user)
-
-    
+    const user = data.user;
     if (!user) {
         return
     }
@@ -119,7 +119,6 @@ export async function userExists() {
     .maybeSingle();
 
     if (existing) {
-    console.log('User already exists!');
         return true
     } else {
         return false

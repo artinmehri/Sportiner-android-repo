@@ -14,116 +14,191 @@ import {
   Dimensions,
   Animated,
   Image,
-  Modal,
-  ScrollView,
   PermissionsAndroid,
 } from 'react-native';
-import { Ionicons, MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useNavigation, useRouter } from 'expo-router';
-import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
+import { router, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { PanGestureHandler, GestureHandlerRootView, State, GestureDetector } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
+import { editMessage, getGameInfo, getMessages, replyMessage, sendMessage } from '@/context/ChatContext';
+import { getCurrentUserId, getUser } from '@/context/AuthContext';
+import { formatGameSubtitle, GameRow } from '@/context/GameContext';
+import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 const { width, height } = Dimensions.get('window');
+import { Gesture } from 'react-native-gesture-handler';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import * as ImagePicker from 'expo-image-picker'
 
-type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
-type MessageType = 'text' | 'image' | 'video' | 'location' | 'document';
 
 type Message = {
-  id: string;
-  text: string;
-  sender: 'me' | 'other';
-  senderName: string;
-  senderLevel?: string;
-  senderLevelColor?: string;
-  senderAvatar?: string;
-  time: string;
-  status: MessageStatus;
-  type: MessageType;
-  isEdited?: boolean;
-  replyTo?: string;
-  mediaUrl?: string;
-  fileSize?: string;
-  duration?: number;
+  id?: string;
+  sender_id: string;
+  message: string
+  image?: string;
+  type: string;
+  reply_to?: string;
+  is_reply?: boolean,
+  created_at?: Timestamp;
+  updated_at?: Timestamp;
+  is_edited?: boolean;
+  status?: string
 };
 
-type ReplyInfo = {
-  id: string;
-  text: string;
-  sender: 'me' | 'other';
-  senderName: string;
-  senderLevel?: string;
-  senderLevelColor?: string;
-  type: MessageType;
+
+const SWIPE_THRESHOLD = 80;
+
+type SwipeableMessageProps = {
+  message: Message;
+  onReply: (message: Message) => void;
+  onSwipeProgress?: (message: Message | null) => void;
+  children: React.ReactNode;
 };
 
-const handleGameNavigation = () => {
-  router.push('/(tabs)/EventDetails')
-}
+
+const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: SwipeableMessageProps) => {
+  const translateX = useSharedValue(0);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX(20)
+    .onUpdate((e) => {
+      if (e.translationX >= 0) {
+        translateX.value = e.translationX;
+        if (e.translationX > 20 && onSwipeProgress) {
+          runOnJS(onSwipeProgress)(message);
+        }
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationX > SWIPE_THRESHOLD) {
+        runOnJS(onReply)(message);
+      }
+      translateX.value = withTiming(0, { duration: 200 });
+      if (onSwipeProgress) {
+        runOnJS(onSwipeProgress)(null);
+      }
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={panGesture}>
+      <Reanimated.View style={animatedStyle}>{children}</Reanimated.View>
+    </GestureDetector>
+  );
+};
+
 
 const GroupChatScreen = () => {
-  const router = useRouter();
-  const getAvatarColor = (senderId: string) => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
-    const index = senderId.charCodeAt(0) % colors.length;
-    return colors[index];
-  };
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [gameTitle, setGameTitle] = useState('');
+  const [gameId, setGameId] = useState('');
+  const [userNames, setUserNames] = useState<Record<string, string>>({});
+  const [userAvatars, setUserAvatars] = useState<Record<string, string>>({});
+  const [userLevels, setUserLevels] = useState<Record<string, string>>({});
+  const [userColors, setUserColors] = useState<Record<string, string>>({});
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: 'Hey everyone! How\'s it going?',
-      sender: 'other',
-      senderName: 'Alex',
-      senderLevel: 'Advanced',
-      senderLevelColor: '#FF6B6B',
-      senderAvatar: 'https://picsum.photos/seed/alex/100/100.jpg',
-      time: '10:30 AM',
-      status: 'read',
-      type: 'text',
-    },
-    {
-      id: '2',
-      text: 'Pretty good! Just working on some code',
-      sender: 'other',
-      senderName: 'Sarah',
-      senderLevel: 'Intermediate',
-      senderLevelColor: '#4ECDC4',
-      senderAvatar: 'https://picsum.photos/seed/sarah/100/100.jpg',
-      time: '10:32 AM',
-      status: 'read',
-      type: 'text',
-    },
-    {
-      id: '3',
-      text: 'Same here, debugging this React Native app',
-      sender: 'me',
-      senderName: 'You',
-      senderLevel: 'Beginner',
-      senderLevelColor: '#45B7D1',
-      senderAvatar: 'https://picsum.photos/seed/you/100/100.jpg',
-      time: '10:33 AM',
-      status: 'read',
-      type: 'text',
-    },
-    {
-      id: '4',
-      text: 'Nice! What are you building?',
-      sender: 'other',
-      senderName: 'Mike',
-      senderLevel: 'Advanced',
-      senderLevelColor: '#FF6B6B',
-      senderAvatar: 'https://picsum.photos/seed/mike/100/100.jpg',
-      time: '10:35 AM',
-      status: 'read',
-      type: 'text',
-    },
-  ]);
+  
+  useEffect(() => {
+    const loadUserData = async () => {
+      const uniqueUserIds = [...new Set(messages.map(m => m.sender_id))];
+  
+      const missingUserIds = uniqueUserIds.filter(id => !userNames[id]);
+  
+      if (missingUserIds.length === 0) return;
+  
+      const users = await Promise.all(
+        missingUserIds.map(id => getUser(id))
+      );
+  
+      const newNames: Record<string, string> = {};
+      const newAvatars: Record<string, string> = {};
+      const newLevels: Record<string, string> = {};
+      const newColors: Record<string, string> = {};
+  
+      users.forEach(user => {
+        if (user) {
+          newNames[user.id] = user.name;
+          newAvatars[user.id] = user.profile_picture ?? 'DEFAULT_AVATAR';
+          newLevels[user.id] = user.level ?? '';
+          newColors[user.id] = user.color ?? '';
+        }
+      });
+  
+      setUserNames(prev => ({ ...prev, ...newNames }));
+      setUserAvatars(prev => ({ ...prev, ...newAvatars }));
+      setUserLevels(prev => ({ ...prev, ...newLevels }));
+      setUserColors(prev => ({ ...prev, ...newLevels }))
+    };
+  
+    loadUserData();
+  }, [messages]);
 
+
+  useEffect(() => {
+    if (!id) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const [messages, currentUser, gameRows] = await Promise.all([
+        getMessages(id),
+        getCurrentUserId(),
+        getGameInfo(id),
+      ]);
+
+      setCurrentUserId(currentUser?.id)
+
+      const gameRow = gameRows?.[0] as GameRow | undefined;
+      if (!cancelled) {
+        console.log(gameRow)
+        setGame(gameRow ?? null);
+      }
+
+      if (gameRow?.title && gameRow.id) {
+        setGameTitle(gameRow?.title)
+        setGameId(gameRow.id)
+      }
+
+      if (messages) {
+        setMessages(
+          messages.map((message) => {
+            return {
+              id: message.id,
+              sender_id: message.sender_id,
+              message: message.message,
+              type: message.type,
+              image: message.image,
+              reply_to: message.reply_to,
+              is_reply: message.is_reply,
+              created_at: message.created_at,
+              updated_at: message.updated_at,
+              is_edited: message.is_edited,
+              status: message.status
+            };
+          })
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+
+  const handleGameNavigation = () => {
+    router.push({ pathname: '/(tabs)/EventDetails', params: {id: gameId} })
+  }
+
+  const [game, setGame] = useState<GameRow | null>(null);
   const [inputText, setInputText] = useState('');
   const [isReplying, setIsReplying] = useState(false);
-  const [replyInfo, setReplyInfo] = useState<ReplyInfo | null>(null);
+  const [replyInfo, setReplyInfo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState({
     visible: false,
     message: null as Message | null,
@@ -134,142 +209,135 @@ const GroupChatScreen = () => {
   const [userPhotos, setUserPhotos] = useState<any[]>([]);
   const [userVideos, setUserVideos] = useState<any[]>([]);
   const [mediaPermission, setMediaPermission] = useState<string | null>(null);
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [swipeReplyMessage, setSwipeReplyMessage] = useState<Message | null>(null);
+  const [currentUserId, setCurrentUserId] = useState()
+
 
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const requestMediaPermission = async () => {
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-        {
-          title: 'Media Library Permission',
-          message: 'Sportiner needs access to your photos and videos to send them in chat.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        },
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+  // Image picker function
+  const pickImgae = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 1
+    });
+
+    if (!result.canceled) {
+      setSelectedMedia(result.assets[0].uri)
+      console.log(result)
     } else {
-      setMediaPermission('granted');
-      return true;
+      alert("You did not select any image or gave any permission, nope, thats what bad boys do, don't be a bad boy")
     }
-  };
+  }
 
-  const loadUserMedia = async () => {
-    const hasPermission = await requestMediaPermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Required', 'Please grant access to your photo library to send media.');
-      return;
-    }
 
-    try {
-      const mockPhotos = Array.from({ length: 12 }, (_, i) => ({
-        id: `photo-${i}`,
-        uri: `https://picsum.photos/seed/user-photo-${i}/200/200.jpg`,
-      }));
-      
-      const mockVideos = Array.from({ length: 8 }, (_, i) => ({
-        id: `video-${i}`,
-        uri: `https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4`,
-      }));
-      
-      setUserPhotos(mockPhotos);
-      setUserVideos(mockVideos);
-      setShowMediaPicker(true);
-    } catch (error) {
-      console.error('Error loading media:', error);
-      Alert.alert('Error', 'Failed to load your media.');
-    }
-  };
-
-  const handleSend = () => {
+  const handleSend = async () => {
     if ((!inputText.trim() && !selectedMedia && !isReplying && !editingMessage) || (isReplying && !inputText.trim() && !selectedMedia)) {
       return;
     }
 
+    // Editing a message
     if (editingMessage) {
       setMessages(messages.map(msg => 
         msg.id === editingMessage.id 
-          ? { ...msg, text: inputText, isEdited: true }
+          ? { ...msg, message: inputText, is_edited: true }
           : msg
       ));
+
+      if (editingMessage.id) {
+      await editMessage(editingMessage.id, inputText.trim())
       setEditingMessage(null);
-    } else {
-      const newMessage: Message = {
-        id: Date.now().toString(),
-        text: inputText,
-        sender: 'me',
-        senderName: 'You',
-        senderLevel: 'Beginner',
-        senderLevelColor: '#45B7D1',
-        senderAvatar: 'https://picsum.photos/seed/you/100/100.jpg',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: 'sent',
-        type: selectedMedia ? (selectedMedia.includes('video') ? 'video' : 'image') : 'text',
-        mediaUrl: selectedMedia || undefined,
-        replyTo: replyInfo?.id,
-      };
-      
-      setMessages([...messages, newMessage]);
-      
-      setTimeout(() => {
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === newMessage.id 
-              ? { ...msg, status: 'delivered' }
-              : msg
-          )
-        );
-        
-        setTimeout(() => {
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === newMessage.id 
-                ? { ...msg, status: 'read' }
-                : msg
-            )
-          );
-        }, 1000);
-      }, 500);
+      setInputText('');
+      }
+
+
+      // Replying to a message
+    } else if (isReplying && replyInfo) {
+
+    if (currentUserId && replyInfo?.id && id) {
+      console.log('replying message')
+      await replyMessage(replyInfo.id, 'text', inputText.trim(), id)
+      setIsReplying(false);
+      inputRef.current?.focus();
     }
+
+    if (currentUserId) {
+    const newReply: Message = {
+      sender_id: currentUserId,
+      message: inputText.trim(),
+      type: 'text',
+      reply_to: replyInfo.id,
+      is_reply: true,
+    };
+
+    setMessages([...messages, newReply]);
+  }
 
     setInputText('');
     setSelectedMedia(null);
     setReplyInfo(null);
     setIsReplying(false);
-    
+    setSwipeReplyMessage(null); 
+
+
+          
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
-  };
 
-  const handleReply = (message: Message) => {
-    setReplyInfo({
-      id: message.id,
-      text: message.text,
-      sender: message.sender,
-      senderName: message.senderName,
-      senderLevel: message.senderLevel,
-      senderLevelColor: message.senderLevelColor,
-      type: message.type,
-    });
-    setIsReplying(true);
-    inputRef.current?.focus();
-  };
+    // Sending a normal message 
+    } else {
+      if (currentUserId) {
+      const newMessage: Message = {
+        sender_id: currentUserId,
+        message: inputText.trim(),
+        type: 'text'
+      };
+    
+      if (id) {
+      await sendMessage(inputText.trim(), 'text', id)
+      }
+      
+      setMessages([...messages, newMessage]);
 
-  const handleEdit = (message: Message) => {
-    setEditingMessage(message);
-    setInputText(message.text);
-    setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
-    inputRef.current?.focus();
-  };
+
+      // Reseting both text and media after sending
+      setInputText('');
+      setSelectedMedia(null);
+      setReplyInfo(null);
+      setIsReplying(false);
+      
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    };
+  }
+}   
+
+const getOriginalMessage = (messageId: string) => {
+  const foundMessage = messages.find((message) => message.id === messageId);
+  return foundMessage?.message ?? 'Original message deleted';
+}
+
+
+const handleReply = (message: Message) => {
+  setSwipeReplyMessage(null)
+  setReplyInfo(message)
+  setIsReplying(true)
+  inputRef.current?.focus();
+};
+
+const handleEdit = (message: Message) => {
+  setEditingMessage(message);
+  setInputText(message.message);
+  setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+  inputRef.current?.focus();
+};
+
 
   const handleLongPress = (message: Message, event: any) => {
     const { pageX, pageY } = event.nativeEvent;
@@ -280,36 +348,6 @@ const GroupChatScreen = () => {
     });
   };
 
-  const handleSwipeReply = (message: Message) => {
-    setSwipeReplyMessage(message);
-    handleReply(message);
-    
-
-    setTimeout(() => {
-      setSwipeReplyMessage(null);
-    }, 1000);
-  };
-
-  const onGestureEvent = (message: Message) => {
-    return (event: any) => {
-      const { translationX, state } = event.nativeEvent;
-      
-      if (state === State.ACTIVE) {
-       
-        if (translationX > 40) {
-          setSwipeReplyMessage(message);
-        }
-      } else if (state === State.END) {
-        if (translationX > 80) { 
-          handleSwipeReply(message);
-        } else {
-          setSwipeReplyMessage(null); 
-        }
-      } else if (state === State.CANCELLED) {
-        setSwipeReplyMessage(null); 
-      }
-    };
-  };
 
   const closeContextMenu = () => {
    
@@ -323,26 +361,25 @@ const GroupChatScreen = () => {
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
-    const isMe = item.sender === 'me';
-    const repliedMessage = item.replyTo ? messages.find(m => m.id === item.replyTo) : null;
+    const isMe = item.sender_id === currentUserId;
+    const repliedMessage = item.is_reply
     const isSwipeReplying = swipeReplyMessage?.id === item.id;
     
     return (
+
+      
       <View style={styles.messageContainer}>
         {!isMe && (
           <View style={styles.messageHeader}>
-            <View style={[styles.avatar, { backgroundColor: getAvatarColor(item.sender) }]}>
-              <Image source={{ uri: item.senderAvatar }} style={styles.avatarImage} />
+            <View style={[styles.avatar, { backgroundColor: userColors[item.sender_id] }]}>
+              <Image source={{ uri: userAvatars[item.sender_id] ?? 'DEFAULT_AVATAR' }} style={styles.avatarImage} />
             </View>
             <View style={styles.senderInfo}>
-              <Text style={styles.senderName}>{item.senderName} · <Text style={[styles.senderLevel, { color: item.senderLevelColor }]}>{item.senderLevel}</Text></Text>
+              <Text style={styles.senderName}>{userNames[item.sender_id] ?? 'User'} · <Text style={[styles.senderLevel, { color: userColors[item.sender_id] }]}>{userLevels[item.sender_id] ?? ''              }</Text></Text>
             </View>
           </View>
         )}
-        <PanGestureHandler 
-          onGestureEvent={onGestureEvent(item)}
-          onHandlerStateChange={onGestureEvent(item)}
-        >
+
           <View>
             <TouchableOpacity
               activeOpacity={0.85}
@@ -354,59 +391,99 @@ const GroupChatScreen = () => {
                 isSwipeReplying && styles.swipeReplyingMessage,
               ]}
             >
-              {isSwipeReplying && (
+            {isSwipeReplying && (
                 <View style={styles.swipeReplyIndicator}>
-                  <Ionicons name="arrow-undo" size={16} color="#22C55E" />
-                  <Text style={styles.swipeReplyText}>Reply</Text>
+                  <Ionicons style={styles.swipeReplyIcon} name="arrow-undo" size={30} color="#22C55E" />
                 </View>
-              )}
-              {repliedMessage && (
-                <View style={styles.messageReplyPreview}>
-                  <Text style={styles.messageReplyText}>
-                    {`${repliedMessage.senderName}: "${repliedMessage.text}"`}
-                  </Text>
-                </View>
-              )}
-              <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.text}</Text>
+            )}
+
+             {repliedMessage && item.reply_to && (
+              <View style={styles.messageReplyPreview}>
+                <Text style={styles.messageReplyText}>
+                {(() => {
+                  const original = messages.find(m => m.id === item.reply_to);
+                  const originalSender = userNames[original?.sender_id ?? ''] || 'User';
+                  return `${originalSender}: "${getOriginalMessage(item.reply_to)}"`;
+                })()}                
+                </Text>
+              </View>
+            )}
+            
+              <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.message}</Text>
             </TouchableOpacity>
           </View>
-        </PanGestureHandler>
       </View>
     );
   };
+
+  let inputStyling;
+  // If only text is typing, go with inputPill
+  if (inputText) {
+    inputStyling = styles.inputPill;
+    // If both media and text are selcted go with inputNMedia
+  } else if (selectedMedia) {
+    inputStyling = styles.inputNMedia;
+    // Otherwise if nothing is selected go with simple one
+  } else {
+    inputStyling = styles.simpleInputPill
+  }
 
   const navigation = useNavigation()
 
   const renderHeader = () => (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 
-        <View style={styles.groupAvatar}>
-          <Ionicons name="people" size={20} color="#fff" />
-        </View>
+        { game &&
+        <TouchableOpacity onPress={() => handleGameNavigation()}>
+          <Image source={{ uri: game.image }} style={styles.avatar} />
+        </TouchableOpacity>
+        }
 
-        <TouchableOpacity onPress={handleGameNavigation} style={styles.contactInfo} >
+        <TouchableOpacity onPress={() => handleGameNavigation()} style={styles.contactInfo}>
           <View style={styles.contactNameRow}>
-            <Text style={styles.contactName}>Boys Tennis Game</Text>
+            <Text style={styles.contactName}>{gameTitle}</Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
-          <Text style={styles.contactSubtitle}>Tue 7PM @ Cedarvale park</Text>
+          <Text style={styles.contactSubtitle}>{formatGameSubtitle(game)}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
+
 
   const renderReplyPreview = () => {
     if (!replyInfo) return null;
     
     return (
       <View style={styles.replyPreview}>
-        <Text style={styles.replyPreviewText}>
-          {`Replying to ${replyInfo.senderName}: "${replyInfo.text}"`}
-        </Text>
+        {replyInfo.image ?     
+        <View style={styles.replyWrapper}>
+          <View>
+            <Text style={styles.replySender}>
+              {userNames[replyInfo.sender_id] || 'User'}              
+            </Text>
+              <Text style={styles.replyPreviewText}>
+                  Photo
+              </Text>
+            </View>
+            <Image source={{ uri: replyInfo.image}} style={styles.replyImage}/>
+          </View>
+        :     
+        <><Text style={styles.replySender}>
+            {userNames[replyInfo.sender_id] || 'User'}          
+          </Text>
+          <Text style={styles.replyPreviewText}>
+          {replyInfo.message}
+        </Text></> 
+        }
+    
         <TouchableOpacity 
           style={styles.closeReplyButton}
           onPress={() => {
@@ -439,56 +516,59 @@ const GroupChatScreen = () => {
 
       {renderReplyPreview()}
 
-      <View style={styles.composerPill}>
-        <TouchableOpacity 
-          style={styles.composerIconButton}
-          onPress={loadUserMedia}
-        >
-          <Ionicons name="image-outline" size={20} color="#111" />
-        </TouchableOpacity>
+    
+      <View style={selectedMedia ? styles.composerPill: styles.simpleComposerPill}>
 
-        <TextInput
-          ref={inputRef}
-          style={styles.composerInput}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Type..."
-          placeholderTextColor="#6B7280"
-          multiline={false}
-          onFocus={() => setShowEmojiPicker(false)}
-        />
+        {selectedMedia && (
+          <View style={styles.mediaPreview}>
+            {selectedMedia.includes('video') ? (
+              <View style={styles.videoPreview}>
+                <Image source={{ uri: 'https://picsum.photos/seed/video-thumb/100/100.jpg' }} style={styles.mediaThumbnail} />
+                <Ionicons name="videocam" size={16} color="#666" style={styles.mediaIcon} />
+              </View>
+            ) : (
+              <View style={styles.imagePreview}>
+                <Image source={{ uri: selectedMedia }} style={styles.mediaThumbnail} />
+                <TouchableOpacity 
+                  style={styles.removeMediaButton}
+                  onPress={() => setSelectedMedia(null)}
+                >
+                  <Ionicons name="close" size={16} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
 
-        {(inputText.trim() || selectedMedia) ? (
-          <TouchableOpacity
-            style={styles.sendButton}
-            onPress={handleSend}
-            disabled={!inputText.trim() && !selectedMedia && !editingMessage && !isReplying}
-          >
-            <Ionicons name="send" size={18} color="#22C55E" />
-          </TouchableOpacity>
-        ): (null)}
-      </View>
-      
-      {selectedMedia && (
-        <View style={styles.mediaPreview}>
-          {selectedMedia.includes('video') ? (
-            <View style={styles.videoPreview}>
-              <Image source={{ uri: 'https://picsum.photos/seed/video-thumb/100/100.jpg' }} style={styles.mediaThumbnail} />
-              <Ionicons name="videocam" size={16} color="#666" style={styles.mediaIcon} />
+
+        <View style={inputStyling}>
+            <TouchableOpacity 
+              style={styles.composerIconButton}
+              onPress={pickImgae}
+            >
+              <Ionicons name="image-outline" size={20} color="#111" />
+            </TouchableOpacity>
+
+            <TextInput
+              ref={inputRef}
+              style={styles.composerInput}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Type..."
+              placeholderTextColor="#6B7280"
+              multiline={false}
+            />
+            {(inputText.trim() || selectedMedia) &&
+                      <TouchableOpacity
+                        style={styles.sendButton}
+                        onPress={handleSend}
+                        disabled={!inputText.trim() && !selectedMedia && !editingMessage && !isReplying}
+                      >
+                        <Ionicons name="send" size={22} color="#22C55E" />
+                      </TouchableOpacity>
+                   }
             </View>
-          ) : (
-            <View style={styles.imagePreview}>
-              <Image source={{ uri: selectedMedia }} style={styles.mediaThumbnail} />
-              <TouchableOpacity 
-                style={styles.removeMediaButton}
-                onPress={() => setSelectedMedia(null)}
-              >
-                <Ionicons name="close" size={16} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      )}
+          </View>
     </View>
   );
 
@@ -510,7 +590,7 @@ const GroupChatScreen = () => {
     const message = showContextMenu.message;
     const menuItems = [
       { id: 'copy', icon: 'copy-outline', iconSet: 'Ionicons', label: 'Copy', color: '#6B7280' },
-      ...(message.sender === 'me' ? [{ id: 'edit', icon: 'create-outline', iconSet: 'Ionicons', label: 'Edit', color: '#3B82F6' }] : []),
+      ...(message.sender_id === currentUserId ? [{ id: 'edit', icon: 'create-outline', iconSet: 'Ionicons', label: 'Edit', color: '#3B82F6' }] : []),
       { id: 'delete', icon: 'trash-outline', iconSet: 'Ionicons', label: 'Delete', color: '#EF4444' },
       { id: 'pin', icon: 'pin-outline', iconSet: 'Ionicons', label: 'Pin', color: '#F59E0B' },
     ];
@@ -543,8 +623,8 @@ const GroupChatScreen = () => {
                       if (item.id === 'edit') {
                         handleEdit(message);
                       } else if (item.id === 'copy') {
-                        copyToClipboard(message.text)
-                        Alert.alert('Copied to clipboard', message.text);
+                        copyToClipboard(message.message)
+                        Alert.alert('Copied to clipboard', message.message);
                       } else if (item.id === 'delete') {
                         Alert.alert(
                           'Delete message',
@@ -595,7 +675,7 @@ const GroupChatScreen = () => {
             ref={flatListRef}
             data={messages}
             renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item, index) => item.id || `message-${index}`}
             contentContainerStyle={[
               styles.messagesContainer,
               { paddingBottom: 80 + (replyInfo || editingMessage ? 60 : 0) + insets.bottom },
@@ -836,6 +916,23 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingHorizontal: 14,
   },
+    simpleInputPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4.5,
+    marginTop: 7.9
+  },
+  inputNMedia: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4.5,
+  },
+  inputPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    marginTop: 0.5
+  },
   composerPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -844,6 +941,15 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingHorizontal: 12,
     height: 46,
+  },
+  simpleComposerPill: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    height: 40,
   },
   composerIconButton: {
     paddingRight: 10,
@@ -871,9 +977,23 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#22C55E',
   },
+  replyWrapper: {
+    flexDirection: 'row'
+  },
+  replySender: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#22C55E',
+  },
   replyPreviewText: {
     fontSize: 14,
     color: '#374151',
+  },
+  replyImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 7,
+    marginLeft: 210
   },
   closeReplyButton: {
     position: 'absolute',
@@ -962,6 +1082,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
     gap: 4,
+  },
+  swipeReplyIcon: {
+    color: '#19E675',
+    fontWeight: '600',
   },
   swipeReplyText: {
     color: '#fff',

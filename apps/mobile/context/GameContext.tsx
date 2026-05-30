@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
-
 import { useAuth } from '@/context/AuthContext';
 import {
   createGameRow,
@@ -80,8 +79,7 @@ interface GameContextType {
   isLoading: boolean;
   error: string | null;
   refreshGames: () => Promise<void>;
-  refreshMembership: () => Promise<void>;
-  addGame: (game: GameInsert) => Promise<void>;
+  addGame: (game: GameInsert) => Promise<Game>;
   getGameById: (id: string) => Game | undefined;
   getAllGames: () => Promise<Game[]>;
   getMyGames: () => Promise<Game[]>;
@@ -96,11 +94,59 @@ interface GameContextType {
     requester_user_id: string;
     status: string;
   }>>;
-}
+} 
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
-function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: PlayerCounts): Game {
+type GeographyPoint = {
+  type: 'Point';
+  coordinates: [number, number]; 
+};
+
+export type GameRow = {
+  id: string;
+  created_at: string;
+  host_id: string;
+  title: string | null;
+  description: string | null;
+  category: string | null;
+  location: GeographyPoint;
+  time: string | null;
+  level: string | null;
+  public: boolean | null;
+  capacity: number | null;
+  number_of_players: number | null;
+  booked: boolean;
+  payment_amount: string;
+  image: string;
+};
+
+
+export function formatGameSubtitle(row: GameRow | null | undefined): string {
+  console.log(row)
+  if (!row) return '';
+  const { meta } = parseGameMeta(row.description ?? null);
+  const location = meta?.location ?? '';
+  const when = row.time ? new Date(row.time) : null;
+  const day = when?.toLocaleDateString(undefined, { weekday: 'short' }) ?? '';
+  const time = when?.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }) ?? '';
+  const schedule = [day, time].filter(Boolean).join(' · ');
+  if (schedule && location) return `${schedule} @ ${location}`;
+  return schedule || location;
+}
+
+
+type UserRow = {
+  id: string;
+  name: string | null;
+  profile_picture: number | null;
+};
+
+
+function rowToGame(row: GameRow, host?: UserRow | null): Game {
   const { cleanDescription, meta } = parseGameMeta(row.description);
   const skillLevel = (row.level as SkillLevel) ?? 'Beginner';
   const capacity = row.capacity ?? 2;
@@ -153,8 +199,7 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
     location,
     courtType,
     isBooked,
-    numberOfPlayers: capacity,
-    playerCount,
+    numberOfPlayers: row.number_of_players ?? row.capacity ?? 2,
     gameDescription: cleanDescription,
     isPaid,
     paymentAmount,
@@ -259,7 +304,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           ],
         };
         setGames((prev) => [newGame, ...prev]);
-        return;
+        return newGame;
       }
 
       const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -278,11 +323,55 @@ export function GameProvider({ children }: { children: ReactNode }) {
         isPaid: gameData.isPaid,
         paymentAmount: gameData.paymentAmount,
         location: gameData.location,
-        date: gameData.date,
-        time: gameData.time,
-        numberOfPlayers: gameData.numberOfPlayers,
+      };
+      const fullDescription = appendGameMeta(gameData.gameDescription, meta);
+      const gameTime = combineDateAndTimeToIso(gameData.date, gameData.time);
+
+      const row = {
+        host_id: userData.user.id,
+        title: gameData.title,
+        description: fullDescription,
+        category: `${gameData.gameType} · ${gameData.courtType}`,
+        time: gameTime,
+        level: gameData.skillLevel,
+        public: gameData.joinSetting === '👥 Open to Anyone',
+        capacity: gameData.numberOfPlayers,
+        number_of_players: gameData.numberOfPlayers,
+        players_list: [userData.user.id],
+      };
+
+      const { data: insertedRow, error: insErr } = await supabase
+        .from('games')
+        .insert(row)
+        .select()
+        .single();
+      if (insErr) {
+        throw new Error(insErr.message);
+      }
+
+      const { error: playerErr } = await supabase
+      .from('game_players')
+      .insert({
+        game_id: insertedRow.id,
+        user_id: userData.user.id,
+        role: 'host',
+        joined_at: new Date().toISOString(),
       });
+
+    if (playerErr) {
+      console.warn('game_players insert failed:', playerErr.message);
+    }
+
+
+      const { data: host } = await supabase
+        .from('users')
+        .select('id, name, profile_picture')
+        .eq('id', userData.user.id)
+        .single();
+
+      const game = rowToGame(insertedRow as GameRow, host as UserRow);
       await refreshGames();
+      return game;
     },
     [refreshGames]
   );
@@ -349,15 +438,51 @@ export function GameProvider({ children }: { children: ReactNode }) {
       isPaid: gameData.isPaid,
       paymentAmount: gameData.paymentAmount,
       location: gameData.location,
-      date: gameData.date,
-      time: gameData.time,
-      numberOfPlayers: gameData.numberOfPlayers,
+    };
+    const fullDescription = appendGameMeta(gameData.gameDescription, meta);
+    const gameTime = combineDateAndTimeToIso(gameData.date, gameData.time);
+
+    const row = {
+      host_id: userData.user.id,
+      title: gameData.title,
+      description: fullDescription,
+      category: `${gameData.gameType} · ${gameData.courtType}`,
+      time: gameTime,
+      level: gameData.skillLevel,
+      public: gameData.joinSetting === '👥 Open to Anyone',
+      capacity: gameData.numberOfPlayers,
+      number_of_players: gameData.numberOfPlayers,
+      players_list: [userData.user.id],
+    };
+
+    const { data: insertedRow, error: insErr } = await supabase
+      .from('games')
+      .insert(row)
+      .select()
+      .single();
+
+    if (insErr) {
+      throw new Error(insErr.message);
+    }
+
+    const { error: playerErr } = await supabase
+    .from('game_players')
+    .insert({
+      game_id: insertedRow.id,
+      user_id: userData.user.id,
+      role: 'host',
+      joined_at: new Date().toISOString(),
     });
 
-    const [profileMap, counts] = await Promise.all([
-      fetchHostProfiles([userData.user.id]),
-      fetchPlayerCounts([inserted.id]),
-    ]);
+  if (playerErr) {
+    console.warn('game_players insert failed:', playerErr.message);
+  }
+
+    const { data: host } = await supabase
+      .from('users')
+      .select('id, name, profile_picture')
+      .eq('id', userData.user.id)
+      .single();
 
     return rowToGame(inserted, profileMap[userData.user.id], counts);
   }, []);
