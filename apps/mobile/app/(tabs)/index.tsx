@@ -11,14 +11,13 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect, useRouter } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game } from "@/context/GameContext";
-import { useAuth } from "@/context/AuthContext";
-import { isWithinDateFilter } from "@/lib/gamesDb";
+import { getCurrentUserId, supabase } from "@/context/AuthContext";
+import { addUserToChat, getChatId, userInChat } from "@/context/ChatContext";
 import { openGameChat } from "@/lib/openGameChat";
-import { isSupabaseConfigured } from "@/lib/supabase";
 
 
 type Event = {
@@ -31,7 +30,6 @@ type Event = {
   venue: string;
   cost: string;
   avatar: string;
-  primaryCta: string;
   secondaryCta: string;
   spotsFilled?: number;
   spotsTotal?: number;
@@ -75,19 +73,45 @@ function formatDiscoverTime(dateIso: string, timeStr: string): string {
   return `${dayPart} • ${displayHour}:${minutes.padStart(2, "0")} ${ampm}`;
 }
 
+function calculateDistance(location: any) {
+
+  const distance = "2 km"
+
+  return distance 
+}
+
+
+async function handleOnMessage(gameId: string | undefined) {
+  console.log(gameId)
+
+  if (!gameId) {
+    Alert.alert("Message Host", "This event is not linked to a game yet.");
+    return;
+  }
+
+  const response = await userInChat(gameId);
+
+  if (!response) {
+    await addUserToChat(gameId);
+  } else {
+    const chatId = getChatId(gameId)
+    router.push({ pathname: "/(tabs)/chat", params: { id: `${chatId}` } });
+  }
+}
+
+
 function gameToEvent(g: Game): Event {
   const needsApproval = g.joinSetting.includes("Approval");
   return {
     title: g.title,
     level: skillToEventLevel(g.skillLevel),
-    distance: "Nearby",
+    distance: calculateDistance(g.address),
     address: g.location,
     status: "open",
     time: formatDiscoverTime(g.date, g.time),
     venue: g.courtType,
     cost: g.isPaid && g.paymentAmount ? `$${g.paymentAmount} Entry` : "Free",
     avatar: g.host.avatar,
-    primaryCta: "Message Host",
     secondaryCta: needsApproval ? "Request Spot" : "Join Game",
     spotsFilled: g.playerCount,
     spotsTotal: g.numberOfPlayers,
@@ -97,104 +121,47 @@ function gameToEvent(g: Game): Event {
 }
 
 
-const events1v1: Event[] = [
- {
-   title: "John's Tennis Game",
-   level: "Intermediate(800-1200)",
-   distance: "500m",
-   address: "100 Steels Avenue",
-   status: "open",
-   time: "Today • 7:30",
-   venue: "Public court",
-   cost: "Free",
-   avatar:
-     "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-   primaryCta: "Message Host",
-   secondaryCta: "Join Game",
- },
- {
-   title: "Alex's Tennis Game",
-   level: "Advanced(1200-1600)",
-   distance: "1.2km",
-   address: "1200 Steels Avenue",
-   status: "full",
-   time: "Today • 7:30",
-   venue: "Private court",
-   cost: "Free",
-   avatar:
-     "https://images.unsplash.com/photo-1505761671935-60b3a7427bad?auto=format&fit=crop&w=200&q=60",
-   primaryCta: "Message Host",
-   secondaryCta: "Request Spot",
- },
-];
-
-const eventsGroup: Event[] = [
- {
-   title: "Sportiner Event",
-   level: "Beginner(400-800)",
-   distance: "500m",
-   address: "300 Steels Avenue",
-   status: "open",
-   time: "Today • 7:30",
-   venue: "",
-   cost: "Free",
-   avatar:
-     "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-   primaryCta: "Message Host",
-   secondaryCta: "Join Game",
-   spotsFilled: 4,
-   spotsTotal: 6,
-   hasGreenBackground: true,
- },
- {
-   title: "Alex's Tennis Doubles",
-   level: "Advanced(1200-1600)",
-   distance: "500m",
-   address: "300 Steels Avenue",
-   status: "open",
-   time: "Today • 10:30",
-   venue: "",
-   cost: "$10 Entry",
-   avatar:
-     "https://images.unsplash.com/photo-1505761671935-60b3a7427bad?auto=format&fit=crop&w=200&q=60",
-   primaryCta: "Message Host",
-   secondaryCta: "Request Spot",
-   spotsFilled: 2,
-   spotsTotal: 3,
-   hasGreenBackground: false,
- },
-];
-
-
 export default function Index() {
  const [mode, setMode] = useState<"1-1" | "Group">("1-1");
  const [selectedFilter, setSelectedFilter] = useState("Today");
  const [searchQuery, setSearchQuery] = useState("");
  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
+ const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
  const router = useRouter();
  const { requestJoinGame } = useGameTickets();
- const { games, refreshGames, joinedGameIds, pendingGameIds } = useGames();
- const { user } = useAuth();
-
+ const { games, refreshGames } = useGames();
+ 
  useFocusEffect(
    useCallback(() => {
      refreshGames();
    }, [refreshGames])
  );
 
- const dbEvents = useMemo(() => {
-   return games
-     .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
-     .filter((g) => (user?.id ? g.hostId !== user.id : true))
-     .filter((g) => !joinedGameIds.includes(g.id) && !pendingGameIds.includes(g.id))
-     .filter((g) =>
-       isWithinDateFilter(
-         g.date,
-         selectedFilter as "Today" | "Tomorrow" | "This Weekend"
-       )
-     )
-     .map(gameToEvent);
- }, [games, mode, user?.id, joinedGameIds, pendingGameIds, selectedFilter]);
+ useEffect(() => {
+  let isMounted = true;
+
+  const loadCurrentUserId = async () => {
+   const user = await getCurrentUserId();
+   if (isMounted) {
+    setCurrentUserId(user?.id);
+   }
+  };
+
+  loadCurrentUserId();
+
+  return () => {
+   isMounted = false;
+  };
+ }, []);
+
+ const dbEvents = useMemo(
+  () =>
+   games
+    .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
+    .filter((g) => (currentUserId ? g.hostId !== currentUserId : true))
+    .map(gameToEvent),
+  [games, mode, currentUserId]
+ );
 
  return (
    <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -285,10 +252,7 @@ export default function Index() {
 
 
        {(
-         (isSupabaseConfigured
-           ? dbEvents
-           : [...dbEvents, ...(mode === "1-1" ? events1v1 : eventsGroup)]
-         ).filter(
+         dbEvents.filter(
            (event) =>
              searchQuery === "" ||
              event.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -396,7 +360,7 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
   };
 
  return (
-   <TouchableOpacity 
+   <TouchableOpacity
      style={cardStyle}
      onPress={
       event.status === "full"
@@ -499,30 +463,16 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
           event.status === 'full' ? styles.secondaryButtonFull : styles.secondaryButton,
          ]}
          onPress={
-           event.status === 'full'
+           event.status === "full" || !event.gameId
              ? undefined
-             : () => {
-                 if (!event.gameId) {
-                   router.push('/(tabs)/chat');
-                   return;
-                 }
-                 const hostName = event.title.includes("'s")
-                   ? event.title.split("'s")[0]
-                   : 'Host';
-                 openGameChat({
-                   gameId: event.gameId,
-                   gameTitle: event.title,
-                   peerName: hostName,
-                 });
-               }
+             : () => handleOnMessage(event.gameId)
          }
        >
          <Text
            style={[
             event.status === 'full' ? styles.secondaryButtonTextFull : styles.secondaryButtonText,
            ]}
-         >
-           {event.primaryCta}
+         >Message
          </Text>
        </TouchableOpacity>}
   

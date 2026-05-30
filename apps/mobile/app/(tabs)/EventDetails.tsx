@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames } from '@/context/GameContext';
 import { useAuth } from '@/context/AuthContext';
+import { addUserToChat, getChatId, userInChat } from '@/context/ChatContext';
 import { openGameChat } from '@/lib/openGameChat';
 
 export default function EventDetails() {
@@ -90,8 +91,17 @@ export default function EventDetails() {
     membership === 'pending' ||
     isFull;
 
-  const handleMessageHost = () => {
+  const handleMessageHost = async () => {
     if (!game) {
+      return;
+    }
+    const inChat = await userInChat(game.id);
+    if (!inChat) {
+      await addUserToChat(game.id);
+    }
+    const chatId = await getChatId(game.id);
+    if (chatId) {
+      router.push({ pathname: '/(tabs)/chat', params: { id: `${chatId}` } });
       return;
     }
     openGameChat({

@@ -12,16 +12,23 @@ import {
   fetchUpcomingGameRowsForPlayer,
   fetchUserGameMembership,
   joinGame as joinGameDb,
+  resolveCleanDescription,
+  resolveCourtType,
+  resolveGameType,
+  resolveIsBooked,
+  resolveIsPaid,
+  resolveJoinSetting,
+  resolveLocationName,
+  resolvePaymentAmount,
   resolvePlayerCount,
   type GameRow,
   type JoinResult,
   type PlayerCounts,
   type UserRow,
 } from '@/lib/gamesDb';
-import { parseGameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
-export type { JoinResult };
+export type { JoinResult, GameRow };
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -48,6 +55,7 @@ export interface Game {
   gameDescription: string;
   isPaid: boolean;
   paymentAmount?: string;
+  chatId?: string;
   host: {
     name: string;
     avatar: string;
@@ -71,7 +79,9 @@ export interface Game {
   avatar?: string;
 }
 
-export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players' | 'playerCount'>;
+export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players' | 'playerCount' | 'chatId'> & {
+  locationCoords?: { lat: number; lng: number } | null;
+};
 
 interface GameContextType {
   games: Game[];
@@ -81,7 +91,7 @@ interface GameContextType {
   error: string | null;
   refreshGames: () => Promise<void>;
   refreshMembership: () => Promise<void>;
-  addGame: (game: GameInsert) => Promise<void>;
+  addGame: (game: GameInsert) => Promise<Game>;
   getGameById: (id: string) => Game | undefined;
   getAllGames: () => Promise<Game[]>;
   getMyGames: () => Promise<Game[]>;
@@ -100,29 +110,43 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
+export function formatGameSubtitle(row: GameRow | null | undefined): string {
+  if (!row) {
+    return '';
+  }
+  const location = resolveLocationName(row);
+  const when = row.time ? new Date(row.time) : null;
+  const day = when?.toLocaleDateString(undefined, { weekday: 'short' }) ?? '';
+  const time =
+    when?.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    }) ?? '';
+  const schedule = [day, time].filter(Boolean).join(' · ');
+  if (schedule && location) {
+    return `${schedule} @ ${location}`;
+  }
+  return schedule || location;
+}
+
 function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: PlayerCounts): Game {
-  const { cleanDescription, meta } = parseGameMeta(row.description);
   const skillLevel = (row.level as SkillLevel) ?? 'Beginner';
-  const capacity = row.capacity ?? 2;
+  const capacity = row.number_of_players ?? row.capacity ?? 2;
   const playerCount = resolvePlayerCount(row, counts);
   const spotsLeft = Math.max(0, capacity - playerCount);
+  const gameType = resolveGameType(row) as GameType;
+  const joinSetting = resolveJoinSetting(row) as JoinSetting;
+  const courtType = resolveCourtType(row) as CourtType;
+  const isBooked = resolveIsBooked(row);
+  const isPaid = resolveIsPaid(row);
+  const paymentAmount = resolvePaymentAmount(row);
+  const location = resolveLocationName(row);
 
   const t = row.time ? new Date(row.time) : new Date();
   const dateIso = row.time ?? '';
   const timeStr = row.time
     ? `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
     : '';
-
-  const gameType: GameType =
-    meta?.gameType ?? (row.category?.trim().startsWith('1v1') ? '1v1' : 'Group');
-  const joinSetting: JoinSetting =
-    meta?.joinSetting ??
-    (row.public !== false ? '👥 Open to Anyone' : '✋ Request Approval');
-  const courtType: CourtType = meta?.courtType ?? 'Public';
-  const isBooked = meta?.isBooked ?? false;
-  const isPaid = meta?.isPaid ?? false;
-  const paymentAmount = meta?.paymentAmount;
-  const location = meta?.location ?? '';
 
   const spotStatus =
     spotsLeft === 0
@@ -155,9 +179,10 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
     isBooked,
     numberOfPlayers: capacity,
     playerCount,
-    gameDescription: cleanDescription,
+    gameDescription: resolveCleanDescription(row),
     isPaid,
     paymentAmount,
+    chatId: row.chat_id ?? undefined,
     host: {
       name: host?.name ?? 'Host',
       avatar: DEFAULT_AVATAR,
@@ -186,6 +211,25 @@ async function mapRowsToGames(rows: GameRow[]): Promise<Game[]> {
     fetchPlayerCounts(gameIds),
   ]);
   return rows.map((r) => rowToGame(r, profileMap[r.host_id], counts));
+}
+
+function toInsertPayload(gameData: GameInsert) {
+  return {
+    title: gameData.title,
+    gameDescription: gameData.gameDescription,
+    gameType: gameData.gameType,
+    skillLevel: gameData.skillLevel,
+    joinSetting: gameData.joinSetting,
+    courtType: gameData.courtType,
+    isBooked: gameData.isBooked,
+    isPaid: gameData.isPaid,
+    paymentAmount: gameData.paymentAmount,
+    locationName: gameData.location,
+    locationCoords: gameData.locationCoords ?? null,
+    date: gameData.date,
+    time: gameData.time,
+    numberOfPlayers: gameData.numberOfPlayers,
+  };
 }
 
 export function GameProvider({ children }: { children: ReactNode }) {
@@ -233,10 +277,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [refreshGames, authUserId]);
 
   const addGame = useCallback(
-    async (gameData: GameInsert) => {
+    async (gameData: GameInsert): Promise<Game> => {
+      const playerCount = gameData.gameType === '1v1' ? 2 : gameData.numberOfPlayers;
+      const normalized = { ...gameData, numberOfPlayers: playerCount };
+
       if (!isSupabaseConfigured) {
         const newGame: Game = {
-          ...gameData,
+          ...normalized,
           id: String(Date.now()),
           hostId: 'local',
           playerCount: 1,
@@ -244,14 +291,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
           statuses: [
             {
               type: 'spots',
-              label: `${gameData.numberOfPlayers - 1} Left`,
+              label: `${playerCount - 1} Left`,
               color: '#FF9500',
               backgroundcolor: 'rgba(255, 179, 71, 0.2)',
               icon: 'person',
             },
             {
               type: 'booked',
-              label: 'Court booked',
+              label: normalized.isBooked ? 'Court booked' : 'Court TBD',
               color: '#19E675',
               backgroundcolor: 'rgba(255, 179, 71, 0.2)',
               icon: 'checkmark',
@@ -259,7 +306,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           ],
         };
         setGames((prev) => [newGame, ...prev]);
-        return;
+        return newGame;
       }
 
       const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -267,22 +314,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
         throw new Error('Sign in to create a game.');
       }
 
-      await createGameRow(userData.user.id, {
-        title: gameData.title,
-        gameDescription: gameData.gameDescription,
-        gameType: gameData.gameType,
-        skillLevel: gameData.skillLevel,
-        joinSetting: gameData.joinSetting,
-        courtType: gameData.courtType,
-        isBooked: gameData.isBooked,
-        isPaid: gameData.isPaid,
-        paymentAmount: gameData.paymentAmount,
-        location: gameData.location,
-        date: gameData.date,
-        time: gameData.time,
-        numberOfPlayers: gameData.numberOfPlayers,
-      });
+      const inserted = await createGameRow(userData.user.id, toInsertPayload(normalized));
+      const [profileMap, counts] = await Promise.all([
+        fetchHostProfiles([userData.user.id]),
+        fetchPlayerCounts([inserted.id]),
+      ]);
+      const game = rowToGame(inserted, profileMap[userData.user.id], counts);
       await refreshGames();
+      return game;
     },
     [refreshGames]
   );
@@ -332,35 +371,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return { hosted: hostedGames, played: playedGames };
   }, [authUserId]);
 
-  const createGame = useCallback(async (gameData: GameInsert): Promise<Game> => {
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData.user) {
-      throw new Error('Sign in to create a game.');
-    }
-
-    const inserted = await createGameRow(userData.user.id, {
-      title: gameData.title,
-      gameDescription: gameData.gameDescription,
-      gameType: gameData.gameType,
-      skillLevel: gameData.skillLevel,
-      joinSetting: gameData.joinSetting,
-      courtType: gameData.courtType,
-      isBooked: gameData.isBooked,
-      isPaid: gameData.isPaid,
-      paymentAmount: gameData.paymentAmount,
-      location: gameData.location,
-      date: gameData.date,
-      time: gameData.time,
-      numberOfPlayers: gameData.numberOfPlayers,
-    });
-
-    const [profileMap, counts] = await Promise.all([
-      fetchHostProfiles([userData.user.id]),
-      fetchPlayerCounts([inserted.id]),
-    ]);
-
-    return rowToGame(inserted, profileMap[userData.user.id], counts);
-  }, []);
+  const createGame = useCallback(
+    async (gameData: GameInsert): Promise<Game> => addGame(gameData),
+    [addGame]
+  );
 
   const joinGame = useCallback(
     async (gameId: string): Promise<JoinResult> => {

@@ -1,240 +1,167 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as SecureStore from 'expo-secure-store'
+import { useEffect, useState } from 'react'
+import type { Session, User } from '@supabase/supabase-js'
 
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
-
-export interface User {
-  id: string;
-  email: string;
-  name?: string;
-  avatar?: string;
-  provider: 'email' | 'google' | 'facebook' | 'apple';
-}
-
-interface AuthContextType {
-  user: User | null;
-  isLoading: boolean;
-  session: Session | null;
-  signUp: (email: string, password?: string) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  signInWithFacebook: () => Promise<void>;
-  signInWithApple: () => Promise<void>;
-  signOut: () => Promise<void>;
-  refreshUser: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-async function mapSessionToUser(session: Session | null): Promise<User | null> {
-  if (!session?.user) {
-    return null;
-  }
-  const su: SupabaseUser = session.user;
-  const email = su.email ?? '';
-  let name: string | undefined;
-  let avatar: string | undefined;
-
-  if (isSupabaseConfigured) {
-    const { data: row } = await supabase
-      .from('users')
-      .select('name')
-      .eq('id', su.id)
-      .maybeSingle();
-    name = row?.name ?? su.user_metadata?.display_name ?? email.split('@')[0];
-    avatar = undefined;
-  } else {
-    name = su.user_metadata?.display_name ?? email.split('@')[0];
-  }
-
-  const providerRaw = su.app_metadata?.provider;
-  const provider: User['provider'] =
-    providerRaw === 'google' || providerRaw === 'facebook' || providerRaw === 'apple'
-      ? providerRaw
-      : 'email';
-
-  return {
-    id: su.id,
-    email,
-    name,
-    avatar,
-    provider,
-  };
-}
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const refreshUser = useCallback(async () => {
-    if (!isSupabaseConfigured) {
-      setUser(null);
-      setSession(null);
-      return;
-    }
-    const { data: { session: s } } = await supabase.auth.getSession();
-    setSession(s);
-    setUser(await mapSessionToUser(s));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      if (!isSupabaseConfigured) {
-        setIsLoading(false);
-        return;
+class LargeSecureStore {
+  async getItem(key: string) {
+      try {
+          const value = await SecureStore.getItemAsync(key);
+          return value;
+      } catch {
+          return await AsyncStorage.getItem(key);
       }
-      const { data: { session: s } } = await supabase.auth.getSession();
-      if (cancelled) return;
-      setSession(s);
-      setUser(await mapSessionToUser(s));
-      setIsLoading(false);
-    })();
+  }
 
-    if (!isSupabaseConfigured) {
-      return () => {
-        cancelled = true;
-      };
-    }
+  async setItem(key: string, value: string) {
+      try {
+          await SecureStore.setItemAsync(key, value);
+      } catch {
+          await AsyncStorage.setItem(key, value);
+      }
+  }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, s) => {
-      setSession(s);
-      setUser(await mapSessionToUser(s));
-      setIsLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const signIn = async (email: string, password: string) => {
-    if (!isSupabaseConfigured) {
-      await new Promise((r) => setTimeout(r, 500));
-      setUser({
-        id: String(Date.now()),
-        email,
-        provider: 'email',
-        name: email.split('@')[0],
-        avatar:
-          'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-      });
-      return;
-    }
-    
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      throw error;
-    }
-    await refreshUser();
-  };
-
-  const signUp = async (email: string, password?: string) => {
-    if (!isSupabaseConfigured) {
-      await new Promise((r) => setTimeout(r, 500));
-      setUser({
-        id: String(Date.now()),
-        email,
-        provider: 'email',
-        name: email.split('@')[0],
-        avatar:
-          'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-      });
-      return;
-    }
-    if (!password) {
-      throw new Error('Password is required');
-    }
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      throw error;
-    }
-    await refreshUser();
-  };
-
-  const signInWithGoogle = async () => {
-    if (!isSupabaseConfigured) {
-      await new Promise((r) => setTimeout(r, 1500));
-      setUser({
-        id: String(Date.now()),
-        email: 'user@gmail.com',
-        name: 'Google User',
-        provider: 'google',
-        avatar:
-          'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-      });
-      return;
-    }
-    throw new Error('Google sign-in: configure OAuth in Supabase and expo-auth-session in the app.');
-  };
-
-  const signInWithFacebook = async () => {
-    if (!isSupabaseConfigured) {
-      await new Promise((r) => setTimeout(r, 1500));
-      setUser({
-        id: String(Date.now()),
-        email: 'user@facebook.com',
-        name: 'Facebook User',
-        provider: 'facebook',
-        avatar:
-          'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-      });
-      return;
-    }
-    throw new Error('Facebook sign-in is not configured yet.');
-  };
-
-  const signInWithApple = async () => {
-    if (!isSupabaseConfigured) {
-      await new Promise((r) => setTimeout(r, 1500));
-      setUser({
-        id: String(Date.now()),
-        email: 'user@icloud.com',
-        name: 'Apple User',
-        provider: 'apple',
-        avatar:
-          'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60',
-      });
-      return;
-    }
-    throw new Error('Apple sign-in is not configured yet.');
-  };
-
-  const signOut = async () => {
-    if (isSupabaseConfigured) {
-      await supabase.auth.signOut();
-    }
-    setUser(null);
-    setSession(null);
-  };
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isLoading,
-        session,
-        signUp,
-        signIn,
-        signInWithGoogle,
-        signInWithFacebook,
-        signInWithApple,
-        signOut,
-        refreshUser,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  async removeItem(key: string) {
+      await SecureStore.deleteItemAsync(key).catch(() => {});
+      await AsyncStorage.removeItem(key).catch(() => {});
+  }
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+const supabaseUrl = "https://prswdcjmowfdvalyutlu.supabase.co"
+const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByc3dkY2ptb3dmZHZhbHl1dGx1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2NDY2NjIsImV4cCI6MjA4MTIyMjY2Mn0.XCJ8-mi8bVBIU8als-kyQvruLkv09hF6-SgzqfnSSGg"
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: new LargeSecureStore(),
+    storageKey: 'signup-key',
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+})
+
+export async function getCurrentUserId() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+        return
+    }
+
+    const user = data.user;
+    if (!user) {
+        return
+    }
+
+    const { data: userData } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+    if (userData) {
+        return userData
+    }
+}
+
+export async function getUser(userId: string) {
+
+    const { data: userData } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+    if (userData) {
+        return userData
+    }
+}
+
+export async function getCurrentUser() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+        return
+    }
+
+    const user = data.user;
+    if (!user) {
+        return
+    }
+
+    const { data: userData } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle();
+
+    if (userData) {
+        return userData
+    }
+}
+
+export async function userExists() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+        return
+    }
+
+    const user = data.user;
+    if (!user) {
+        return
+    }
+
+    const { data: existing } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+    if (existing) {
+        return true
+    } else {
+        return false
+    }
+}
+
+export const isOnboarding = { current: false}
+
+export function useAuth(): { session: Session | null; user: User | null; loading: boolean } {
+    const [session, setSession] = useState<Session | null>(null)
+    const [user, setUser] = useState<User | null>(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        let isMounted = true
+
+        const init = async () => {
+            const { data, error } = await supabase.auth.getSession()
+            if (!isMounted) return
+
+            if (error) {
+                setSession(null)
+                setUser(null)
+            } else {
+                setSession(data.session ?? null)
+                setUser(data.session?.user ?? null)
+            }
+            setLoading(false)
+        }
+
+        init()
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            setSession(nextSession ?? null)
+            setUser(nextSession?.user ?? null)
+            setLoading(false)
+        })
+
+        return () => {
+            isMounted = false
+            subscription.unsubscribe()
+        }
+    }, [])
+
+    return { session, user, loading }
 }

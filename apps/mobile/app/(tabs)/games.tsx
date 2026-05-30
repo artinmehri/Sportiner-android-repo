@@ -10,7 +10,6 @@ import {
   Dimensions,
   Alert,
   Linking,
-  Platform,
   Share,
   Modal,
   TouchableWithoutFeedback,
@@ -266,6 +265,7 @@ export default function Games() {
   const feedbackShownRef = useRef(false);
 
   useEffect(() => {
+    
     if (feedbackSubmitted === 'true' && !feedbackShownRef.current) {
       feedbackShownRef.current = true;
       

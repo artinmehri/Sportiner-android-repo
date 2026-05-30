@@ -9,97 +9,95 @@ import {
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
+import { getConversations } from "@/context/ChatContext";
 
-type Chat = {
+const DEFAULT_AVATAR =
+  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80";
+
+type InboxChat = {
   id: string;
+  type: string;
   name: string;
+  avatar: string;
   lastMessage: string;
   timeElapsed: string;
   day: string;
   time: string;
-  avatar: string;
+  unread: boolean;
 };
 
+function formatChatTimestamps(iso: string | null | undefined) {
+  if (!iso) return { day: "", time: "", timeElapsed: "" };
+  const date = new Date(iso);
+  const diffMs = Date.now() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  let timeElapsed = "Just now";
+  if (diffMins >= 1 && diffMins < 60) timeElapsed = `${diffMins}m ago`;
+  else if (diffHours >= 1 && diffHours < 24) timeElapsed = `${diffHours}h ago`;
+  else if (diffDays >= 1) timeElapsed = `${diffDays}d ago`;
+
+  return {
+    day: date.toLocaleDateString(undefined, { weekday: "short" }),
+    time: date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }),
+    timeElapsed,
+  };
+}
+
+function toInboxChat(row: {
+  id: string;
+  type: string;
+  name: string | null;
+  photo: string | null;
+  last_message: string | null;
+  last_message_at: string | null;
+  conversation_members?: { last_read_at: string | null }[];
+}): InboxChat {
+  const { day, time, timeElapsed } = formatChatTimestamps(row.last_message_at);
+  const lastReadAt = row.conversation_members?.[0]?.last_read_at;
+  const unread =
+    !!row.last_message_at &&
+    (!lastReadAt ||
+      new Date(row.last_message_at) > new Date(lastReadAt));
+
+  return {
+    id: row.id,
+    type: row.type,
+    name: row.name ?? "Chat",
+    avatar: row.photo || DEFAULT_AVATAR,
+    lastMessage: row.last_message ?? "",
+    day,
+    time,
+    timeElapsed,
+    unread,
+  };
+}
 
 export default function Inbox() {
   const [selectedFilter, setSelectedFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [chats, setChats] = useState<InboxChat[]>([]);
   const router = useRouter();
-  const [chats, setChats] = useState<Chat[]>([
-    {
-      id: "1",
-      name: "Boys Tennis Game",
-      lastMessage: "Artin: I'm almost there",
-      timeElapsed: "1h",
-      day: "Tue",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "2",
-      name: "Alex Joe",
-      lastMessage: "Almost there!",
-      timeElapsed: "5h",
-      day: "Wed",
-      time: "3PM",
-      avatar:
-        "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "3",
-      name: "Seb Mira",
-      lastMessage: "Do u have a racket?",
-      timeElapsed: "10h",
-      day: "Mon",
-      time: "1PM",
-      avatar:
-        "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "4",
-      name: "Sara Dion",
-      lastMessage: "Are you here?",
-      timeElapsed: "3d",
-      day: "Fri",
-      time: "11Am",
-      avatar:
-        "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "5",
-      name: "Dawson Frak",
-      lastMessage: "Can't find the court",
-      timeElapsed: "7d",
-      day: "Sat",
-      time: "7PM",
-      avatar:
-        "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "6",
-      name: "Safwan Mukhtar",
-      lastMessage: "Let me know",
-      timeElapsed: "1w",
-      day: "Sun",
-      time: "2PM",
-      avatar:
-        "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=200&q=60",
-    },
-    {
-      id: "7",
-      name: "John Smith",
-      lastMessage: "Sure",
-      timeElapsed: "2w",
-      day: "Thu",
-      time: "10AM",
-      avatar:
-        "https://images.unsplash.com/photo-1505142468610-359e7d316be0?auto=format&fit=crop&w=200&q=60",
-    },
-  ]);
-  
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const rows = await getConversations();
+      if (!cancelled) {
+        setChats((rows ?? []).map(toInboxChat));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -150,46 +148,56 @@ export default function Inbox() {
         style={styles.ticketsScrollView}
         key={selectedFilter}
       >
-        { selectedFilter === "Group" ? (
-          chats
-            .filter((chat) => chat.id === "1")
-            .filter(chat => 
-              searchQuery === "" || 
-              chat.name.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-            .map((chat) => <ChatItem key={chat.id} chat={chat} router={router} />)
-        ) : selectedFilter === "1-1" ? (
-          chats
-            .filter((chat) => chat.id !== "1")
-            .filter(chat => 
-              searchQuery === "" || 
-              chat.name.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-            .map((chat) => <ChatItem key={chat.id} chat={chat} router={router} />)
-        ) : (
-          chats
-            .filter(chat => 
-              searchQuery === "" || 
-              chat.name.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-            .map((chat) => <ChatItem key={chat.id} chat={chat} router={router} />)
-        )}
+        {selectedFilter === "Group"
+          ? chats
+              .filter((chat) => chat.type === "group")
+              .filter(
+                (chat) =>
+                  searchQuery === "" ||
+                  chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+              )
+              .map((chat) => (
+                <ChatItem key={chat.id} chat={chat} router={router} />
+              ))
+          : selectedFilter === "1-1"
+            ? chats
+                .filter((chat) => chat.type === "private")
+                .filter(
+                  (chat) =>
+                    searchQuery === "" ||
+                    chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                .map((chat) => (
+                  <ChatItem key={chat.id} chat={chat} router={router} />
+                ))
+            : chats
+                .filter(
+                  (chat) =>
+                    searchQuery === "" ||
+                    chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                .map((chat) => (
+                  <ChatItem key={chat.id} chat={chat} router={router} />
+                ))}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function ChatItem({ chat, router }: { chat: Chat; router: any }) {
-  const isUnread = chat.id === "1" || chat.id === "4";
-  const isGroupChat = chat.id === "1" || chat.name.toLowerCase().includes('group') || 
-                     chat.name.toLowerCase().includes('team') ||
-                     chat.name.toLowerCase().includes('boys') ||
-                     chat.name.toLowerCase().includes('girls');
+function ChatItem({
+  chat,
+  router,
+}: {
+  chat: InboxChat;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const isUnread = chat.unread;
+  const isGroupChat = chat.type === "group";
   
   return (
     <TouchableOpacity 
       style={styles.chatItem}
-      onPress={() => isGroupChat ? router.push('/(tabs)/groupchat') : router.push('/(tabs)/chat')}
+      onPress={() => isGroupChat ? router.push({ pathname: "/(tabs)/groupchat", params: { id: chat.id} }) : router.push({ pathname: "/(tabs)/chat", params: { id: chat.id }})}
     >
       <Image source={{ uri: chat.avatar }} style={styles.avatar} />
       <View style={styles.chatContent}>
