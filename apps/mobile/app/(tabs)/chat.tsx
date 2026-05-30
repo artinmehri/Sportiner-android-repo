@@ -375,7 +375,15 @@ const ChatScreen = () => {
           <Image source={{ uri: avatar }} style={styles.avatar} />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigateToProfile()} style={styles.contactInfo}>
+        <TouchableOpacity
+          onPress={() => {
+            if (!fromGame) {
+              router.push('/(tabs)/profileDetails');
+            }
+          }}
+          disabled={fromGame}
+          style={styles.contactInfo}
+        >
           <View style={styles.contactNameRow}>
             <Text style={styles.contactName}>{name}</Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />

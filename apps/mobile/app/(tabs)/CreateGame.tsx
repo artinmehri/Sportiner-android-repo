@@ -289,7 +289,7 @@ export default function CreateGame() {
                   joinSetting === '👥 Open to Anyone' && styles.joinSettingTextActive,
                 ]}
               >
-                ✋ Request Approval
+                👥 Open to Anyone
               </Text>
               {joinSetting === '👥 Open to Anyone' && (
                 <View style={styles.underline} />
@@ -305,7 +305,7 @@ export default function CreateGame() {
                   joinSetting === '✋ Request Approval' && styles.joinSettingTextActive,
                 ]}
               >
-                👥 Open to Anyone
+                ✋ Request Approval
               </Text>
               {joinSetting === '✋ Request Approval' && (
                 <View style={styles.underline} />

@@ -113,7 +113,7 @@ function gameToEvent(g: Game): Event {
     cost: g.isPaid && g.paymentAmount ? `$${g.paymentAmount} Entry` : "Free",
     avatar: g.host.avatar,
     secondaryCta: needsApproval ? "Request Spot" : "Join Game",
-    spotsFilled: 1,
+    spotsFilled: g.playerCount,
     spotsTotal: g.numberOfPlayers,
     hasGreenBackground: false,
     gameId: g.id,
@@ -264,6 +264,7 @@ export default function Index() {
            mode={mode}
            router={router}
            requestJoinGame={requestJoinGame}
+           refreshGames={refreshGames}
            setShowJoinedGameModal={setShowJoinedGameModal}
          />
        ))}
@@ -304,7 +305,7 @@ export default function Index() {
 }
 
 
-function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModal }: { 
+function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShowJoinedGameModal }: { 
   event: Event; 
   mode: "1-1" | "Group"; 
   router: any; 
@@ -318,7 +319,8 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
       location: string;
       host: string;
     };
-  }) => Promise<{ error: string | null }>;
+  }) => Promise<{ error: string | null; result?: string }>;
+  refreshGames: () => Promise<void>;
   setShowJoinedGameModal: (show: boolean) => void;
 }) {
  const isGroupMode = mode === "Group";
@@ -332,7 +334,7 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
       event.gameId ??
       event.title.replace(/\s+/g, "-").toLowerCase();
 
-    const { error } = await requestJoinGame({
+    const { error, result } = await requestJoinGame({
       gameId,
       gameTitle: event.title,
       gameStatus: event.status,
@@ -349,6 +351,7 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
       return;
     }
 
+    await refreshGames();
     setShowJoinedGameModal(true);
 
     setTimeout(() => {
@@ -370,7 +373,25 @@ function EventCard({ event, mode, router, requestJoinGame, setShowJoinedGameModa
     }
    >
     <View style={styles.cardHeader}>
-      <Image source={{ uri: event.avatar }} style={event.status === 'full' ? styles.avatarFull :styles.avatar} />
+      <TouchableOpacity
+        disabled={event.status === 'full'}
+        onPress={() => {
+          if (!event.gameId) {
+            router.push('/(tabs)/chat');
+            return;
+          }
+          const hostName = event.title.includes("'s")
+            ? event.title.split("'s")[0]
+            : 'Host';
+          openGameChat({
+            gameId: event.gameId,
+            gameTitle: event.title,
+            peerName: hostName,
+          });
+        }}
+      >
+        <Image source={{ uri: event.avatar }} style={event.status === 'full' ? styles.avatarFull :styles.avatar} />
+      </TouchableOpacity>
       <View style={styles.cardInfo}>
         <View style={{flexDirection: 'row'}}>
         <Text style={event.status === 'full' ? styles.cardTitleFull : styles.cardTitle}>{event.title}</Text>
