@@ -1,13 +1,16 @@
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { supabase } from '@/context/AuthContext';
 
 export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void }) {
   const navigation = useNavigation();
 
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  
   const handleBack = () => {
     if (onClose) {
       onClose();
@@ -19,6 +22,68 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
   };
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [name, setName] = useState('');
+  const [city, setCity] = useState('');
+  const [level, setLevel] = useState('');
+  const [elo, setElo] = useState('');
+  const [gamesPlayed, setGamesPlayed] = useState();
+  const [reliability_score, setReliabilityScore] = useState();
+  const [availability, setAvailability] = useState<{
+    morning: string[];
+    afternoon: string[];
+    evening: string[];
+}>({
+    morning: [],
+    afternoon: [],
+    evening: [],
+});
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log(id)
+    console.log('use effect!')
+    if (!id) return;
+    getUser();
+  }, [id]);
+
+  async function getUser() {
+    console.log('function begin called!')
+    // Step 1 — fetch their row from your users table
+    const { data, error: dbError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (dbError) {
+      Alert.alert('Error', dbError.message);
+      return;
+    }
+
+    console.log('about to set the data')
+    // Step 3 — populate state with the data
+    setName(data.name);
+    console.log(data.name)
+    setCity(data.city);
+    setLevel(data.level);
+    setElo(data.elo);
+    setGamesPlayed(data.gamesPlayed);
+    setReliabilityScore(data.reliability_score);
+    setProfileImage(data.profile_picture);
+    console.log("profile image: ")
+    console.log(data.profile_picture)
+    // ProfileScreen — convert object to 7-item arrays for display
+    if (data.availability) {
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      
+      setAvailability({
+          morning: days.map(day => data.availability[day]?.morning ? 'filled' : ''),
+          afternoon: days.map(day => data.availability[day]?.afternoon ? 'filled' : ''),
+          evening: days.map(day => data.availability[day]?.evening ? 'filled' : ''),
+      });
+    }
+
+  }
 
   const handleReport = () => {
     Alert.alert(
@@ -82,19 +147,20 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
       {/* Profile Info */}
       <View style={styles.profileSection}>
         <TouchableOpacity onPress={() => setShowFullScreenImage(true)}>
-          <Image 
-            source={{ uri: 'https://picsum.photos/seed/nature-landscape/120/120' }} 
-            style={styles.profileImage} 
-          />
+          
+        <Image 
+          source={{ uri: profileImage ?? undefined }} 
+          style={styles.profileImage} 
+        />
         </TouchableOpacity>
-        <Text style={styles.profileName}>Behrad Barati</Text>
-        <Text style={styles.profileLocation}>15-18 • Toronto</Text>
+        <Text style={styles.profileName}>{name}</Text>
+        <Text style={styles.profileLocation}>{city}</Text>
+        <Text style={styles.skillLevel}>{level}</Text>
       </View>
 
-      {/* NTP Rating */}
       <View style={styles.ratingSection}>
-        <Text style={styles.ratingNumber}>3.5</Text>
-        <Text style={styles.ratingLabel}>NTP Rating</Text>
+        <Text style={styles.ratingNumber}>{elo}</Text>
+        <Text style={styles.ratingLabel}>Tennis Rating (ELO)</Text>
       </View>
 
       {/* Stats */}
@@ -103,7 +169,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
           <View style={styles.statIconContainer}>
             <Ionicons name="checkmark" size={16} color="white" />
           </View>
-          <Text style={styles.statValue}>98%</Text>
+          <Text style={styles.statValue}>{reliability_score}%</Text>
           <Text style={styles.statLabel}>Reliability</Text>
         </View>
         <View style={styles.statDivider} />
@@ -111,7 +177,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
           <View style={styles.statIconContainer}>
             <Ionicons name="tennisball-outline" size={16} color="white" />
           </View>
-          <Text style={styles.statValue}>12</Text>
+          <Text style={styles.statValue}>{gamesPlayed}</Text>
           <Text style={styles.statLabel}>Games Played</Text>
         </View>
       </View>
@@ -136,9 +202,9 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
             <View style={styles.timeIconContainer}>
               <Ionicons name="sunny-outline" size={16} color="#666" />
             </View>
-            {['', '', '', '', '', '', ''].map((_, index) => (
+            {availability?.morning?.map((status: string, index: number) => (
               <View key={index} style={styles.availabilityCell}>
-                <View style={styles.emptyCircle} />
+                <View style={status === 'filled' ? styles.filledCircle : styles.emptyCircle} />
               </View>
             ))}
           </View>
@@ -151,7 +217,8 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
                 <View style={styles.horizonLine} />
               </View>
             </View>
-            {['', 'filled', '', '', '', 'filled', ''].map((status, index) => (
+
+            {availability?.afternoon?.map((status: string, index: number) => (
               <View key={index} style={styles.availabilityCell}>
                 <View style={status === 'filled' ? styles.filledCircle : styles.emptyCircle} />
               </View>
@@ -163,7 +230,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
             <View style={styles.timeIconContainer}>
               <Ionicons name="moon-outline" size={16} color="#666" />
             </View>
-            {['filled', '', '', '', '', '', 'filled'].map((status, index) => (
+            {availability?.evening?.map((status: string, index: number) => (
               <View key={index} style={styles.availabilityCell}>
                 <View style={status === 'filled' ? styles.filledCircle : styles.emptyCircle} />
               </View>
@@ -278,6 +345,14 @@ const styles = StyleSheet.create({
   profileLocation: {
     fontSize: 16,
     color: '#666',
+  },
+  skillLevel: {
+    marginTop: 30,
+    marginBottom: 5,
+    fontSize: 23,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    color: '#19E675',
   },
   ratingSection: {
     alignItems: 'center',

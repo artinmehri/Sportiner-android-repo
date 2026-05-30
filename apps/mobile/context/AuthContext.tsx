@@ -41,7 +41,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
-export async function getUserId() {
+export async function getCurrentUserId() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
@@ -64,7 +64,20 @@ export async function getUserId() {
     }
 }
 
-export async function getUser() {
+export async function getUser(userId: string) {
+
+    const { data: userData } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+    if (userData) {
+        return userData
+    }
+}
+
+export async function getCurrentUser() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
@@ -152,4 +165,3 @@ export function useAuth(): { session: Session | null; user: User | null; loading
 
     return { session, user, loading }
 }
-

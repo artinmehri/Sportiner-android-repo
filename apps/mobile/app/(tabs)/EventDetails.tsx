@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useGames } from '@/context/GameContext';
 import { useGameTickets } from '@/context/GameTicketsContext';
+import { addUserToChat, getChatId, userInChat } from '@/context/ChatContext';
 
 export default function EventDetails() {
   const router = useRouter();
@@ -27,8 +28,17 @@ export default function EventDetails() {
     game?.gameDescription?.trim() ||
     'Details for this match will appear here when loaded from the server.';
 
-  const handleMessageHost = () => {
-    router.push('/(tabs)/chat');
+  const handleMessageHost = async () => {
+    if (id !== undefined) {
+      const response = await userInChat(id)
+
+      if (!response) {
+        addUserToChat(id)
+      } else {
+        const chatId = getChatId(id)
+        router.push({ pathname: "/(tabs)/chat", params: { id: `${chatId}` } });
+      }
+    }
   };
 
   const handleJoinEvent = async () => {

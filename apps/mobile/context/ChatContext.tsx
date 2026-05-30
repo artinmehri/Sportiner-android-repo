@@ -1,11 +1,16 @@
-import { getUser, getUserId, supabase } from "./AuthContext";
+import { getCurrentUser, getCurrentUserId, supabase } from "./AuthContext";
 import { Alert } from "react-native";
+
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Checking if the user is already in chat
 export async function userInChat(gameId: string) {
-    const userId = await getUserId();
+    if (!gameId || !UUID_RE.test(gameId)) return false;
 
-    if (!userId) return false;
+    const userId = await getCurrentUserId();
+
+    if (!userId?.id) return false;
 
     const { data: member, error } = await supabase
         .from('conversation_members')
@@ -28,13 +33,15 @@ export async function userInChat(gameId: string) {
 }
 
 export async function getChatId(gameId: string) {
-    const userId = await getUserId();
+    if (!gameId || !UUID_RE.test(gameId)) return null;
 
-    if (!userId) return false;
+    const userId = await getCurrentUserId();
+
+    if (!userId?.id) return null;
 
     const { data: member, error } = await supabase
         .from('conversation_members')
-        .select('id, chat_id')
+        .select('chat_id')
         .eq('game_id', gameId)
         .eq('id', userId.id)
         .maybeSingle();
@@ -56,9 +63,11 @@ export async function getChatId(gameId: string) {
 
 // Adding user to chat
 export async function addUserToChat(gameId: string) {
-    const user = await getUser();
-    const userId = await getUserId();
-    if (!user || !userId) return;
+    if (!gameId || !UUID_RE.test(gameId)) return;
+
+    const user = await getCurrentUser();
+    const userId = await getCurrentUserId();
+    if (!user || !userId?.id) return;
 
     const alreadyInChat = await userInChat(gameId);
     const chatId = await getChatId(gameId);
@@ -75,6 +84,7 @@ export async function addUserToChat(gameId: string) {
             .maybeSingle();
 
     if (chat !== null) {
+
         const { data, error } = await supabase
         .from('conversation_members')
         .insert({
@@ -83,8 +93,15 @@ export async function addUserToChat(gameId: string) {
             joined_at: new Date().toISOString(),
             last_read_at: new Date().toISOString(),
             level: user.level,
-            game_id: gameId
+            game_id: gameId,
         });
+
+        if (error) {
+            Alert.alert('Error', 'error while adding user to chat')
+            console.log(error.message)
+            return null
+        }
+
 
         if (data) {
             console.log('user successfully added to chat')
@@ -92,28 +109,25 @@ export async function addUserToChat(gameId: string) {
             return chat.id;
         } 
 
-        if (error) {
-        Alert.alert('Error', 'error while adding user to chat')
-        console.log(error.message)
-        }
+
     } else {
         Alert.alert('Chat does not exist!')
     }
 }
 
-export async function sendMessage(message: string, type: string, chatId: string) {
-    const userId = await getUserId();
+export async function replyMessage(reply_to: string, type: string, reply_message: string, chatId: string, image?: string) {
+    const userId = await getCurrentUserId();
     if (!userId) return;
 
     const { data, error } = await supabase
     .from('messages').insert({
         chat_id: chatId,
         sender_id: userId.id,
-        content: message,
+        reply_to: reply_to,
+        message: reply_message,
+        is_reply: true,
         type: type,
-        reply_to: null,
-        is_edited: false,
-        is_deleted: false,
+        image: image,
     })
 
     if (data) {
@@ -125,29 +139,49 @@ export async function sendMessage(message: string, type: string, chatId: string)
     }
 }
 
+
+export async function sendMessage(message: string, type: string, chatId: string, image?: string) {
+    const userId = await getCurrentUserId();
+    if (!userId) return;
+
+    const { data, error } = await supabase
+    .from('messages').insert({
+        chat_id: chatId,
+        sender_id: userId.id,
+        type: type,
+        message: message,
+        image: image,
+    })
+
+    if (data) {
+        console.log('user message added successfully!')
+    }
+
+    if (error) {
+        console.log(error.message)
+    }
+}
+
+export async function getGameInfo(chatId: string) {
+    const { data, error } = await supabase
+    .from('games')
+    .select('*')
+    .eq('chat_id', chatId)
+
+    if (data) {
+        return data
+    }
+
+    if (error) {
+        console.log(error)
+    }
+}
+
+
 export async function getMessages(chatId: string) {
     const { data, error } = await supabase
     .from('messages')
-    .select(`
-        id,
-        content,
-        type,
-        is_edited,
-        is_deleted,
-        created_at,
-        sender:users!sender_id (    
-            id,
-            name,
-            profile_picture
-        ),
-        reply:messages!reply_to (   
-            id,
-            content,
-            sender:users!sender_id (
-                name
-            )
-        )
-    `)
+    .select('*')
     .eq('chat_id', chatId)
     .order('created_at', { ascending: true })
 
@@ -160,12 +194,40 @@ export async function getMessages(chatId: string) {
     }
 }
 
-export async function editMessage() {
 
+export async function editMessage(messageId: string, message: string) {
+
+    const { data, error } = await supabase
+    .from('messages').update({
+        message: message,
+        is_edited: true
+    }).eq('id', messageId)
+    .select();
+
+    if (data) {
+        console.log('user message added successfully!')
+    }
+
+    if (error) {
+        console.log(error.message)
+    }
 }
 
-export async function deleteMessage() {
 
+export async function deleteMessage(messageId: string) {
+
+    const { data, error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('id', messageId);
+
+    if (data) {
+        console.log('message deleted successfully!')
+    }
+
+    if (error) {
+        console.log(error.message)
+    }
 }
 
 export async function markAsRead() {
@@ -181,7 +243,7 @@ export async function sendImageMessage() {
 }
 
 export async function getConversations() {
-    const userId = await getUserId();
+    const userId = await getCurrentUserId();
     if (!userId) return;
 
     const { data } = await supabase
@@ -214,7 +276,7 @@ export async function getConversations() {
 }
 
 export async function getUnreadCount(chatId: string) {
-    const userId = await getUserId();
+    const userId = await getCurrentUserId();
     if (!userId) return 0;
 
     // Step 1 — get your last_read_at
@@ -265,8 +327,12 @@ export async function createChat(
     if (chatError || !chat) {
         throw new Error(chatError?.message ?? 'Failed to create chat');
     }
+    
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
+    let index = 0;
 
     for (const member of members) {
+
         const { error: memberError } = await supabase.from('conversation_members').insert({
             id: member.id,
             chat_id: chat.id,
@@ -274,7 +340,10 @@ export async function createChat(
             last_read_at: now,
             level: member.level,
             game_id: gameId,
+            color: colors[index]
         });
+
+        index++
 
         if (memberError) {
             throw new Error(memberError.message);
@@ -284,13 +353,30 @@ export async function createChat(
     return chat.id;
 }
 
+export async function findOtherPlayer(chatId: string) {
+    const currentUser = await getCurrentUserId();
+    if (!currentUser?.id) return null;
+
+    const { data, error } = await supabase
+        .from('conversation_members')
+        .select('id')
+        .eq('chat_id', chatId);
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    const otherMember = data?.find((member) => member.id !== currentUser.id);
+    return otherMember?.id ?? null;
+}
+
+
 export async function getChatMembers(chatId: string) {
     
     const { data, error } = await supabase
     .from('conversation_members')
     .select('*')
     .eq('chat_id', chatId)
-    .single()
 
     if (data) {
         return data

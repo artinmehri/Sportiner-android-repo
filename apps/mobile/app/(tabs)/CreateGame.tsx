@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useGames } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createChat } from '@/context/ChatContext';
-import { useAuth } from '@/context/AuthContext';
+import { supabase, useAuth } from '@/context/AuthContext';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -168,12 +168,18 @@ export default function CreateGame() {
 
     try {
 
-      const game = await addGame(gameData);
+    const game = await addGame(gameData);
+    const chatType = gameData.gameType === '1v1' ? 'private' : 'group';
+    const members = user ? [{ id: user.id, level: skillLevel }] : [];
+    const chatId = await createChat(chatType, gameData.title, '', game.id, members);
 
-      const chatType = gameData.gameType === '1v1' ? 'private' : 'group';
-      const members = user ? [{ id: user.id, level: skillLevel }] : [];
-      await createChat(chatType, gameData.title, '', game.id, members);
-      router.push('/(tabs)/GameConfirmation');
+    await supabase
+      .from('games')
+      .update({ chat_id: chatId })
+      .eq('id', game.id);
+
+    router.push('/(tabs)/GameConfirmation');
+    
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Something went wrong';
       console.log(message)
@@ -1165,4 +1171,3 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
-

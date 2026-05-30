@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
-
 import { useAuth } from '@/context/AuthContext';
 import { appendGameMeta, combineDateAndTimeToIso, parseGameMeta, type GameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
@@ -70,7 +69,7 @@ interface GameContextType {
     requester_user_id: string;
     status: string;
   }>>;
-}
+} 
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
@@ -79,7 +78,7 @@ type GeographyPoint = {
   coordinates: [number, number]; 
 };
 
-type GameRow = {
+export type GameRow = {
   id: string;
   created_at: string;
   host_id: string;
@@ -91,16 +90,36 @@ type GameRow = {
   level: string | null;
   public: boolean | null;
   capacity: number | null;
-  players_list: unknown;
+  number_of_players: number | null;
   booked: boolean;
   payment_amount: string;
+  image: string;
 };
+
+
+export function formatGameSubtitle(row: GameRow | null | undefined): string {
+  console.log(row)
+  if (!row) return '';
+  const { meta } = parseGameMeta(row.description ?? null);
+  const location = meta?.location ?? '';
+  const when = row.time ? new Date(row.time) : null;
+  const day = when?.toLocaleDateString(undefined, { weekday: 'short' }) ?? '';
+  const time = when?.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }) ?? '';
+  const schedule = [day, time].filter(Boolean).join(' · ');
+  if (schedule && location) return `${schedule} @ ${location}`;
+  return schedule || location;
+}
+
 
 type UserRow = {
   id: string;
   name: string | null;
   profile_picture: number | null;
 };
+
 
 function rowToGame(row: GameRow, host?: UserRow | null): Game {
   const { cleanDescription, meta } = parseGameMeta(row.description);
@@ -136,7 +155,7 @@ function rowToGame(row: GameRow, host?: UserRow | null): Game {
     location,
     courtType,
     isBooked,
-    numberOfPlayers: row.capacity ?? 2,
+    numberOfPlayers: row.number_of_players ?? row.capacity ?? 2,
     gameDescription: cleanDescription,
     isPaid,
     paymentAmount,
@@ -267,8 +286,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         level: gameData.skillLevel,
         public: gameData.joinSetting === '👥 Open to Anyone',
         capacity: gameData.numberOfPlayers,
+        number_of_players: gameData.numberOfPlayers,
         players_list: [userData.user.id],
-        city_id: null,
       };
 
       const { data: insertedRow, error: insErr } = await supabase
@@ -279,6 +298,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (insErr) {
         throw new Error(insErr.message);
       }
+
+      const { error: playerErr } = await supabase
+      .from('game_players')
+      .insert({
+        game_id: insertedRow.id,
+        user_id: userData.user.id,
+        role: 'host',
+        joined_at: new Date().toISOString(),
+      });
+
+    if (playerErr) {
+      console.warn('game_players insert failed:', playerErr.message);
+    }
+
 
       const { data: host } = await supabase
         .from('users')
@@ -384,8 +417,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       level: gameData.skillLevel,
       public: gameData.joinSetting === '👥 Open to Anyone',
       capacity: gameData.numberOfPlayers,
+      number_of_players: gameData.numberOfPlayers,
       players_list: [userData.user.id],
-      city_id: null,
     };
 
     const { data: insertedRow, error: insErr } = await supabase
@@ -397,6 +430,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (insErr) {
       throw new Error(insErr.message);
     }
+
+    const { error: playerErr } = await supabase
+    .from('game_players')
+    .insert({
+      game_id: insertedRow.id,
+      user_id: userData.user.id,
+      role: 'host',
+      joined_at: new Date().toISOString(),
+    });
+
+  if (playerErr) {
+    console.warn('game_players insert failed:', playerErr.message);
+  }
 
     const { data: host } = await supabase
       .from('users')

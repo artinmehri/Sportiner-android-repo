@@ -122,7 +122,6 @@ export default function ProfileScreen() {
           source={{ uri: profileImage ?? undefined }} 
           style={styles.profileImage} 
         />
-
         </TouchableOpacity>
         <Text style={styles.profileName}>{name}</Text>
         <Text style={styles.profileLocation}>{city}</Text>
