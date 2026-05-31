@@ -441,7 +441,7 @@ const handleEdit = (message: Message) => {
 
         { game &&
         <TouchableOpacity onPress={() => handleGameNavigation()}>
-          <Image source={{ uri: game.image }} style={styles.avatar} />
+          <Image source={{ uri: game.image ?? undefined }} style={styles.avatar} />
         </TouchableOpacity>
         }
 

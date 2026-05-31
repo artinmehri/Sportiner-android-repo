@@ -375,7 +375,7 @@ const ChatScreen = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push('/(tabs)/profileDetails')}
+          onPress={() => navigateToProfile()}
           style={styles.contactInfo}
         >
           <View style={styles.contactNameRow}>

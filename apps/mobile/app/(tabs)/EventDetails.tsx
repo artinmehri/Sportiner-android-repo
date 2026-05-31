@@ -17,7 +17,6 @@ export default function EventDetails() {
     getGameById,
     joinGame,
     refreshGames,
-    refreshMembership,
     joinedGameIds,
     pendingGameIds,
   } = useGames();
@@ -28,8 +27,7 @@ export default function EventDetails() {
   useFocusEffect(
     useCallback(() => {
       refreshGames();
-      refreshMembership();
-    }, [refreshGames, refreshMembership])
+    }, [refreshGames])
   );
 
   const membership = useMemo(() => {
@@ -62,9 +60,9 @@ export default function EventDetails() {
     game?.gameDescription?.trim() ||
     'Details for this match will appear here when loaded from the server.';
 
-  const handleMessageHost = async () => {
-    if (id !== undefined) {
-      const response = await userInChat(id)
+  const spotsLeft = Math.max(0, (game?.numberOfPlayers ?? 0) - (game?.playerCount ?? 0));
+  const isFull = spotsLeft === 0;
+  const needsApproval = game?.joinSetting === '✋ Request Approval';
 
   const joinLabel = useMemo(() => {
     if (membership === 'host') {
@@ -254,7 +252,7 @@ export default function EventDetails() {
                 }}
                 style={styles.playerCard}
               >
-                <Image source={'https://picsum.photos/seed/you/100/100.jpg'} style={styles.playerImage} />
+                <Image source={{ uri: 'https://picsum.photos/seed/you/100/100.jpg' }} style={styles.playerImage} />
                 <View style={styles.playerInfo}>
                   <Text style={styles.playerName}>You</Text>
                   <Text style={styles.playerRole}>Player</Text>
@@ -264,7 +262,7 @@ export default function EventDetails() {
 
             {spotsLeft > 0 && membership !== 'joined' && (
             <View style={styles.emptySlotCard}>
-              <Image source={'https://www.movetopuntagorda.com/wp-content/uploads/2020/09/55-Icon.png'} style={styles.playerImage} />
+              <Image source={{ uri: 'https://www.movetopuntagorda.com/wp-content/uploads/2020/09/55-Icon.png' }} style={styles.playerImage} />
               <View style={styles.playerInfo}>
                 <Text style={styles.emptySlotName}>Empty Slot</Text>
                 <Text style={styles.emptySlotStatus}>Waiting...</Text>

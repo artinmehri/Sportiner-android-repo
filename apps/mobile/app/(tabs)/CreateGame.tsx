@@ -16,8 +16,6 @@ import { useGames } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createChat } from '@/context/ChatContext';
 import { supabase, useAuth } from '@/context/AuthContext';
-import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabase';
 import {
   fetchApproxLocationFromIp,
   findCourtByName,
@@ -119,7 +117,7 @@ export default function CreateGame() {
   };
 
   const getGamePhoto = () => {
-
+    return 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60';
   }
 
 
@@ -321,7 +319,7 @@ export default function CreateGame() {
           </View>
 
           {/* Skill Level */}
-          <Text style={styles.levelLable}>Game type</Text>
+          <Text style={styles.levelLable}>Skill level</Text>
           <View style={styles.skillLevelContainer}>
             {(['Beginner', 'Intermediate', 'Advanced'] as SkillLevel[]).map((level) => (
               <TouchableOpacity
