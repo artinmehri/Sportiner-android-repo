@@ -43,6 +43,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   const router = useRouter()
   useEffect(() => {
     const loadUser = async () => {
+      // Getting user
       const user = await getUser();
 
       const userId = user.id;

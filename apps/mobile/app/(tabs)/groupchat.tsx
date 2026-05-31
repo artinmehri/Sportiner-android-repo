@@ -218,6 +218,7 @@ const GroupChatScreen = () => {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
 
+  // Image picker function
   const pickImgae = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -239,6 +240,7 @@ const GroupChatScreen = () => {
       return;
     }
 
+    // Editing a message
     if (editingMessage) {
       setMessages(messages.map(msg => 
         msg.id === editingMessage.id 
@@ -252,7 +254,7 @@ const GroupChatScreen = () => {
       setInputText('');
       }
 
-
+      // Replying to a message
     } else if (isReplying && replyInfo) {
 
     if (currentUserId && replyInfo?.id && id) {
@@ -286,6 +288,7 @@ const GroupChatScreen = () => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
 
+    // Sending a normal message 
     } else {
       if (currentUserId) {
       const newMessage: Message = {
@@ -300,6 +303,8 @@ const GroupChatScreen = () => {
       
       setMessages([...messages, newMessage]);
 
+
+      // Reseting both text and media after sending
       setInputText('');
       setSelectedMedia(null);
       setReplyInfo(null);
@@ -411,10 +416,13 @@ const handleEdit = (message: Message) => {
   };
 
   let inputStyling;
+  // If only text is typing, go with inputPill
   if (inputText) {
     inputStyling = styles.inputPill;
+    // If both media and text are selcted go with inputNMedia
   } else if (selectedMedia) {
     inputStyling = styles.inputNMedia;
+    // Otherwise if nothing is selected go with simple one
   } else {
     inputStyling = styles.simpleInputPill
   }

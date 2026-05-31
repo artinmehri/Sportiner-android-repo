@@ -241,6 +241,7 @@ const ChatScreen = () => {
       return;
     }
 
+    // Editing a message
     if (editingMessage) {
       setMessages(messages.map(msg => 
         msg.id === editingMessage.id 
@@ -255,6 +256,7 @@ const ChatScreen = () => {
       }
 
 
+      // Replying to a message
     } else if (isReplying && replyInfo) {
 
     if (currentUserId && replyInfo?.id && id) {
@@ -287,6 +289,7 @@ const ChatScreen = () => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
 
+    // Sending a normal message 
     } else {
       if (currentUserId) {
       const newMessage: Message = {
@@ -301,6 +304,8 @@ const ChatScreen = () => {
       
       setMessages([...messages, newMessage]);
 
+
+      // Reseting both text and media after sending
       setInputText('');
       setSelectedMedia(null);
       setReplyInfo(null);
@@ -365,7 +370,7 @@ const ChatScreen = () => {
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push('/(tabs)/profileDetails')}>
+        <TouchableOpacity onPress={() => navigateToProfile()}>
           <Image source={{ uri: avatar }} style={styles.avatar} />
         </TouchableOpacity>
 

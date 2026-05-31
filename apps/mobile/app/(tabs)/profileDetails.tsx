@@ -48,6 +48,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
 
   async function getUser() {
     console.log('function begin called!')
+    // Step 1 — fetch their row from your users table
     const { data, error: dbError } = await supabase
       .from('users')
       .select('*')
@@ -60,6 +61,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
     }
 
     console.log('about to set the data')
+    // Step 3 — populate state with the data
     setName(data.name);
     console.log(data.name)
     setCity(data.city);
@@ -70,6 +72,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
     setProfileImage(data.profile_picture);
     console.log("profile image: ")
     console.log(data.profile_picture)
+    // ProfileScreen — convert object to 7-item arrays for display
     if (data.availability) {
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       

@@ -241,6 +241,7 @@ export default function Games() {
   const [myPlayingGames, setMyPlayingGames] = useState<Game[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<GameRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<{ id: string } | undefined>(undefined)
   const [error, setError] = useState<string | null>(null);
   const { feedbackSubmitted } = useLocalSearchParams<{ feedbackSubmitted?: string }>();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
@@ -256,6 +257,8 @@ export default function Games() {
   const [showPlayers, setShowPlayers] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const isSupabaseConfigured = Boolean(supabase);
+
   const [pastHostedGames, setPastHostedGames] = useState<GameCard[]>(() =>
     isSupabaseConfigured ? [] : pastHostedGamesData
   );
@@ -284,6 +287,10 @@ export default function Games() {
   useFocusEffect(
     useCallback(() => {
       const loadData = async () => {
+
+        const userProfile = await getUserId()
+        setUser(userProfile)
+        
         setLoading(true);
         setError(null);
         try {

@@ -4,6 +4,7 @@ import { Alert } from "react-native";
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// Checking if the user is already in chat
 export async function userInChat(gameId: string) {
     if (!gameId || !UUID_RE.test(gameId)) return false;
 
@@ -278,6 +279,7 @@ export async function getUnreadCount(chatId: string) {
     const userId = await getCurrentUserId();
     if (!userId) return 0;
 
+    // Step 1 — get your last_read_at
     const { data: member } = await supabase
     .from('conversation_members')
     .select('last_read_at')
@@ -287,6 +289,7 @@ export async function getUnreadCount(chatId: string) {
 
     if (!member) return 0;
 
+    // Step 2 — count messages after last_read_at
     const { count } = await supabase
     .from('messages')
     .select('id', { count: 'exact' })

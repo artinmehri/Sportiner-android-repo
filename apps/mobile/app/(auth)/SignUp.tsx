@@ -43,6 +43,7 @@ export default function SignUp() {
 
         const response = await userExists()
 
+        // Checking if user exists
         if (response == true) {
           console.log('user already exists from signup.tsx!')
           isOnboarding.current = false

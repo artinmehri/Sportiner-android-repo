@@ -12,7 +12,7 @@ export default function RootLayout() {
     const [session, setSession] = useState<boolean | null>(null);
     const router = useRouter();
     const splashHidden = useRef(false);
-    const isInitialLoad = useRef(true);
+    const isInitialLoad = useRef(true); // ✅ tracks if this is the first session check
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -27,6 +27,7 @@ export default function RootLayout() {
                 return;
             }
 
+            // ✅ Only redirect on SIGNED_OUT (logout) or initial session restore
             if (event === 'SIGNED_OUT') {
                 setSession(false);
                 router.replace('/SignUp')

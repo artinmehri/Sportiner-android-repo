@@ -95,8 +95,9 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
     setProfileImageRead(uri);
     
     if (!result.canceled) {
+      // The image data is inside the 'assets' array
       const image = result.assets[0];
-      const base64 = image.base64;
+      const base64 = image.base64; // This is what we need!
       
       setProfileImage(base64)
     }

@@ -38,6 +38,7 @@ export default function CongratsGame() {
     level?: string;
   }>();
 
+  // Create data object from params with defaults
   const data: ShareCardData = {
     name: params.name || 'User',
     profileImage: params.profileImage || '',
@@ -45,10 +46,12 @@ export default function CongratsGame() {
     level: params.level ? parseInt(params.level) : 3.5,
   };
 
+  // Animation values
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const starBounceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Pulse animation
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -64,6 +67,7 @@ export default function CongratsGame() {
       ])
     ).start();
 
+    // Star bounce animation
     Animated.loop(
       Animated.sequence([
         Animated.timing(starBounceAnim, {
@@ -80,10 +84,13 @@ export default function CongratsGame() {
     ).start();
   }, []);
 
+  // When user taps "Share this Story"
   const captureCard = async () => {
     if (viewShotRef.current?.capture) {
       const uri = await viewShotRef.current.capture();
+      // uri is the image file path
       
+      // Open native share sheet
       await Sharing.shareAsync(uri, {
         mimeType: 'image/png',
         dialogTitle: 'Share your verified status!'
@@ -669,11 +676,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     marginTop: 270,
 
+    // iOS shadows
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     
+    // Android shadow
     elevation: 8,
   },
   footer: {

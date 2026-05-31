@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useGames } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createChat } from '@/context/ChatContext';
+import { supabase, useAuth } from '@/context/AuthContext';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import {

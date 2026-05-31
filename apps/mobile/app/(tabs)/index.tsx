@@ -73,6 +73,7 @@ function formatDiscoverTime(dateIso: string, timeStr: string): string {
   return `${dayPart} • ${displayHour}:${minutes.padStart(2, "0")} ${ampm}`;
 }
 
+// The following procedure will take in the location and calculate the approximate distance!
 function calculateDistance(location: any) {
 
   const distance = "2 km"

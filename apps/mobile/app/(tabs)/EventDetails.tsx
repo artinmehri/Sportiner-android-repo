@@ -62,11 +62,9 @@ export default function EventDetails() {
     game?.gameDescription?.trim() ||
     'Details for this match will appear here when loaded from the server.';
 
-  const spotsLeft = game
-    ? Math.max(0, game.numberOfPlayers - game.playerCount)
-    : 0;
-  const isFull = spotsLeft === 0;
-  const needsApproval = game?.joinSetting.includes('Approval') ?? true;
+  const handleMessageHost = async () => {
+    if (id !== undefined) {
+      const response = await userInChat(id)
 
   const joinLabel = useMemo(() => {
     if (membership === 'host') {

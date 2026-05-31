@@ -27,6 +27,7 @@ export default function Login () {
 
   const handleGoogleLogin = async () => {
     try {
+      // 1. Trigger Google login
       await GoogleSignin.hasPlayServices();
       const userInfo = await GoogleSignin.signIn();
       const idToken = userInfo.data?.idToken;
@@ -98,6 +99,7 @@ export default function Login () {
       if (response == true) {
         console.log("user exists from apple login in login.tsx!")
         isOnboarding.current = false; 
+        // user exists → go to app
         router.replace('/(tabs)');
       } else {
         if (error) {
@@ -111,6 +113,7 @@ export default function Login () {
         console.log("redirecting the user to signup process with apple set as default!")
         router.push({ pathname: '/SignupFlow', params: { method: 'apple' }});
       }
+      // sample response provided below
     } catch (error: any) {
         console.log('Apple error:', error);
     }
