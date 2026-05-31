@@ -44,14 +44,11 @@ export default function Login () {
   
       const response = await userExists()
    
-    // 4. Route based on result
     if (response == true) {
       console.log("user exists from google login in login.tsx!")
-      // user exists → go to app
       router.replace('/(tabs)');
     } else {
       console.log("user doesn't exist from google login in login.tsx!")
-      // user does NOT exist → onboarding
       isOnboarding.current = true;
       router.replace({
       pathname: '/SignupFlow',

@@ -1,4 +1,5 @@
-import { appendGameMeta, combineDateAndTimeToIso, type GameMeta } from '@/lib/gameMeta';
+import { combineDateAndTimeToIso, parseGameMeta } from '@/lib/gameMeta';
+import { findCourtByName, toGeographyPoint, type GeoCoords } from '@/lib/courtSuggestions';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type JoinResult =
@@ -10,19 +11,51 @@ export type JoinResult =
   | 'not_authenticated'
   | 'not_configured';
 
+export type GeographyPoint = {
+  type: 'Point';
+  coordinates: [number, number];
+};
+
 export type GameRow = {
   id: string;
   host_id: string;
   title: string | null;
   description: string | null;
   category: string | null;
+  location: GeographyPoint | null;
   time: string | null;
   level: string | null;
   public: boolean | null;
   capacity: number | null;
+  number_of_players: number | null;
+  booked: boolean | null;
+  payment_amount: number | null;
+  chat_id: string | null;
+  image: string | null;
   players_list: unknown;
   created_at: string;
 };
+
+function parseCategoryParts(category: string | null): {
+  gameType: string;
+  courtType: string;
+  locationName: string;
+} {
+  const parts = category?.split('·').map((part) => part.trim()) ?? [];
+  return {
+    gameType: parts[0] ?? '',
+    courtType: parts[1] ?? '',
+    locationName: parts[2] ?? '',
+  };
+}
+
+export function buildGameCategory(
+  gameType: string,
+  courtType: string,
+  locationName: string
+): string {
+  return `${gameType} · ${courtType} · ${locationName.trim()}`;
+}
 
 export type UserRow = {
   id: string;
@@ -40,11 +73,85 @@ export type GameInsertPayload = {
   isBooked: boolean;
   isPaid: boolean;
   paymentAmount?: string;
-  location: string;
+  locationName: string;
+  locationCoords?: GeoCoords | null;
   date: string;
   time: string;
   numberOfPlayers: number;
 };
+
+export function resolveLocationName(row: GameRow): string {
+  const fromCategory = parseCategoryParts(row.category).locationName;
+  if (fromCategory) {
+    return fromCategory;
+  }
+  const { meta } = parseGameMeta(row.description);
+  if (meta?.location?.trim()) {
+    return meta.location.trim();
+  }
+  return '';
+}
+
+export function resolveGameType(row: GameRow): '1v1' | 'Group' {
+  const fromCategory = parseCategoryParts(row.category).gameType;
+  if (fromCategory === '1v1' || fromCategory === 'Group') {
+    return fromCategory;
+  }
+  const { meta } = parseGameMeta(row.description);
+  if (meta?.gameType) {
+    return meta.gameType;
+  }
+  return row.category?.trim().startsWith('1v1') ? '1v1' : 'Group';
+}
+
+export function resolveCourtType(row: GameRow): string {
+  const fromCategory = parseCategoryParts(row.category).courtType;
+  if (fromCategory) {
+    return fromCategory;
+  }
+  const { meta } = parseGameMeta(row.description);
+  if (meta?.courtType) {
+    return meta.courtType;
+  }
+  return 'Public';
+}
+
+export function resolveJoinSetting(row: GameRow): '👥 Open to Anyone' | '✋ Request Approval' {
+  const { meta } = parseGameMeta(row.description);
+  if (meta?.joinSetting) {
+    return meta.joinSetting;
+  }
+  return row.public !== false ? '👥 Open to Anyone' : '✋ Request Approval';
+}
+
+export function resolveIsBooked(row: GameRow): boolean {
+  if (typeof row.booked === 'boolean') {
+    return row.booked;
+  }
+  const { meta } = parseGameMeta(row.description);
+  return meta?.isBooked ?? false;
+}
+
+export function resolveIsPaid(row: GameRow): boolean {
+  if (typeof row.payment_amount === 'number' && row.payment_amount > 0) {
+    return true;
+  }
+  const { meta } = parseGameMeta(row.description);
+  return meta?.isPaid ?? false;
+}
+
+export function resolvePaymentAmount(row: GameRow): string | undefined {
+  if (typeof row.payment_amount === 'number' && row.payment_amount > 0) {
+    return String(row.payment_amount);
+  }
+  const { meta } = parseGameMeta(row.description);
+  return meta?.paymentAmount;
+}
+
+export function resolveCleanDescription(row: GameRow): string {
+  const { cleanDescription } = parseGameMeta(row.description);
+  return cleanDescription;
+}
 
 export type PlayerCounts = Record<string, number>;
 
@@ -234,31 +341,39 @@ export async function createGameRow(
   userId: string,
   payload: GameInsertPayload
 ): Promise<GameRow> {
-  const meta: GameMeta = {
-    gameType: payload.gameType,
-    joinSetting: payload.joinSetting,
-    courtType: payload.courtType as GameMeta['courtType'],
-    isBooked: payload.isBooked,
-    isPaid: payload.isPaid,
-    paymentAmount: payload.paymentAmount,
-    location: payload.location,
-  };
-
-  const fullDescription = appendGameMeta(payload.gameDescription, meta);
   const gameTime = combineDateAndTimeToIso(payload.date, payload.time);
   const isOpen = payload.joinSetting === '👥 Open to Anyone';
+  const coords =
+    payload.locationCoords ??
+    (() => {
+      const court = findCourtByName(payload.locationName);
+      return court ? { lat: court.lat, lng: court.lng } : null;
+    })();
 
   const row = {
     host_id: userId,
     title: payload.title,
-    description: fullDescription,
-    category: `${payload.gameType} · ${payload.courtType}`,
+    description: payload.gameDescription.trim(),
+    category: buildGameCategory(
+      payload.gameType,
+      payload.courtType,
+      payload.locationName
+    ),
+    location: toGeographyPoint(coords),
     time: gameTime,
     level: payload.skillLevel,
     public: isOpen,
     capacity: payload.numberOfPlayers,
+    number_of_players: payload.numberOfPlayers,
+    booked: payload.isBooked,
+    payment_amount:
+      payload.isPaid && payload.paymentAmount?.trim()
+        ? (() => {
+            const amount = Math.round(parseFloat(payload.paymentAmount!));
+            return Number.isFinite(amount) && amount > 0 ? amount : null;
+          })()
+        : null,
     players_list: [userId],
-    city_id: null,
   };
 
   const { data: inserted, error: insErr } = await supabase

@@ -17,6 +17,7 @@ import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game } from "@/context/GameContext";
 import { getCurrentUserId, supabase } from "@/context/AuthContext";
 import { addUserToChat, getChatId, userInChat } from "@/context/ChatContext";
+import { openGameChat } from "@/lib/openGameChat";
 
 
 type Event = {

@@ -220,7 +220,6 @@ const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  // Image picker function
   const pickImgae = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -376,12 +375,7 @@ const ChatScreen = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => {
-            if (!fromGame) {
-              router.push('/(tabs)/profileDetails');
-            }
-          }}
-          disabled={fromGame}
+          onPress={() => router.push('/(tabs)/profileDetails')}
           style={styles.contactInfo}
         >
           <View style={styles.contactNameRow}>
@@ -466,13 +460,10 @@ const ChatScreen = () => {
   };
 
   let inputStyling;
-  // If only text is typing, go with inputPill
   if (inputText) {
     inputStyling = styles.inputPill;
-    // If both media and text are selcted go with inputNMedia
   } else if (selectedMedia) {
     inputStyling = styles.inputNMedia;
-    // Otherwise if nothing is selected go with simple one
   } else {
     inputStyling = styles.simpleInputPill
   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,16 @@ import { useGames } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createChat } from '@/context/ChatContext';
 import { supabase, useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
+import {
+  fetchApproxLocationFromIp,
+  findCourtByName,
+  getDefaultCourts,
+  sortCourtsByProximity,
+  type GeoCoords,
+} from '@/lib/courtSuggestions';
+import * as Location from 'expo-location';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
@@ -39,10 +49,13 @@ export default function CreateGame() {
   const [courtType, setCourtType] = useState<CourtType>('Public');
   const [isBooked, setIsBooked] = useState<boolean>(false);
 
-  const [numberOfPlayers, setNumberOfPlayers] = useState<number>(3);
+  const [numberOfPlayers, setNumberOfPlayers] = useState<number>(2);
   const [isPaid, setIsPaid] = useState<boolean>(true);
   const [paymentAmount, setPaymentAmount] = useState<string>('');
   const [gameDescription, setGameDescription] = useState<string>('');
+  const [locationCoords, setLocationCoords] = useState<GeoCoords | null>(null);
+  const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
+  const [loadingCourts, setLoadingCourts] = useState(false);
 
 
   const [datePickerMode, setDatePickerMode] = useState<'date' | 'time'>('date');
@@ -53,11 +66,36 @@ export default function CreateGame() {
 
 
 
-  const locationSuggestions = [
-    { id: '1', name: 'Cedarvale Park' },
-    { id: '2', name: 'Goulding park' },
-    { id: '3', name: 'Ramsdey park' },
-  ];
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const ipLocation = await fetchApproxLocationFromIp();
+      if (active) {
+        setNearbyOrigin(ipLocation);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const locationSuggestions = useMemo(() => {
+    const query = location.trim().toLowerCase();
+    const sorted = sortCourtsByProximity(getDefaultCourts(), nearbyOrigin);
+    if (!query) {
+      return sorted;
+    }
+    return sorted.filter((court) => court.name.toLowerCase().includes(query));
+  }, [location, nearbyOrigin]);
+
+  const selectGameType = (type: GameType) => {
+    setGameType(type);
+    if (type === '1v1') {
+      setNumberOfPlayers(2);
+    } else if (numberOfPlayers < 3) {
+      setNumberOfPlayers(3);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'MM/DD/YYYY';
@@ -109,10 +147,42 @@ export default function CreateGame() {
     setShowPickerModal(true);
   };
 
-  const handleLocationSelect = (locationName: string) => {
-    setLocation(locationName);
-    setSelectedLocation(locationName);
+  const handleLocationSelect = (courtName: string, coords?: GeoCoords) => {
+    const court = findCourtByName(courtName);
+    setLocation(courtName);
+    setSelectedLocation(courtName);
+    setLocationCoords(
+      coords ?? (court ? { lat: court.lat, lng: court.lng } : null)
+    );
     setShowLocationSuggestions(false);
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setLoadingCourts(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Location', 'Allow location access to find courts near you.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const coords = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+      setNearbyOrigin(coords);
+      setShowLocationSuggestions(true);
+      const nearest = sortCourtsByProximity(getDefaultCourts(), coords)[0];
+      if (nearest) {
+        handleLocationSelect(nearest.name, { lat: nearest.lat, lng: nearest.lng });
+      }
+    } catch {
+      Alert.alert('Location', 'Could not get your current location.');
+    } finally {
+      setLoadingCourts(false);
+    }
   };
 
   const handleLocationFocus = () => {
@@ -150,6 +220,8 @@ export default function CreateGame() {
       return;
     }
 
+    const playerCount = gameType === '1v1' ? 2 : numberOfPlayers;
+
     const gameData = {
       gameType,
       skillLevel,
@@ -157,9 +229,10 @@ export default function CreateGame() {
       date,
       time,
       location,
+      locationCoords,
       courtType,
       isBooked,
-      numberOfPlayers,
+      numberOfPlayers: playerCount,
       gameDescription,
       isPaid,
       paymentAmount,
@@ -211,7 +284,7 @@ export default function CreateGame() {
           <View style={styles.gameTypeContainer}>
             <TouchableOpacity
               style={[styles.gameTypeButton, gameType === '1v1' && styles.gameTypeButtonActive]}
-              onPress={() => setGameType('1v1')}
+              onPress={() => selectGameType('1v1')}
             >
               <Ionicons
                 name="person"
@@ -229,7 +302,7 @@ export default function CreateGame() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.gameTypeButton, gameType === 'Group' && styles.gameTypeButtonActive]}
-              onPress={() => setGameType('Group')}
+              onPress={() => selectGameType('Group')}
             >
               <Ionicons
                 name="people"
@@ -373,31 +446,44 @@ export default function CreateGame() {
                       styles.locationSuggestionItem,
                       selectedLocation === suggestion.name && styles.locationSuggestionItemActive,
                     ]}
-                    onPress={() => handleLocationSelect(suggestion.name)}
+                    onPress={() =>
+                      handleLocationSelect(suggestion.name, {
+                        lat: suggestion.lat,
+                        lng: suggestion.lng,
+                      })
+                    }
                   >
                     <Ionicons
                       name="location"
                       size={20}
-                      color={selectedLocation === suggestion.name ? '#19E675' : '#19E675'}
+                      color={selectedLocation === suggestion.name ? '#19E675' : '#666'}
                     />
-                    <Text
-                      style={[
-                        styles.locationSuggestionText,
-                        selectedLocation === suggestion.name && styles.locationSuggestionTextActive,
-                      ]}
-                    >
-                      {suggestion.name}
-                    </Text>
+                    <View style={styles.locationSuggestionTextWrap}>
+                      <Text
+                        style={[
+                          styles.locationSuggestionText,
+                          selectedLocation === suggestion.name && styles.locationSuggestionTextActive,
+                        ]}
+                      >
+                        {suggestion.name}
+                      </Text>
+                      {suggestion.distanceLabel ? (
+                        <Text style={styles.locationSuggestionDistance}>
+                          {suggestion.distanceLabel} away
+                        </Text>
+                      ) : null}
+                    </View>
                   </TouchableOpacity>
                 ))}
               <TouchableOpacity
                 style={styles.locationSuggestionItem}
-                onPress={() => {
-                  handleLocationSelect('Use My Current Location');
-                }}
+                onPress={handleUseCurrentLocation}
+                disabled={loadingCourts}
               >
-                <Ionicons name="star" size={20} color="#19E675" />
-                <Text style={styles.locationSuggestionText}>Use My Current Location</Text>
+                <Ionicons name="navigate" size={20} color="#19E675" />
+                <Text style={styles.locationSuggestionText}>
+                  {loadingCourts ? 'Finding courts near you…' : 'Use My Current Location'}
+                </Text>
               </TouchableOpacity>
               </View>
             )}
@@ -453,12 +539,13 @@ export default function CreateGame() {
         <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 10, marginTop: 40,}}>The Requirements</Text>
 
           {/* Number of Players */}
+          {gameType === 'Group' && (
           <View style={styles.numberSelectorContainer}>
             <Text style={styles.numberSelectorLabel}>Number of players</Text>
             <View style={styles.numberSelector}>
               <TouchableOpacity
                 style={styles.numberButton}
-                onPress={() => setNumberOfPlayers(Math.max(1, numberOfPlayers - 1))}
+                onPress={() => setNumberOfPlayers(Math.max(3, numberOfPlayers - 1))}
               >
                 <Text style={styles.numberButtonText}>-</Text>
               </TouchableOpacity>
@@ -471,6 +558,7 @@ export default function CreateGame() {
               </TouchableOpacity>
             </View>
           </View>
+          )}
 
 
         {/* Game Description */}
@@ -853,6 +941,14 @@ const styles = StyleSheet.create({
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E7EB',
+  },
+  locationSuggestionTextWrap: {
+    flex: 1,
+  },
+  locationSuggestionDistance: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
   },
   locationSuggestionItemActive: {
     backgroundColor: '#19E675',

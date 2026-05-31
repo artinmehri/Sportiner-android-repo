@@ -5,8 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames } from '@/context/GameContext';
-import { useGameTickets } from '@/context/GameTicketsContext';
+import { useAuth } from '@/context/AuthContext';
 import { addUserToChat, getChatId, userInChat } from '@/context/ChatContext';
+import { openGameChat } from '@/lib/openGameChat';
 
 export default function EventDetails() {
   const router = useRouter();
@@ -65,13 +66,47 @@ export default function EventDetails() {
     if (id !== undefined) {
       const response = await userInChat(id)
 
-      if (!response) {
-        addUserToChat(id)
-      } else {
-        const chatId = getChatId(id)
-        router.push({ pathname: "/(tabs)/chat", params: { id: `${chatId}` } });
-      }
+  const joinLabel = useMemo(() => {
+    if (membership === 'host') {
+      return 'You are hosting';
     }
+    if (membership === 'joined') {
+      return 'You are in this game';
+    }
+    if (membership === 'pending') {
+      return 'Request pending';
+    }
+    if (isFull) {
+      return 'Game is full';
+    }
+    return needsApproval ? 'Request Spot' : 'Join Game';
+  }, [membership, isFull, needsApproval]);
+
+  const joinDisabled =
+    submitting ||
+    membership === 'host' ||
+    membership === 'joined' ||
+    membership === 'pending' ||
+    isFull;
+
+  const handleMessageHost = async () => {
+    if (!game) {
+      return;
+    }
+    const inChat = await userInChat(game.id);
+    if (!inChat) {
+      await addUserToChat(game.id);
+    }
+    const chatId = await getChatId(game.id);
+    if (chatId) {
+      router.push({ pathname: '/(tabs)/chat', params: { id: `${chatId}` } });
+      return;
+    }
+    openGameChat({
+      gameId: game.id,
+      gameTitle: game.title,
+      peerName: game.host?.name ?? 'Host',
+    });
   };
 
   const handleOpenHostChat = () => {

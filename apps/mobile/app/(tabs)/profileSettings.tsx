@@ -49,11 +49,9 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
       const userId = user.id;
       setUserId(userId)
 
-      // Setting name
       const name = user?.name;
       setDisplayName(name ?? '');
 
-      // Setting availability
       const availability = user?.availability;
 
       if (availability) {
@@ -147,11 +145,9 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
     setProfileImageRead(uri);
 
     if (!pickerResult.canceled) {
-      // The image data is inside the 'assets' array
       const image = pickerResult.assets[0];
-      const base64 = image.base64; // This is what we need!
+      const base64 = image.base64;
       
-      // Now call your upload function
       await handleImageUpload(base64);
     }
   };

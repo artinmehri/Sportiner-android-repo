@@ -51,9 +51,9 @@ export default function SignupFlow() {
     const name = formData.name
 
     useEffect(() => {
-        isOnboarding.current = true; // entering signup onboarding
+        isOnboarding.current = true;
         return () => {
-            isOnboarding.current = false; // leaving onboarding
+            isOnboarding.current = false;
         };
     }, []);
 

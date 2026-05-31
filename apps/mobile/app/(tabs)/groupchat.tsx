@@ -254,7 +254,6 @@ const GroupChatScreen = () => {
       setInputText('');
       }
 
-
       // Replying to a message
     } else if (isReplying && replyInfo) {
 

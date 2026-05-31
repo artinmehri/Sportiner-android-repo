@@ -55,6 +55,12 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Sportiner uses your location to suggest nearby tennis courts."
+        }
+      ],
+      [
         "@react-native-google-signin/google-signin",
         { 
           "iosUrlScheme": "com.googleusercontent.apps.939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7"        
