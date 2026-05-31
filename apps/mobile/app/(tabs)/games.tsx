@@ -19,8 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames, Game } from '@/context/GameContext';
-import { useAuth } from '@/context/AuthContext';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { supabase, useAuth } from '@/context/AuthContext';
 import { openGameChat } from '@/lib/openGameChat';
 
 interface GameRequest {
@@ -241,7 +240,6 @@ export default function Games() {
   const [myPlayingGames, setMyPlayingGames] = useState<Game[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<GameRequest[]>([]);
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<{ id: string } | undefined>(undefined)
   const [error, setError] = useState<string | null>(null);
   const { feedbackSubmitted } = useLocalSearchParams<{ feedbackSubmitted?: string }>();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
@@ -287,9 +285,6 @@ export default function Games() {
   useFocusEffect(
     useCallback(() => {
       const loadData = async () => {
-
-        const userProfile = await getUserId()
-        setUser(userProfile)
         
         setLoading(true);
         setError(null);
