@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useEffect, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { decode } from 'base64-arraybuffer';
-import { getUserId, supabase, getUser } from '@/context/AuthContext';
+import { supabase, getCurrentUser, getCurrentUserId } from '@/context/AuthContext';
 import { useRouter } from 'expo-router';
 
 type ProfileSettingsData = {
@@ -44,7 +44,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   useEffect(() => {
     const loadUser = async () => {
       // Getting user
-      const user = await getUser();
+      const user = await getCurrentUser();
 
       const userId = user.id;
       setUserId(userId)
@@ -73,7 +73,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   const handleImageUpload = async (base64String: any) => {
     try {
 
-    const user = await getUserId()
+    const user = await getCurrentUserId()
     const userId = user?.id;
 
   if (!userId) throw new Error("No user ID found");

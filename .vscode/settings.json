@@ -3,5 +3,6 @@
     "kotlin.languageServer.enabled": false,
     "files.exclude": {
         "**/node_modules": true
-    }
+    },
+    "java.compile.nullAnalysis.mode": "disabled"
 }

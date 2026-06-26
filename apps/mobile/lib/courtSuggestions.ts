@@ -6,12 +6,10 @@ export type CourtSuggestion = {
 };
 
 const TORONTO_COURTS: CourtSuggestion[] = [
-  { id: '1', name: 'Cedarvale Park', lat: 43.6932, lng: -79.4187 },
-  { id: '2', name: 'Goulding Park', lat: 43.7812, lng: -79.4145 },
-  { id: '3', name: 'Ramsden Park', lat: 43.6889, lng: -79.3942 },
-  { id: '4', name: 'High Park Tennis Club', lat: 43.6465, lng: -79.4637 },
-  { id: '5', name: 'Trinity Bellwoods Park', lat: 43.6476, lng: -79.4197 },
-  { id: '6', name: 'Riverdale Park', lat: 43.6695, lng: -79.3518 },
+  { id: '1', name: 'Cedarvale Park', lat: 43.6926862432366, lng: -79.43200873596362 },
+  { id: '2', name: 'Sir Winston Churchill Park Tennis Club', lat: 43.68375564175669, lng: -79.40871756033495 },
+  { id: '3', name: 'Hilcrest Park', lat: 43.67598988841953, lng: -79.42411274751468 },
+  { id: '4', name: 'Viewmount Park Tennis Club', lat: 43.70763875602304, lng: -79.43670190658098 },
 ];
 
 export type GeoCoords = { lat: number; lng: number };
@@ -21,6 +19,12 @@ function toRad(value: number): number {
 }
 
 export function distanceKm(a: GeoCoords, b: GeoCoords): number {
+  if (
+    !isFinite(a.lat) || !isFinite(a.lng) ||
+    !isFinite(b.lat) || !isFinite(b.lng)
+  ) {
+    return 0;
+  }
   const earthRadiusKm = 6371;
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
@@ -84,9 +88,17 @@ export function findCourtByName(name: string): CourtSuggestion | undefined {
 }
 
 export function toGeographyPoint(coords: GeoCoords | null | undefined) {
-  if (!coords) {
+  if (
+    !coords ||
+    !isFinite(coords.lat) ||
+    !isFinite(coords.lng) ||
+    Math.abs(coords.lat) > 90 ||
+    Math.abs(coords.lng) > 180
+  ) {
+    console.log('Invalid geometry coords:', coords);
     return null;
   }
+
   return {
     type: 'Point' as const,
     coordinates: [coords.lng, coords.lat] as [number, number],

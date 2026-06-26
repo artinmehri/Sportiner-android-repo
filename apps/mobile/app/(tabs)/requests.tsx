@@ -11,9 +11,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigation } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "@/context/AuthContext";
 import { approveJoinRequest, declineJoinRequest } from "@/lib/gamesDb";
-import { openGameChat } from "@/lib/openGameChat";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type Request = {
@@ -131,20 +131,25 @@ export default function Requests() {
     setLoading(false);
   }, [user]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const handleApproveRequest = async (request: Request) => {
     if (!isSupabaseConfigured) {
       setRequests((prev) => prev.filter((r) => r.id !== request.id));
       return;
     }
+
+    setRequests((prev) => prev.filter((r) => r.id !== request.id));
+
     try {
       await approveJoinRequest(request.id);
-      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+      await load();
     } catch {
-      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+      await load();
     }
   };
 
@@ -153,11 +158,14 @@ export default function Requests() {
       setRequests((prev) => prev.filter((r) => r.id !== request.id));
       return;
     }
+
+    setRequests((prev) => prev.filter((r) => r.id !== request.id));
+
     try {
       await declineJoinRequest(request.id);
-      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+      await load();
     } catch {
-      setRequests((prev) => prev.filter((r) => r.id !== request.id));
+      await load();
     }
   };
 
@@ -201,12 +209,7 @@ export default function Requests() {
 
 function RequestItem({ request, onApprove, onDecline }: { request: Request; onApprove: () => void; onDecline: () => void }) {
   const openChat = () => {
-    openGameChat({
-      gameId: request.gameId,
-      gameTitle: request.gameTitle,
-      peerName: request.name,
-      peerUserId: request.requesterUserId,
-    });
+    
   };
 
   return (

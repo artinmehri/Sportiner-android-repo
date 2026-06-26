@@ -11,22 +11,27 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { router, useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
-import { useGames, type Game } from "@/context/GameContext";
-import { getCurrentUserId, supabase } from "@/context/AuthContext";
-import { addUserToChat, getChatId, userInChat } from "@/context/ChatContext";
-import { openGameChat } from "@/lib/openGameChat";
-
+import { useGames, type Game, isGameInTimeFilter, getDistanceKm } from "@/context/GameContext";
+import { getCurrentUserId } from "@/context/AuthContext";
+import { addUserToChat, chatNavigator, getChatId, userInChat } from "@/context/ChatContext";
+import {
+  type GeoCoords,
+} from '@/lib/courtSuggestions';
+import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics'
 
 type Event = {
   title: string;
-  level: "Beginner(400-800)" | "Intermediate(800-1200)" | "Advanced(1200-1600)" | "Pro(1600+)";
-  distance: string;
-  address: string;
+  level: "Beginner(400-800)" | "Intermediate(800-1200)" | "Advanced(1200-1600)";
+  distance: number | null;
+  gameType: string;
+  location_name: string;
   status: string;
   time: string;
+  date: string;
   venue: string;
   cost: string;
   avatar: string;
@@ -35,6 +40,7 @@ type Event = {
   spotsTotal?: number;
   hasGreenBackground?: boolean;
   gameId?: string;
+  image: string | undefined
 };
 
 function skillToEventLevel(skill: Game["skillLevel"]): Event["level"] {
@@ -73,246 +79,366 @@ function formatDiscoverTime(dateIso: string, timeStr: string): string {
   return `${dayPart} • ${displayHour}:${minutes.padStart(2, "0")} ${ampm}`;
 }
 
-// The following procedure will take in the location and calculate the approximate distance!
-function calculateDistance(location: any) {
 
-  const distance = "2 km"
+async function handleOnMessage(
+  gameId: string | undefined,
+  gameType: string
+) {
+  if (!gameId) return;
 
-  return distance 
-}
+  const inChat = await userInChat(gameId);
 
+  if (!inChat) {
+    await addUserToChat(gameId);
+  }
 
-async function handleOnMessage(gameId: string | undefined) {
-  console.log(gameId)
+  const chatId = await getChatId(gameId);
 
-  if (!gameId) {
-    Alert.alert("Message Host", "This event is not linked to a game yet.");
+  if (chatId) {
+    console.log('calling chat navigator')
+    chatNavigator(chatId, gameType);
+    console.log("game type is: ",gameType)
     return;
   }
+}
+  
+function parsePoint(location: any) {
+  if (!location) return null;
 
-  const response = await userInChat(gameId);
-
-  if (!response) {
-    await addUserToChat(gameId);
-  } else {
-    const chatId = getChatId(gameId)
-    router.push({ pathname: "/(tabs)/chat", params: { id: `${chatId}` } });
+  // Case 1: PostGIS GeoJSON style
+  if (location.coordinates && Array.isArray(location.coordinates)) {
+    return {
+      lng: location.coordinates[0],
+      lat: location.coordinates[1],
+    };
   }
+
+  // Case 2: already flat object
+  if (typeof location.lng === "number" && typeof location.lat === "number") {
+    return {
+      lng: location.lng,
+      lat: location.lat,
+    };
+  }
+
+  return null;
 }
 
+export default function Index() {
+  const [mode, setMode] = useState<"1-1" | "Group">("1-1");
+  const [selectedFilter, setSelectedFilter] = useState<"Today" | "Tomorrow" | "This Weekend">("Today");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
+  const [joinFeedbackMessage, setJoinFeedbackMessage] = useState("Joined Game");
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
+  const { requestJoinGame } = useGameTickets();
+  const [locationCoords, setLocationCoords] = useState<GeoCoords | null>(null);
+  const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
+  const [userLocation, setUserLocation] = useState(null);
+  const [originReady, setOriginReady] = useState(false);
+
+
+  const {
+    games,
+    refreshGames,
+    joinedGameIds,
+    pendingGameIds,
+  } = useGames();
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshGames();
+    }, [refreshGames])
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          console.log('No location permission');
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Highest,
+        });
+
+        if (!active) return;
+
+        const coords = {
+          lat: Number(position.coords.latitude),
+          lng: Number(position.coords.longitude),
+        };
+
+        console.log('LOCKED USER ORIGIN:', coords);
+
+        setSafeOrigin(coords);
+      } catch (e) {
+        console.log('Location error', e);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const setSafeOrigin = (coords: GeoCoords) => {
+    if (
+      !coords ||
+      !isFinite(coords.lat) ||
+      !isFinite(coords.lng) ||
+      Math.abs(coords.lat) > 90 ||
+      Math.abs(coords.lng) > 180
+    ) {
+      console.log('Invalid origin rejected:', coords);
+      return;
+    }
+  
+    if (coords.lat === 0 && coords.lng === 0) {
+      console.log('Invalid zero origin rejected:', coords);
+      return;
+    }
+  
+    setNearbyOrigin(coords);
+    setOriginReady(true);
+  };
+
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCurrentUserId = async () => {
+      const user = await getCurrentUserId();
+      if (isMounted) {
+        setCurrentUserId(user?.id);
+      }
+    };
+
+    loadCurrentUserId();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  
 
 function gameToEvent(g: Game): Event {
   const needsApproval = g.joinSetting.includes("Approval");
   return {
     title: g.title,
     level: skillToEventLevel(g.skillLevel),
-    distance: calculateDistance(g.address),
-    address: g.location,
+    distance:
+      nearbyOrigin && g.locationCoords
+        ? getDistanceKm(
+            { lat: nearbyOrigin.lat, lng: nearbyOrigin.lng },
+            { lat: g.locationCoords.lat, lng: g.locationCoords.lng }
+          )
+        : null,
+    gameType: g.gameType,
+    location_name: g.location_name,
     status: "open",
     time: formatDiscoverTime(g.date, g.time),
+    date: '',
     venue: g.courtType,
-    cost: g.isPaid && g.paymentAmount ? `$${g.paymentAmount} Entry` : "Free",
+    cost: g.isPaid && g.payment_amount ? `$${g.payment_amount} Entry` : "Free",
     avatar: g.host.avatar,
     secondaryCta: needsApproval ? "Request Spot" : "Join Game",
     spotsFilled: g.playerCount,
     spotsTotal: g.numberOfPlayers,
     hasGreenBackground: false,
     gameId: g.id,
+    image: g.image ?? undefined
   };
 }
 
+  // Auto-dismiss joined game modal after 1.8s
+  useEffect(() => {
+    if (!showJoinedGameModal) {
+      return;
+    }
 
-export default function Index() {
- const [mode, setMode] = useState<"1-1" | "Group">("1-1");
- const [selectedFilter, setSelectedFilter] = useState("Today");
- const [searchQuery, setSearchQuery] = useState("");
- const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
- const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
- const router = useRouter();
- const { requestJoinGame } = useGameTickets();
- const { games, refreshGames } = useGames();
- 
- useFocusEffect(
-   useCallback(() => {
-     refreshGames();
-   }, [refreshGames])
- );
+    const timeout = setTimeout(() => {
+      setShowJoinedGameModal(false);
+    }, 1800);
 
- useEffect(() => {
-  let isMounted = true;
+    return () => clearTimeout(timeout);
+  }, [showJoinedGameModal]);
 
-  const loadCurrentUserId = async () => {
-   const user = await getCurrentUserId();
-   if (isMounted) {
-    setCurrentUserId(user?.id);
-   }
-  };
+  const dbEvents = useMemo(
+    () =>
+      games
+        .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
+        .filter((g) => (currentUserId ? g.hostId !== currentUserId : true))
+        .filter((g) => isGameInTimeFilter(g.date, selectedFilter))
+        .map(gameToEvent),
+    [games, mode, currentUserId, selectedFilter, nearbyOrigin]
+  );
 
-  loadCurrentUserId();
-
-  return () => {
-   isMounted = false;
-  };
- }, []);
-
- const dbEvents = useMemo(
-  () =>
-   games
-    .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
-    .filter((g) => (currentUserId ? g.hostId !== currentUserId : true))
-    .map(gameToEvent),
-  [games, mode, currentUserId]
- );
-
- return (
-   <SafeAreaView style={styles.safeArea} edges={["top"]}>
-     <ScrollView
-       showsVerticalScrollIndicator={false}
-       contentContainerStyle={styles.container}
-     >
-       <View style={styles.searchContainer}>
-         <Ionicons name="search" size={24} color="#5A545E" />
-         <TextInput
-           placeholder="Search Events Around You"
-           placeholderTextColor="#5A545E"
-           style={styles.searchInput}
-           value={searchQuery}
-           onChangeText={setSearchQuery}
-         />
-       </View>
-       <View style={styles.segmentRow}>
-         <TouchableOpacity
-           style={[
-             styles.segmentItem,
-             mode === "1-1" ? styles.segmentActive : undefined,
-           ]}
-           onPress={() => setMode("1-1")}
-         >
-           <Ionicons
-             name="person-outline"
-             size={34}
-             color={mode === "1-1" ? "#19E675" : "rgba(27, 27, 27, 0.3)"}
-           />
-           <Text
-             style={[
-               styles.segmentText,
-               mode === "1-1" ? styles.segmentTextActive : undefined,
-             ]}
-           >
-             1-1
-           </Text>
-           {mode === "1-1" && <View style={styles.segmentUnderline} />}
-         </TouchableOpacity>
-         <TouchableOpacity
-           style={[
-             styles.segmentItem,
-             mode === "Group" ? styles.segmentActive : undefined,
-           ]}
-           onPress={() => setMode("Group")}
-         >
-           <Ionicons
-             name="people-outline"
-             size={34}
-             color={mode === "Group" ? "#19E675" : "rgba(27, 27, 27, 0.3)"}
-           />
-           <Text
-             style={[
-               styles.segmentText,
-               mode === "Group" ? styles.segmentTextActive : undefined,
-             ]}
-           >
-             Group
-           </Text>
-           {mode === "Group" && <View style={styles.segmentUnderline} />}
-         </TouchableOpacity>
-       </View>
-
-
-       <ScrollView
-         horizontal
-         showsHorizontalScrollIndicator={false}
-         contentContainerStyle={styles.filterRow}
-       >
-         {["Today", "Tomorrow", "This Weekend"].map((label) => {
-           const active = selectedFilter === label;
-           return (
-             <TouchableOpacity
-               key={label}
-               onPress={() => setSelectedFilter(label)}
-               style={[styles.filterPill, active && styles.filterPillActive]}
-             >
-               <Text
-                 style={[styles.filterText, active && styles.filterTextActive]}
-               >
-                 {label}
-               </Text>
-             </TouchableOpacity>
-           );
-         })}
-       </ScrollView>
-
-
-       {(
-         dbEvents.filter(
-           (event) =>
-             searchQuery === "" ||
-             event.title.toLowerCase().includes(searchQuery.toLowerCase())
-         )
-       ).map((event, idx) => (
-         <EventCard
-           key={event.gameId ?? `seed-${event.title}-${idx}`}
-           event={event}
-           mode={mode}
-           router={router}
-           requestJoinGame={requestJoinGame}
-           refreshGames={refreshGames}
-           setShowJoinedGameModal={setShowJoinedGameModal}
-         />
-       ))}
-     </ScrollView>
-
-
-    <TouchableOpacity 
-      style={styles.fab}
-      onPress={() => router.push('/(tabs)/CreateGame')}
-    >
-      <Ionicons name="add" size={26} color="#005124" />
-    </TouchableOpacity>
-
-    {/* Joined Game Modal */}
-    <Modal
-      visible={showJoinedGameModal}
-      animationType="fade"
-      transparent={true}
-      onRequestClose={() => setShowJoinedGameModal(false)}
-    >
-      <TouchableOpacity 
-        style={styles.modalOverlay}
-        activeOpacity={1}
-        onPress={() => setShowJoinedGameModal(false)}
+  return (
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.container}
       >
-        <View style={styles.feedbackModal}>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={24} color="#5A545E" />
+          <TextInput
+            placeholder="Search Events Around You"
+            placeholderTextColor="#5A545E"
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+        <View style={styles.segmentRow}>
+          <TouchableOpacity
+            style={[
+              styles.segmentItem,
+              mode === "1-1" ? styles.segmentActive : undefined,
+            ]}
+            onPress={() => setMode("1-1")}
+          >
+            <Ionicons
+              name="person-outline"
+              size={34}
+              color={mode === "1-1" ? "#19E675" : "rgba(27, 27, 27, 0.3)"}
+            />
+            <Text
+              style={[
+                styles.segmentText,
+                mode === "1-1" ? styles.segmentTextActive : undefined,
+              ]}
+            >
+              1-1
+            </Text>
+            {mode === "1-1" && <View style={styles.segmentUnderline} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.segmentItem,
+              mode === "Group" ? styles.segmentActive : undefined,
+            ]}
+            onPress={() => setMode("Group")}
+          >
+            <Ionicons
+              name="people-outline"
+              size={34}
+              color={mode === "Group" ? "#19E675" : "rgba(27, 27, 27, 0.3)"}
+            />
+            <Text
+              style={[
+                styles.segmentText,
+                mode === "Group" ? styles.segmentTextActive : undefined,
+              ]}
+            >
+              Group
+            </Text>
+            {mode === "Group" && <View style={styles.segmentUnderline} />}
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+{(["Today", "Tomorrow", "This Weekend"] as const).map((label) => {            
+  const active = selectedFilter === label;
+            return (
+              <TouchableOpacity
+                key={label}
+                onPress={() => setSelectedFilter(label)}
+                style={[styles.filterPill, active && styles.filterPillActive]}
+              >
+                <Text
+                  style={[styles.filterText, active && styles.filterTextActive]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {(
+          dbEvents.filter(
+            (event) =>
+              searchQuery === "" ||
+              event.title.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        ).map((event, idx) => (
+          <EventCard
+            key={event.gameId ?? `seed-${event.title}-${idx}`}
+            event={event}
+            mode={mode}
+            router={router}
+            requestJoinGame={requestJoinGame}
+            refreshGames={refreshGames}
+            joinedGameIds={joinedGameIds}
+            pendingGameIds={pendingGameIds}
+            setShowJoinedGameModal={setShowJoinedGameModal}
+            setJoinFeedbackMessage={setJoinFeedbackMessage}
+          />
+        ))}
+      </ScrollView>
+
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/(tabs)/CreateGame')}
+      >
+        <Ionicons name="add" size={26} color="#005124" />
+      </TouchableOpacity>
+
+      {/* Joined Game Modal */}
+      <Modal
+        visible={showJoinedGameModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowJoinedGameModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowJoinedGameModal(false)}
+        >
+          <View style={styles.feedbackModal}>
             <View style={styles.feedbackContent}>
               <View style={styles.feedbackIconContainer}>
                 <Ionicons name="checkmark-circle-outline" size={23} color="#19E675" />
               </View>
-              <Text style={styles.feedbackTitle}>Joined Game</Text>
+              <Text style={styles.feedbackTitle}>{joinFeedbackMessage}</Text>
             </View>
           </View>
-      </TouchableOpacity>
-    </Modal>
-   </SafeAreaView>
- );
+        </TouchableOpacity>
+      </Modal>
+    </SafeAreaView>
+  );
 }
 
-
-function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShowJoinedGameModal }: { 
-  event: Event; 
-  mode: "1-1" | "Group"; 
-  router: any; 
+function EventCard({
+  event,
+  mode,
+  router,
+  requestJoinGame,
+  refreshGames,
+  joinedGameIds,
+  pendingGameIds,
+  setShowJoinedGameModal,
+  setJoinFeedbackMessage,
+}: {
+  event: Event;
+  mode: "1-1" | "Group";
+  router: any;
   requestJoinGame: (gameData: {
     gameId: string;
     gameTitle: string;
+    gameType: string;
     gameStatus?: string;
     gameDetails?: {
       date: string;
@@ -322,14 +448,56 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
     };
   }) => Promise<{ error: string | null; result?: string }>;
   refreshGames: () => Promise<void>;
+  joinedGameIds: string[];
+  pendingGameIds: string[];
   setShowJoinedGameModal: (show: boolean) => void;
+  setJoinFeedbackMessage: (message: string) => void;
 }) {
- const isGroupMode = mode === "Group";
- const hasGreenBg = isGroupMode && event.hasGreenBackground;
+  const isGroupMode = mode === "Group";
+  const hasGreenBg = isGroupMode && event.hasGreenBackground;
 
- const cardStyle = hasGreenBg ? styles.cardGreen : styles.card;
+  const cardStyle = hasGreenBg ? styles.cardGreen : styles.card;
 
- const handleJoinGame = async () => {
+  const membership = useMemo(() => {
+    if (!event.gameId) {
+      return 'none' as const;
+    }
+
+    if (joinedGameIds.includes(event.gameId)) {
+      return 'joined' as const;
+    }
+
+    if (pendingGameIds.includes(event.gameId)) {
+      return 'pending' as const;
+    }
+
+    return 'none' as const;
+  }, [event.gameId, joinedGameIds, pendingGameIds]);
+
+  const isFull = event.status === 'full';
+
+  const joinLabel = useMemo(() => {
+    if (membership === 'joined') {
+      return 'Joined';
+    }
+
+    if (membership === 'pending') {
+      return 'Requested';
+    }
+
+    if (isFull) {
+      return 'Game Full';
+    }
+
+    return event.secondaryCta;
+  }, [membership, isFull, event.secondaryCta]);
+
+  const joinDisabled =
+    membership === 'joined' ||
+    membership === 'pending' ||
+    isFull;
+
+  const handleJoinGame = async () => {
     const hostName = event.title.split("'s")[0];
     const gameId =
       event.gameId ??
@@ -338,11 +506,12 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
     const { error, result } = await requestJoinGame({
       gameId,
       gameTitle: event.title,
+      gameType: event.gameType,
       gameStatus: event.status,
       gameDetails: {
         date: event.time.split(" • ")[0],
         time: event.time.split(" • ")[1] || event.time,
-        location: event.address,
+        location: event.location_name,
         host: hostName,
       },
     });
@@ -352,15 +521,22 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
       return;
     }
 
-    await refreshGames();
-    setShowJoinedGameModal(true);
-
     setTimeout(() => {
-      setShowJoinedGameModal(false);
-    }, 2500);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, 90);
+
+    await refreshGames();
+
+    if (result === 'requested') {
+      setJoinFeedbackMessage('Request Sent!');
+    } else {
+      setJoinFeedbackMessage('Joined Game');
+    }
+
+    setShowJoinedGameModal(true);
   };
 
- return (
+  return (
    <TouchableOpacity
      style={cardStyle}
      onPress={
@@ -374,25 +550,7 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
     }
    >
     <View style={styles.cardHeader}>
-      <TouchableOpacity
-        disabled={event.status === 'full'}
-        onPress={() => {
-          if (!event.gameId) {
-            router.push('/(tabs)/chat');
-            return;
-          }
-          const hostName = event.title.includes("'s")
-            ? event.title.split("'s")[0]
-            : 'Host';
-          openGameChat({
-            gameId: event.gameId,
-            gameTitle: event.title,
-            peerName: hostName,
-          });
-        }}
-      >
         <Image source={{ uri: event.avatar }} style={event.status === 'full' ? styles.avatarFull :styles.avatar} />
-      </TouchableOpacity>
       <View style={styles.cardInfo}>
         <View style={{flexDirection: 'row'}}>
         <Text style={event.status === 'full' ? styles.cardTitleFull : styles.cardTitle}>{event.title}</Text>
@@ -403,8 +561,8 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
         </View>
           <View style={styles.cardMetaRow}>
             <Text style={event.title ==='Sportiner Event' ? styles.cardLevelSportiner : event.status === 'full' ? styles.cardLevelFull : styles.cardLevel}>{event.level}</Text>
-            {event.level && event.distance && <Text style={styles.cardMetaDot}> • </Text>}
-            <Text style={event.title ==='Sportiner Event' ? styles.cardDistanceSportiner : event.status === 'full' ? styles.cardDistanceFull : styles.cardDistance}>{event.distance}</Text>
+            {event.distance !== null && event.distance !== undefined && <Text style={styles.cardMetaDot}> • </Text>}
+            <Text style={event.title ==='Sportiner Event' ? styles.cardDistanceSportiner : event.status === 'full' ? styles.cardDistanceFull : styles.cardDistance}>{event.distance != null ? `${event.distance.toFixed(1)} km` : ""}</Text>
           </View>
       </View>
     </View>
@@ -412,7 +570,7 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
        <View style={styles.infoView}>
        <Ionicons name="location-outline" color={event.title ==='Sportiner Event' ? "#002000" : event.status === 'full' ? "#9CA3AF" : "#4B5563"} size={16}></Ionicons>
          <Text style={event.title ==='Sportiner Event' ? styles.locationTextSportiner : event.status === 'full' ? styles.locationTextFull : styles.locationText}>
-           {event.address}
+           {event.location_name}
          </Text>
        </View>
 
@@ -457,47 +615,62 @@ function EventCard({ event, mode, router, requestJoinGame, refreshGames, setShow
        </>
      ) : null}
 
-     <View style={styles.buttonRow}>
-      {event.title === "Sportiner Event" ? null : 
+    <View style={styles.buttonRow}>
+      {event.title === "Sportiner Event" ? null : (
+        <TouchableOpacity
+          style={[
+            event.status === 'full' ? styles.secondaryButtonFull : styles.secondaryButton,
+          ]}
+          onPress={
+            event.status === "full" || !event.gameId
+              ? undefined
+              : () => {
+                const hostName = event.title.includes("'s")
+                  ? event.title.split("'s")[0]
+                  : 'Host';
+                handleOnMessage(event.gameId, event.gameType);
+              }          }
+        >
+          <Text
+            style={[
+              event.status === 'full' ? styles.secondaryButtonTextFull : styles.secondaryButtonText,
+            ]}
+          >Message
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity
-         style={[
-          event.status === 'full' ? styles.secondaryButtonFull : styles.secondaryButton,
-         ]}
-         onPress={
-           event.status === "full" || !event.gameId
-             ? undefined
-             : () => handleOnMessage(event.gameId)
-         }
-       >
-         <Text
-           style={[
-            event.status === 'full' ? styles.secondaryButtonTextFull : styles.secondaryButtonText,
-           ]}
-         >Message
-         </Text>
-       </TouchableOpacity>}
-  
-       <TouchableOpacity
-         style={[
-          event.title === 'Sportiner Event' ? styles.primaryButtonSportiner :
-          event.status === 'full' ? styles.primaryButtonFull : styles.primaryButton
-         ]}
-         onPress={event.status === 'full' ? undefined : handleJoinGame}
-       >
-         <Text
-           style={[
-            event.title === 'Sportiner Event' ? styles.primaryButtonTextSportiner :
-            event.status === 'full' ? styles.primaryButtonTextFull : styles.primaryButtonText,
-           ]}
-         >
-           {event.secondaryCta}
-         </Text>
-       </TouchableOpacity>
-     </View>
+        style={[
+          membership === 'joined' || membership === 'pending'
+            ? styles.requestedSpotButton
+            : isFull
+            ? styles.mathFullButton
+            : event.title === 'Sportiner Event'
+            ? styles.primaryButtonSportiner
+            : styles.primaryButton,
+        ]}
+        disabled={joinDisabled}
+        onPress={isFull ? undefined : handleJoinGame}
+      >
+        <Text
+          style={[
+            membership === 'joined' || membership === 'pending'
+              ? styles.requestedSpotText
+              : isFull
+              ? styles.mathFullText
+              : event.title === 'Sportiner Event'
+              ? styles.primaryButtonTextSportiner
+              : styles.primaryButtonText,
+          ]}
+        >
+          {joinLabel}
+        </Text>
+      </TouchableOpacity>
+    </View>
    </TouchableOpacity>
  );
 }
-
 
 const styles = StyleSheet.create({
  safeArea: {
@@ -838,6 +1011,34 @@ cardDistanceFull: {
    color: "#002000",
    fontSize: 16,
    fontWeight: "700",
+ },
+ requestedSpotButton: {
+  borderColor: '#4A6B54',
+  borderWidth: 2,
+  backgroundColor: 'rgba(25, 230, 117, 0.2)',
+  borderRadius: 30,
+  paddingVertical: 12,
+  alignItems: 'center',
+  flex: 1,
+ },
+ requestedSpotText: {
+  color: '#4A6B54',
+  fontSize: 16,
+  fontWeight: '700',
+ },
+ mathFullButton: {
+  borderColor: '#D1D5DB',
+  borderWidth: 2,
+  backgroundColor: '#E5E7EB',
+  borderRadius: 30,
+  paddingVertical: 12,
+  alignItems: 'center',
+  flex: 1,
+ },
+ mathFullText: {
+  color: '#6B7280',
+  fontSize: 16,
+  fontWeight: '700',
  },
  primaryButtonTextGreen: {
    color: "#005124",

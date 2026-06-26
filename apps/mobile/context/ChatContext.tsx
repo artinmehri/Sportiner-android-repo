@@ -1,5 +1,6 @@
 import { getCurrentUser, getCurrentUserId, supabase } from "./AuthContext";
 import { Alert } from "react-native";
+import { router } from 'expo-router';
 
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,7 +29,6 @@ export async function userInChat(gameId: string) {
             console.log('returned null!')
             return false
         }
-
         return !!member;
 }
 
@@ -193,6 +193,29 @@ export async function getMessages(chatId: string) {
         console.log(error.message)
     }
 }
+ 
+
+export async function getplayers(gameId: string) {
+    const {data, error} = await supabase
+    .from('game_players')
+    .select(`
+        *,
+        user:users (
+            id,
+            name,
+            profile_picture
+        )
+    `)
+    .eq('game_id', gameId)
+
+    if (data) {
+        return data
+    }
+
+    if (error) {
+        console.log('error')
+    }
+}
 
 
 export async function editMessage(messageId: string, message: string) {
@@ -300,11 +323,32 @@ export async function getUnreadCount(chatId: string) {
     return count ?? 0;
 }
 
+export function chatNavigator(chatId: string, type: any) {
+
+    // If it is a 1v1 game, navigate the user to chat component
+    if (type == '1v1') {
+      console.log('navigating to private chat')
+      router.push({
+        pathname: '/(tabs)/chat',
+        params:{ id: chatId },
+    });
+  
+      // otherwise if it's a group game, navigate the user to group chat component
+    } else {
+        console.log('navigating to group chat')
+    router.push({
+      pathname: '/(tabs)/groupchat',
+      params:{ id: chatId },
+    });
+    }
+  }
+
 export async function createChat(
     type: string,
     name: string,
     photo: string,
     gameId: string,
+    image: string,
     members: Array<{ id: string; level: string }>
 ) {
     const now = new Date().toISOString();
@@ -314,7 +358,7 @@ export async function createChat(
         .insert({
             type,
             name,
-            photo: photo || null,
+            photo: image || null,
             last_message: null,
             last_message_at: null,
             created_at: now,

@@ -1,13 +1,14 @@
 import { Image } from 'expo-image';
-import { View, StyleSheet, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames } from '@/context/GameContext';
 import { useAuth } from '@/context/AuthContext';
-import { addUserToChat, getChatId, userInChat } from '@/context/ChatContext';
-import { openGameChat } from '@/lib/openGameChat';
+import { addUserToChat, getChatId, userInChat, getplayers, chatNavigator } from '@/context/ChatContext';
+import * as Haptics from 'expo-haptics'
+
 
 export default function EventDetails() {
   const router = useRouter();
@@ -21,20 +22,32 @@ export default function EventDetails() {
     pendingGameIds,
   } = useGames();
   const [submitting, setSubmitting] = useState(false);
-
+  const API_KEY = "Z3CQUVZMBCCHJVSHVHU2J9KGY"
   const game = id ? getGameById(String(id)) : undefined;
+  const [weather, setWeather] = useState(null);
+  const [isHost, setIsHost] = useState(false)
+  const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
+  const [players, setPlayers] = useState<any[]>([]);
 
+  
   useFocusEffect(
     useCallback(() => {
       refreshGames();
     }, [refreshGames])
   );
 
+  useEffect(() => {
+    if (game) {
+      handleWeather();
+    }
+  }, [game?.location_name, game?.date]);
+
   const membership = useMemo(() => {
     if (!game || !user?.id) {
       return 'none' as const;
     }
     if (game.hostId === user.id) {
+      setIsHost(true)
       return 'host' as const;
     }
     if (joinedGameIds.includes(game.id)) {
@@ -46,36 +59,110 @@ export default function EventDetails() {
     return 'none' as const;
   }, [game, user?.id, joinedGameIds, pendingGameIds]);
 
+  useEffect(() => {
+    const loadPlayers = async () => {
+      if (!game?.id) {
+        setPlayers([]);
+        return;
+      }
+
+      try {
+        const data = await getplayers(game.id);
+
+        if (!data || !Array.isArray(data)) {
+          setPlayers([]);
+          return;
+        }
+
+        setPlayers(data);
+      } catch (error) {
+        console.log('failed loading players', error);
+        setPlayers([]);
+      }
+    };
+
+    loadPlayers();
+  }, [game?.id, membership]);
+
+  // Auto-dismiss joined game modal after 1.8s
+  useEffect(() => {
+    if (!showJoinedGameModal) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setShowJoinedGameModal(false);
+    }, 1800);
+
+    return () => clearTimeout(timeout);
+  }, [showJoinedGameModal]);
+
+  const handleWeather =  async () => {
+
+    const timestamp = game?.date;
+    const apiDateFormat = timestamp?.split('T')[0];
+    
+    const rawLocation = `${game?.location_name}, Toronto`;
+    const encodedLocation = encodeURIComponent(rawLocation);
+    
+    // FIX: Added the absolute path route required by Visual Crossing
+    const url = `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${encodedLocation}/${apiDateFormat}?key=${API_KEY}&unitGroup=metric`;    
+    
+    try {
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        console.error("API Error Response Status:", response.status);
+        return;
+      }
+    
+      const data = await response.json();
+      const avgTemp = data?.days?.[0]?.temp;
+      
+      if (avgTemp !== undefined) {
+        setWeather(avgTemp);
+      } else {
+        console.log("No temperature array data found for this date.");
+      }
+    } catch (error) {
+      console.error("Network or parse error:", error);
+    }
+  }
+
+
   const title = game?.title ?? "Event";
+  const capacity = game?.numberOfPlayers
   const courtLabel = (game?.courtType ?? 'Public').toUpperCase();
   const levelLabel = (game?.skillLevel ?? 'Open').toUpperCase();
   const dateLine = game?.date
     ? new Date(game.date).toLocaleDateString('en-US', { weekday: 'short' })
     : '—';
   const timeLine = game?.time ?? '—';
-  const locationLine = game?.location ?? '—';
+  const locationLine = game?.location_name ?? '—';
   const entryLine =
-    game?.isPaid && game.paymentAmount ? `$${game.paymentAmount}` : 'Free';
+    game?.isPaid && game.payment_amount ? `$${game.payment_amount}` : 'Free';
   const aboutText =
     game?.gameDescription?.trim() ||
     'Details for this match will appear here when loaded from the server.';
 
-  const spotsLeft = Math.max(0, (game?.numberOfPlayers ?? 0) - (game?.playerCount ?? 0));
+  const playerCapacity = Number(capacity ?? 0);
+  const currentPlayerCount = players.length + 1;
+  const spotsLeft = Math.max(0, playerCapacity - (currentPlayerCount -1));
   const isFull = spotsLeft === 0;
   const needsApproval = game?.joinSetting === '✋ Request Approval';
 
   const joinLabel = useMemo(() => {
     if (membership === 'host') {
-      return 'You are hosting';
+      return 'Hosting';
     }
     if (membership === 'joined') {
-      return 'You are in this game';
+      return 'Joined';
     }
     if (membership === 'pending') {
-      return 'Request pending';
+      return 'Requested';
     }
     if (isFull) {
-      return 'Game is full';
+      return 'Game Full';
     }
     return needsApproval ? 'Request Spot' : 'Join Game';
   }, [membership, isFull, needsApproval]);
@@ -87,7 +174,7 @@ export default function EventDetails() {
     membership === 'pending' ||
     isFull;
 
-  const handleMessageHost = async () => {
+  const handleMessage = async () => {
     if (!game) {
       return;
     }
@@ -100,22 +187,11 @@ export default function EventDetails() {
       router.push({ pathname: '/(tabs)/chat', params: { id: `${chatId}` } });
       return;
     }
-    openGameChat({
-      gameId: game.id,
-      gameTitle: game.title,
-      peerName: game.host?.name ?? 'Host',
-    });
+    chatNavigator(chatId, game.gameType);
   };
 
-  const handleOpenHostChat = () => {
-    if (!game) {
-      return;
-    }
-    openGameChat({
-      gameId: game.id,
-      gameTitle: game.title,
-      peerName: game.host?.name ?? 'Host',
-    });
+  const handleOpenPlayerProfile = async (playerId: string) => {
+    router.push({ pathname: '/(tabs)/profileDetails', params: { id: playerId } });
   };
 
   const handleJoinEvent = async () => {
@@ -127,19 +203,17 @@ export default function EventDetails() {
     try {
       const result = await joinGame(game.id);
       if (result === 'joined') {
-        Alert.alert('Success', 'You joined this game.');
+        setShowJoinedGameModal(true);
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }, 90);
         return;
       }
       if (result === 'requested') {
-        Alert.alert('Success', 'Your join request was sent to the host.');
-        return;
-      }
-      if (result === 'already_member') {
-        Alert.alert('Info', 'You are already in this game.');
-        return;
-      }
-      if (result === 'already_requested') {
-        Alert.alert('Info', 'You already requested this game.');
+        setShowJoinedGameModal(true);
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }, 90);
         return;
       }
       if (result === 'full') {
@@ -158,10 +232,11 @@ export default function EventDetails() {
     }
   };
 
+
   return (
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.heroContainer}>
-          <Image source={require('@/assets/images/tennis-court.png')} style={styles.eventImage} />
+          <Image source={game?.image} style={styles.eventImage} />
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => router.back()}
@@ -177,11 +252,11 @@ export default function EventDetails() {
           
             <View style={styles.pillContainere}>
               <View style={styles.courtPill}>
-                <Text style={{fontWeight: '600', color: 'rgba(25, 230, 117, 0.8)'}}>{courtLabel}</Text>
+                <Text style={{fontWeight: '600', color: 'rgba(25, 230, 117, 0.8)'}}>{courtLabel} COURT</Text>
               </View>
 
               <View style={styles.weatherPill}>
-              <Text style={{fontWeight: '600', color: '#EA580C'}}>{spotsLeft} spots</Text>
+              <Text style={{fontWeight: '600', color: '#EA580C'}}>{weather}°C</Text>
               </View>
 
               <View style={styles.levelPill}>
@@ -205,7 +280,7 @@ export default function EventDetails() {
                 <Ionicons name="location" size={20} color="#19E675" />
               </View>
               <Text style={styles.lableText}>LOCATION</Text>
-              <Text style={styles.detailText}>{locationLine}</Text>
+              <Text numberOfLines={3} style={[styles.detailText, { maxWidth: 70 }]}>{locationLine}</Text>
             </View>
 
             <View style={styles.detailItem}>
@@ -232,11 +307,10 @@ export default function EventDetails() {
           <View style={{height: 1, backgroundColor: '#CED0CE', width: '100%' }} />
 
 
-
           <View style={styles.section}>
             <Text style={styles.playingTitle}>Who's Playing</Text>
 
-            <TouchableOpacity onPress={handleOpenHostChat} style={styles.playerCard}>
+            <TouchableOpacity onPress={() => handleOpenPlayerProfile(game?.hostId ?? '')} style={styles.playerCard}>
               <Image source={{ uri: game?.host.avatar ?? 'https://picsum.photos/seed/sarah/100/100.jpg' }} style={styles.playerImage} />
               <View style={styles.playerInfo}>
                 <Text style={styles.playerName}>{game?.host.name ?? 'Host'}</Text>
@@ -244,46 +318,75 @@ export default function EventDetails() {
               </View>
             </TouchableOpacity>
 
-            {membership === 'joined' && (
-              <TouchableOpacity
-                onPress={() => {
-                  if (!game) return;
-                  openGameChat({ gameId: game.id, gameTitle: game.title, peerName: 'You' });
-                }}
-                style={styles.playerCard}
-              >
-                <Image source={{ uri: 'https://picsum.photos/seed/you/100/100.jpg' }} style={styles.playerImage} />
+            {players.filter((player) => {const playerRole = player?.role; return playerRole !== 'host'}).map((player, index) => {
+              players.find((player) => player.id !== game?.hostId)
+              const playerId = player?.id ?? player?.user_id ?? `${index}`;
+              const playerName = player?.name ?? player?.user?.name ?? 'Player';
+              const playerImage = player?.profile_picture ?? player?.user?.profile_picture ?? `https://picsum.photos/seed/player-${index}/100/100.jpg`;
+
+              return (
+                <TouchableOpacity
+                  key={playerId}
+                  onPress={() => handleOpenPlayerProfile(playerId)}
+                  style={styles.playerCard}
+                >
+                  <Image source={{ uri: playerImage }} style={styles.playerImage} />
+                  <View style={styles.playerInfo}>
+                    <Text style={styles.playerName}>{playerName}</Text>
+                    <Text style={styles.playerRole}>Player</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            {Array.from({ length: spotsLeft }).map((_, index) => (
+              <View key={`empty-${index}`} style={styles.emptySlotCard}>
+                <Image source={{ uri: 'https://www.movetopuntagorda.com/wp-content/uploads/2020/09/55-Icon.png' }} style={styles.playerImage} />
                 <View style={styles.playerInfo}>
-                  <Text style={styles.playerName}>You</Text>
-                  <Text style={styles.playerRole}>Player</Text>
+                  <Text style={styles.emptySlotName}>Empty Slot</Text>
+                  <Text style={styles.emptySlotStatus}>Waiting...</Text>
                 </View>
-              </TouchableOpacity>
-            )}
-
-            {spotsLeft > 0 && membership !== 'joined' && (
-            <View style={styles.emptySlotCard}>
-              <Image source={{ uri: 'https://www.movetopuntagorda.com/wp-content/uploads/2020/09/55-Icon.png' }} style={styles.playerImage} />
-              <View style={styles.playerInfo}>
-                <Text style={styles.emptySlotName}>Empty Slot</Text>
-                <Text style={styles.emptySlotStatus}>Waiting...</Text>
               </View>
-            </View>
-            )}
+            ))}
           </View>
-
-          <View style={styles.buttonContainer}>
+          
+        {!isHost && (
+        <View style={styles.buttonContainer}>
           <TouchableOpacity
-            style={[styles.requestSpotButton, joinDisabled && styles.requestSpotButtonDisabled]}
+            style={[membership === 'joined' ||  membership === 'pending' ? styles.requestedSpotButton : isFull ? styles.mathFullButton : membership === 'none' ? styles.requestSpotButton : null ]}
             onPress={handleJoinEvent}
             disabled={joinDisabled}
           >
-            <Text style={styles.requestSpotText}>{joinLabel}</Text>
+            <Text style={[membership === 'joined' ||  membership === 'pending' ? styles.requestedSpotText : isFull ? styles.mathFullText : membership === 'none' ? styles.requestSpotText : null ]}>{joinLabel}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.messageHostButton} onPress={handleMessageHost}>
-            <Text style={styles.messageHostText}>Message Host</Text>
+          <TouchableOpacity style={styles.messageHostButton} onPress={handleMessage}>
+            <Text style={styles.messageHostText}>Message</Text>
           </TouchableOpacity>
         </View>
+          )}
+          {/* Joined Game Modal */}
+    <Modal
+      visible={showJoinedGameModal}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={() => setShowJoinedGameModal(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowJoinedGameModal(false)}
+      >
+        <View style={styles.feedbackModal}>
+            <View style={styles.feedbackContent}>
+              <View style={styles.feedbackIconContainer}>
+                <Ionicons name="checkmark-circle-outline" size={23} color="#19E675" />
+              </View>
+              <Text style={styles.feedbackTitle}>{ membership === 'joined' ? "Joined Game" : membership === 'pending' ? "Request sent!" : null}</Text>
+            </View>
+          </View>
+      </TouchableOpacity>
+    </Modal>
       </ScrollView>
   );
 }
@@ -353,34 +456,37 @@ const styles = StyleSheet.create({
   },
   courtPill: {
     maxWidth: 130,
-    paddingVertical: 6,
+    maxHeight: 40,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: 'rgba(25, 230, 117, 0.1)',
   },
   weatherPill: {
     maxWidth: 95,
-    paddingVertical: 6,
+    maxHeight: 40,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: '#FFEDD5',
   },
   levelPill: {
-    maxWidth: 105,
-    paddingVertical: 6,
+    maxWidth: 170,
+    maxHeight: 40,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: '#E4E4E7',
   },
   detailItemContainer: {
     flexDirection: 'row',
-    gap: 39,
-    justifyContent: 'center'
+    justifyContent: 'space-around',
   },
   detailItem: {
     flexDirection: 'column',
     alignItems: 'center',
     marginBottom: 12,
+    width: 80,
   },
   iconContainer: {
     width: 40,
@@ -389,7 +495,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
@@ -400,18 +505,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#A1A1AA',
     fontWeight: '500',
-    marginRight: 10,
     marginTop: 10
   },
   detailText: {
     fontSize: 15,
     color: '#121212',
     fontWeight: '500',
-    marginRight: 10
   },
   section: {
     marginBottom: 32,
-    marginTop: 40
+    marginTop: 40,
+    marginLeft: 20
   },
   sectionTitle: {
     fontSize: 18,
@@ -444,6 +548,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 8,
+    maxWidth: 365
   },
   playerCard: {
     flexDirection: 'row',
@@ -459,6 +564,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 8,
+    maxWidth: 365
   },
   playerImage: {
     width: 40,
@@ -512,10 +618,41 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  requestSpotButtonDisabled: {
-    backgroundColor: '#E5E7EB',
+  requestedSpotButton: {
+    borderColor: '#4A6B54',
+    borderWidth: 2,
+    backgroundColor: 'rgba(25, 230, 117, 0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 28,
+    alignItems: 'center',
+    marginBottom: 17,
+    shadowColor: '#19E675',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  mathFullButton: {
     borderColor: '#D1D5DB',
-    shadowOpacity: 0,
+    borderWidth: 2,
+    backgroundColor: '#E5E7EB',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 28,
+    alignItems: 'center',
+    marginBottom: 17,
+    shadowColor: '#19E675',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   messageHostButton: {
     backgroundColor: 'white',
@@ -531,9 +668,57 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  requestedSpotText: {
+    color: '#4A6B54',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  mathFullText: {
+    color: '#6B7280',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   messageHostText: {
     color: '#1A1A1A',
     fontSize: 16,
     fontWeight: '600',
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 50,
+  },
+  feedbackModal: {
+   justifyContent: 'flex-end',
+   alignItems: 'center',
+ },
+ feedbackContent: {
+   backgroundColor: '#002000',
+   borderRadius: 20,
+   paddingHorizontal: 30,
+   paddingVertical: 7,
+   alignItems: 'center',
+   flexDirection: 'row',
+   shadowColor: '#000',
+   shadowOffset: {
+     width: 0,
+     height: 4,
+   },
+   shadowOpacity: 0.25,
+   shadowRadius: 10,
+   elevation: 10,
+ },
+ feedbackIconContainer: {
+   marginBottom: 1,
+   marginRight: 7
+ },
+ feedbackTitle: {
+   fontSize: 20,
+   fontWeight: '700',
+   color: '#19E675',
+   textAlign: 'center',
+   marginBottom: 3
+ },
 });

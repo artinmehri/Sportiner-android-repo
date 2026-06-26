@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker'
 import * as Clipboard from 'expo-clipboard';
@@ -105,6 +105,8 @@ const ChatScreen = () => {
   const [avatar, setAvatar] = useState('');
   const [currentUserId, setCurrentUserId] = useState()
   const [userNames, setUserNames] = useState<Record<string, string>>({});
+  const [gameTitle, setGameTitle] = useState('');
+  const [gameId, setGameId] = useState('');
 
 
   useEffect(() => {
@@ -135,6 +137,7 @@ const ChatScreen = () => {
     };
   
     loadUserNames();
+    console.log('this is private chat')
   }, [messages]);
 
 
@@ -156,6 +159,11 @@ const ChatScreen = () => {
       if (!cancelled) {
         console.log(gameRow)
         setGame(gameRow ?? null);
+      }
+
+      if (gameRow?.title && gameRow.id) {
+        setGameTitle(gameRow?.title)
+        setGameId(gameRow.id)
       }
 
       const otherPlayerId = await findOtherPlayer(id);
@@ -357,6 +365,11 @@ const ChatScreen = () => {
     });
   };
 
+  const handleGameNavigation = () => {
+    router.push({ pathname: '/(tabs)/EventDetails', params: {id: gameId} })
+  }
+
+  
   const navigation = useNavigation();
 
 
@@ -370,16 +383,15 @@ const ChatScreen = () => {
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigateToProfile()}>
-          <Image source={{ uri: avatar }} style={styles.avatar} />
+        { game &&
+        <TouchableOpacity onPress={() => handleGameNavigation()}>
+          <Image source={{ uri: game.image ?? undefined }} style={styles.avatar} />
         </TouchableOpacity>
+        }
 
-        <TouchableOpacity
-          onPress={() => navigateToProfile()}
-          style={styles.contactInfo}
-        >
+        <TouchableOpacity onPress={() => handleGameNavigation()} style={styles.contactInfo}>
           <View style={styles.contactNameRow}>
-            <Text style={styles.contactName}>{name}</Text>
+            <Text style={styles.contactName}>{gameTitle}</Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
           <Text style={styles.contactSubtitle}>{formatGameSubtitle(game)}</Text>

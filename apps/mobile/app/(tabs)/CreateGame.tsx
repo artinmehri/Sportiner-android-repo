@@ -12,86 +12,196 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useGames } from '@/context/GameContext';
+import { addGame, getDistanceKm } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createChat } from '@/context/ChatContext';
-import { supabase, useAuth } from '@/context/AuthContext';
+import { getCurrentUser, getCurrentUserId, supabase, useAuth } from '@/context/AuthContext';
 import {
-  fetchApproxLocationFromIp,
   findCourtByName,
   getDefaultCourts,
   sortCourtsByProximity,
   type GeoCoords,
+  type CourtSuggestion,
 } from '@/lib/courtSuggestions';
+type CourtSuggestionWithDistance = CourtSuggestion & {
+  distanceKm?: number;
+  distanceLabel?: string;
+};
 import * as Location from 'expo-location';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
-type JoinSetting = '👥 Open to Anyone' | '✋ Request Approval';
-type CourtType = 'Public' | 'Private/Club' | 'Condo';
+type CourtType = 'Public' | 'Club' | 'Condo';
 
 export default function CreateGame() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { addGame } = useGames();
   const { user } = useAuth();
-  const [gameType, setGameType] = useState<GameType>('1v1');
-  const [skillLevel, setSkillLevel] = useState<SkillLevel>('Beginner');
-  const [joinSetting, setJoinSetting] = useState<JoinSetting>('👥 Open to Anyone');
-
+  const [type, setType] = useState<GameType>('1v1');
+  const [level, setLevel] = useState<SkillLevel>('Beginner');
+  const [is_public, setIs_public] = useState<boolean>(true);
+  const [host_id, setHost_id] = useState<any>('')
+  const [title, setTitle] = useState<string>('');
   const [date, setDate] = useState<string>('');
-  const [time, setTime] = useState<string>('07:00');
-  const [location, setLocation] = useState<string>('');
+  const [time, setTime] = useState<string>('15:00');
   const [showLocationSuggestions, setShowLocationSuggestions] = useState<boolean>(false);
   const [selectedLocation, setSelectedLocation] = useState<string>('');
-  const [courtType, setCourtType] = useState<CourtType>('Public');
-  const [isBooked, setIsBooked] = useState<boolean>(false);
-
-  const [numberOfPlayers, setNumberOfPlayers] = useState<number>(2);
-  const [isPaid, setIsPaid] = useState<boolean>(true);
-  const [paymentAmount, setPaymentAmount] = useState<string>('');
-  const [gameDescription, setGameDescription] = useState<string>('');
-  const [locationCoords, setLocationCoords] = useState<GeoCoords | null>(null);
+  const [court_type, setCourt_type] = useState<CourtType>('Public');
+  const [is_booked, setIs_booked] = useState<boolean>(false);
+  const [image, setImage] = useState('');
+  const [game_capacity, setGame_capacity] = useState<number>(2);
+  const [is_paid, setIs_paid] = useState<boolean>(false);
+  const [payment_amount, setPayment_amount] = useState<number>(0);
+  const [description, setDescription] = useState<string>('');
+  const [location_cords, setLocation_cords] = useState<string | null>(null);
+  const [location_name, setLocation_name] = useState<string>('');
   const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
-  const [loadingCourts, setLoadingCourts] = useState(false);
+  const [originReady, setOriginReady] = useState(false);
+  const [hostName, setHostName] = useState('');
 
+  const setSafeOrigin = (coords: GeoCoords) => {
+    if (
+      !coords ||
+      !isFinite(coords.lat) ||
+      !isFinite(coords.lng) ||
+      Math.abs(coords.lat) > 90 ||
+      Math.abs(coords.lng) > 180
+    ) {
+      console.log('Invalid origin rejected:', coords);
+      return;
+    }
+
+    if (coords.lat === 0 && coords.lng === 0) {
+      console.log('Invalid zero origin rejected:', coords);
+      return;
+    }
+
+    setNearbyOrigin(coords);
+    setOriginReady(true);
+  };
+  
+
+  const imageRandomizer = () => {
+    const items: string[] = [
+      "https://images.unsplash.com/photo-1542144582-1ba00456b5e3?q=80&w=1078&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1499510318569-1a3d67dc3976?q=80&w=1064&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1548920168-70d61248a912?q=80&w=2070&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1530915534664-4ac6423816b7?q=80&w=2070&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1632755898125-36cd72575dde?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1620742820748-87c09249a72a?q=80&w=927&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1714840961579-6b072a12536e?w=1600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MjR8fHRlbm5pc3xlbnwwfHwwfHx8Mg%3D%3D",
+      "https://images.unsplash.com/photo-1448743133657-f67644da3008?w=1600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MjV8fHRlbm5pc3xlbnwwfHwwfHx8Mg%3D%3D",
+      "https://images.unsplash.com/photo-1547934045-2942d193cb49?q=80&w=2076&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1580153111806-5007b971dfe7?q=80&w=1974&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1599586120429-48281b6f0ece?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1651007852633-7d2b35950f70?q=80&w=1035&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1551773188-0801da12ddae?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1635873021329-c0af04695c9d?q=80&w=1036&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1684443726782-1d5bb1aecbd5?q=80&w=988&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1714508969012-7ac9c063b39a?q=80&w=1035&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1723980839948-95ccbffd3cb4?q=80&w=1035&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1636988742970-4c7d1e882024?q=80&w=1987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1591100464007-37ec1ccc6224?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1639161775388-db5b5d5cc9eb?q=80&w=1905&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1567220720374-a67f33b2a6b9?q=80&w=1932&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1725784937873-7e4e8a80f145?q=80&w=1064&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1723980839963-59b4a79f5b9a?q=80&w=1035&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+      "https://images.unsplash.com/photo-1595555785647-53441687d78a?q=80&w=924&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+    ];
+
+    return items[Math.floor(Math.random() * items.length)];
+  }
 
   const [datePickerMode, setDatePickerMode] = useState<'date' | 'time'>('date');
   const [tempDate, setTempDate] = useState<Date>(new Date());
   const [showPickerModal, setShowPickerModal] = useState<boolean>(false);
   const [showBookingInfoModal, setShowBookingInfoModal] = useState<boolean>(false);
+  const [showPaidInfoModal, setShowPaidInfoModal] = useState<boolean>(false);
+
+
   
-
-
-
   useEffect(() => {
     let active = true;
+
     (async () => {
-      const ipLocation = await fetchApproxLocationFromIp();
-      if (active) {
-        setNearbyOrigin(ipLocation);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          console.log('No location permission');
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Highest,
+        });
+
+        if (!active) return;
+
+        const coords = {
+          lat: Number(position.coords.latitude),
+          lng: Number(position.coords.longitude),
+        };
+
+        // Saving Host's user id
+        const userId = await getCurrentUserId()
+        setHost_id(userId?.id ?? userId)
+
+        const currentUser = await getCurrentUser();
+        const currentUserName = currentUser.name
+        setHostName(currentUserName)
+
+        console.log('LOCKED USER ORIGIN:', coords);
+
+        setSafeOrigin(coords);
+      } catch (e) {
+        console.log('Location error', e);
       }
     })();
+
     return () => {
       active = false;
     };
   }, []);
 
-  const locationSuggestions = useMemo(() => {
-    const query = location.trim().toLowerCase();
-    const sorted = sortCourtsByProximity(getDefaultCourts(), nearbyOrigin);
-    if (!query) {
-      return sorted;
+  const locationSuggestions: CourtSuggestionWithDistance[] = useMemo(() => {
+    const query = location_name.trim().toLowerCase();
+    const courts = getDefaultCourts();
+
+    const filtered = query.length
+      ? courts.filter(c =>
+          c.name.toLowerCase().includes(query)
+        )
+      : courts;
+
+    const originSnapshot = nearbyOrigin;
+
+    if (!originSnapshot) {
+      return filtered.map(c => ({ ...c }));
     }
-    return sorted.filter((court) => court.name.toLowerCase().includes(query));
-  }, [location, nearbyOrigin]);
+
+    return sortCourtsByProximity(filtered, originSnapshot)
+    .slice(0, 20)
+    .map((c) => {
+      if (c.distanceKm != null) return c;
+      const distKm = getDistanceKm(
+        { lat: originSnapshot.lat, lng: originSnapshot.lng },
+        { lat: c.lat, lng: c.lng }
+      );
+      return {
+        ...c,
+        distanceKm: distKm,
+        distanceLabel: `${distKm.toFixed(1)} km`,
+      };
+    });
+    }, [location, nearbyOrigin, originReady]);
 
   const selectGameType = (type: GameType) => {
-    setGameType(type);
+    setType(type);
     if (type === '1v1') {
-      setNumberOfPlayers(2);
-    } else if (numberOfPlayers < 3) {
-      setNumberOfPlayers(3);
+      setGame_capacity(2);
+    } else if (game_capacity < 3) {
+      setGame_capacity(3);
     }
   };
 
@@ -115,11 +225,6 @@ export default function CreateGame() {
       setTempDate(selectedDate);
     }
   };
-
-  const getGamePhoto = () => {
-    return 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60';
-  }
-
 
   const confirmDateSelection = () => {
     if (datePickerMode === 'date') {
@@ -147,40 +252,13 @@ export default function CreateGame() {
 
   const handleLocationSelect = (courtName: string, coords?: GeoCoords) => {
     const court = findCourtByName(courtName);
-    setLocation(courtName);
+    if (!court) return;
+    setLocation_name(courtName);
     setSelectedLocation(courtName);
-    setLocationCoords(
-      coords ?? (court ? { lat: court.lat, lng: court.lng } : null)
+    setLocation_cords(
+    `POINT(${court.lng} ${court.lat})`
     );
     setShowLocationSuggestions(false);
-  };
-
-  const handleUseCurrentLocation = async () => {
-    setLoadingCourts(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Location', 'Allow location access to find courts near you.');
-        return;
-      }
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const coords = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      };
-      setNearbyOrigin(coords);
-      setShowLocationSuggestions(true);
-      const nearest = sortCourtsByProximity(getDefaultCourts(), coords)[0];
-      if (nearest) {
-        handleLocationSelect(nearest.name, { lat: nearest.lat, lng: nearest.lng });
-      }
-    } catch {
-      Alert.alert('Location', 'Could not get your current location.');
-    } finally {
-      setLoadingCourts(false);
-    }
   };
 
   const handleLocationFocus = () => {
@@ -188,7 +266,7 @@ export default function CreateGame() {
   };
 
   const handleLocationChange = (text: string) => {
-    setLocation(text);
+    setLocation_name(text);
     setShowLocationSuggestions(text.length > 0 || true);
   };
 
@@ -203,46 +281,69 @@ export default function CreateGame() {
       return;
     }
     
-    if (!location.trim()) {
+    if (!location_name.trim()) {
       Alert.alert('Missing Information', 'Please enter a location for your game');
       return;
     }
     
-    if (!gameDescription.trim()) {
+    if (!description.trim()) {
       Alert.alert('Missing Information', 'Please provide a description for your game');
       return;
     }
-    
-    if (isPaid && !paymentAmount.trim()) {
-      Alert.alert('Missing Information', 'Please enter a payment amount for your paid game');
+
+    if (!level) {
+      Alert.alert('Missing Information', 'Please select a skill level for your game');
       return;
     }
 
-    const playerCount = gameType === '1v1' ? 2 : numberOfPlayers;
+    
+    if (is_paid && !payment_amount) {
+      Alert.alert('Missing Information', 'Please enter how much each player should pay');
+      return;
+    }
 
-    const gameData = {
-      gameType,
-      skillLevel,
-      joinSetting,
-      date,
-      time,
-      location,
-      locationCoords,
-      courtType,
-      isBooked,
-      numberOfPlayers: playerCount,
-      gameDescription,
-      isPaid,
-      paymentAmount,
-      title: `${gameType === '1v1' ? '1v1' : 'Group'} Tennis Game`,
-    };
-
+    if (type == 'Group' && !title) {
+      Alert.alert('Missing Information', 'Please enter a creative title for your game');
+      return;
+    }
+    
     try {
 
-    const game = await addGame(gameData);
-    const chatType = gameData.gameType === '1v1' ? 'private' : 'group';
-    const members = user ? [{ id: user.id, level: skillLevel }] : [];
-    const chatId = await createChat(chatType, gameData.title, '', game.id, members);
+    const gameImage = imageRandomizer();
+
+    if (type == '1v1') {
+      console.log('about to set the title')
+      const gameTitle = `${hostName}'s Tennis Game`
+      setTitle(gameTitle) 
+      console.log('setted the title')
+    }
+    const players_enrolled = 0;
+
+    const game = await addGame(   
+      host_id,
+      title,
+      description,
+      type,
+      location_cords,
+      `${date.split('T')[0]}T${time}:00.000Z`,
+      location_name,
+      level!,
+      is_public,
+      game_capacity,
+      is_booked,
+      payment_amount,
+      gameImage,
+      court_type,
+      is_paid,
+      players_enrolled);
+      
+    if (!game) {
+      Alert.alert('Error', 'Game creation failed');
+      return;
+    }
+    const chatType = type === '1v1' ? 'private' : 'group';
+    const members = user ? [{ id: user.id, level: level! }] : [];
+    const chatId = await createChat(chatType, game.title, '', game.id, game.image, members);
 
     await supabase
       .from('games')
@@ -281,36 +382,36 @@ export default function CreateGame() {
           {/* Game Type */}
           <View style={styles.gameTypeContainer}>
             <TouchableOpacity
-              style={[styles.gameTypeButton, gameType === '1v1' && styles.gameTypeButtonActive]}
+              style={[styles.gameTypeButton, type === '1v1' && styles.gameTypeButtonActive]}
               onPress={() => selectGameType('1v1')}
             >
               <Ionicons
                 name="person"
                 size={24}
-                color={gameType === '1v1' ? '#000' : '#666'}
+                color={type === '1v1' ? '#000' : '#666'}
               />
               <Text
                 style={[
                   styles.gameTypeText,
-                  gameType === '1v1' && styles.gameTypeTextActive,
+                  type === '1v1' && styles.gameTypeTextActive,
                 ]}
               >
                 1 VS 1
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.gameTypeButton, gameType === 'Group' && styles.gameTypeButtonActive]}
+              style={[styles.gameTypeButton, type === 'Group' && styles.gameTypeButtonActive]}
               onPress={() => selectGameType('Group')}
             >
               <Ionicons
                 name="people"
                 size={24}
-                color={gameType === 'Group' ? '#000' : '#666'}
+                color={type === 'Group' ? '#000' : '#666'}
               />
               <Text
                 style={[
                   styles.gameTypeText,
-                  gameType === 'Group' && styles.gameTypeTextActive,
+                  type === 'Group' && styles.gameTypeTextActive,
                 ]}
               >
                 Group Game
@@ -321,27 +422,27 @@ export default function CreateGame() {
           {/* Skill Level */}
           <Text style={styles.levelLable}>Skill level</Text>
           <View style={styles.skillLevelContainer}>
-            {(['Beginner', 'Intermediate', 'Advanced'] as SkillLevel[]).map((level) => (
+            {(['Beginner', 'Intermediate', 'Advanced'] as SkillLevel[]).map((skillLevel) => (
               <TouchableOpacity
-                key={level}
+                key={skillLevel}
                 style={[
                   styles.skillLevelButton,
-                  skillLevel === level && styles.skillLevelButtonActive,
+                  level === skillLevel && styles.skillLevelButtonActive,
                 ]}
-                onPress={() => setSkillLevel(level)}
+                onPress={() => setLevel(skillLevel)}
               >
-                {skillLevel === level && (
+                {level === skillLevel && (
                   <Ionicons name="checkmark" size={16} color="#19E675" style={styles.checkIcon} />
                 )}
                 <Text
                   style={[
                     styles.skillLevelText,
-                    skillLevel === level && styles.skillLevelTextActive,
+                    level === skillLevel && styles.skillLevelTextActive,
                   ]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                 >
-                  {level}
+                  {skillLevel}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -352,33 +453,33 @@ export default function CreateGame() {
           <View style={styles.joinSettingsContainer}>
             <TouchableOpacity
               style={styles.joinSettingButton}
-              onPress={() => setJoinSetting('👥 Open to Anyone')}
+              onPress={() => setIs_public(true)}
             >
               <Text
                 style={[
                   styles.joinSettingText,
-                  joinSetting === '👥 Open to Anyone' && styles.joinSettingTextActive,
+                  is_public && styles.joinSettingTextActive,
                 ]}
               >
                 👥 Open to Anyone
               </Text>
-              {joinSetting === '👥 Open to Anyone' && (
+              {is_public && (
                 <View style={styles.underline} />
               )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.joinSettingButton}
-              onPress={() => setJoinSetting('✋ Request Approval')}
+              onPress={() => setIs_public(false)}
             >
               <Text
                 style={[
                   styles.joinSettingText,
-                  joinSetting === '✋ Request Approval' && styles.joinSettingTextActive,
+                  !is_public && styles.joinSettingTextActive,
                 ]}
               >
                 ✋ Request Approval
               </Text>
-              {joinSetting === '✋ Request Approval' && (
+              {!is_public && (
                 <View style={styles.underline} />
               )}
             </TouchableOpacity>
@@ -392,10 +493,11 @@ export default function CreateGame() {
           {/* Date and Time */}
           <View style={styles.dateTimeRow}>
             <View style={styles.dateTimeColumn}>
-              <Text style={{    fontSize: 16,
+              <Text style={{    
+                fontSize: 16,
     fontWeight: '300',
     color: '#000',
-    marginBottom: 3}}>Date</Text>
+    marginBottom: 5}}>Date</Text>
               <TouchableOpacity
                 style={styles.dateTimeInput}
                 onPress={openDatePicker}
@@ -410,7 +512,7 @@ export default function CreateGame() {
               <Text style={{fontSize: 16,
     fontWeight: '300',
     color: '#000',
-    marginBottom: 3}}>Time</Text>
+    marginBottom: 5}}>Time</Text>
               <TouchableOpacity
                 style={styles.dateTimeInput}
                 onPress={openTimePicker}
@@ -430,7 +532,7 @@ export default function CreateGame() {
                 style={styles.locationTextInput}
                 placeholder="Search for courts or parks"
                 placeholderTextColor="#999"
-                value={location}
+                value={location_name}
                 onChangeText={handleLocationChange}
                 onFocus={handleLocationFocus}
               />
@@ -454,7 +556,7 @@ export default function CreateGame() {
                     <Ionicons
                       name="location"
                       size={20}
-                      color={selectedLocation === suggestion.name ? '#19E675' : '#666'}
+                      color={selectedLocation === suggestion.name ? '#ffffff' : '#666'}
                     />
                     <View style={styles.locationSuggestionTextWrap}>
                       <Text
@@ -466,23 +568,13 @@ export default function CreateGame() {
                         {suggestion.name}
                       </Text>
                       {suggestion.distanceLabel ? (
-                        <Text style={styles.locationSuggestionDistance}>
+                        <Text style={selectedLocation === suggestion.name ? styles.locationSuggestionDistanceSelected : styles.locationSuggestionDistance}>
                           {suggestion.distanceLabel} away
                         </Text>
                       ) : null}
                     </View>
                   </TouchableOpacity>
                 ))}
-              <TouchableOpacity
-                style={styles.locationSuggestionItem}
-                onPress={handleUseCurrentLocation}
-                disabled={loadingCourts}
-              >
-                <Ionicons name="navigate" size={20} color="#19E675" />
-                <Text style={styles.locationSuggestionText}>
-                  {loadingCourts ? 'Finding courts near you…' : 'Use My Current Location'}
-                </Text>
-              </TouchableOpacity>
               </View>
             )}
           </View>
@@ -490,22 +582,22 @@ export default function CreateGame() {
           {/* Court Type */}
           <Text style={styles.inputLabel}>Access</Text>
           <View style={styles.courtTypeContainer}>
-            {(['Public', 'Private/Club', 'Condo'] as CourtType[]).map((type) => (
+            {(['Public', 'Club', 'Condo'] as CourtType[]).map((type) => (
               <TouchableOpacity
                 key={type}
                 style={[
                   styles.courtTypeButton,
-                  courtType === type && styles.courtTypeButtonActive,
+                  court_type === type && styles.courtTypeButtonActive,
                 ]}
-                onPress={() => setCourtType(type)}
+                onPress={() => setCourt_type(type)}
               >
-                {courtType === type && (
+                {court_type === type && (
                   <Ionicons name="checkmark" size={16} color="#19E675" style={styles.checkIcon} />
                 )}
                 <Text
                   style={[
                     styles.courtTypeText,
-                    courtType === type && styles.courtTypeTextActive,
+                    court_type === type && styles.courtTypeTextActive,
                   ]}
                 >
                   {type}
@@ -514,48 +606,66 @@ export default function CreateGame() {
             ))}
           </View>
 
-          {/* Booking Status */}
-          <View style={styles.bookingStatusContainer}>
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => setIsBooked(!isBooked)}
-            >
-              <View style={[styles.checkbox, isBooked && styles.checkboxChecked]}>
-                {isBooked && <Ionicons name="checkmark" size={16} color="#19E675" />}
-              </View>
-              <Text style={styles.checkboxLabel}>I have booked this court</Text>
-            </TouchableOpacity>
+          {court_type !== 'Public' && (
+            <View style={styles.bookingStatusContainer}>
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => setIs_booked(!is_booked)}
+              >
+                <View style={[styles.checkbox, is_booked && styles.checkboxChecked]}>
+                  {is_booked && <Ionicons name="checkmark" size={16} color="#19E675" />}
+                </View>
+                <Text style={styles.checkboxLabel}>I have booked this court</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.infoIcon} onPress={() => setShowBookingInfoModal(true)}>
-              <Ionicons name="information-circle-outline" size={18} color="#666" />
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity style={styles.infoIcon} onPress={() => setShowBookingInfoModal(true)}>
+                <Ionicons name="information-circle-outline" size={18} color="#666" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* The Requirements Section */}
         <View style={styles.section}>
-        <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 10, marginTop: 40,}}>The Requirements</Text>
+        <Text style={{fontSize: 23, fontWeight: '800', color: '#000', marginBottom: 10, marginTop: 30,}}>The Requirements</Text>
 
           {/* Number of Players */}
-          {gameType === 'Group' && (
+          {type === 'Group' && (
           <View style={styles.numberSelectorContainer}>
             <Text style={styles.numberSelectorLabel}>Number of players</Text>
+            <View style={{ marginTop: 40, marginLeft: -280}}>
+            <Text style={styles.numberSelectorSublabel}>excluding host</Text>
+            </View>
             <View style={styles.numberSelector}>
               <TouchableOpacity
                 style={styles.numberButton}
-                onPress={() => setNumberOfPlayers(Math.max(3, numberOfPlayers - 1))}
+                onPress={() => setGame_capacity(Math.max(3, game_capacity - 1))}
               >
                 <Text style={styles.numberButtonText}>-</Text>
               </TouchableOpacity>
-              <Text style={styles.numberValue}>{numberOfPlayers}</Text>
+              <Text style={styles.numberValue}>{game_capacity}</Text>
               <TouchableOpacity
                 style={styles.numberButton}
-                onPress={() => setNumberOfPlayers(numberOfPlayers + 1)}
+                onPress={() => setGame_capacity(game_capacity + 1)}
               >
                 <Text style={styles.numberButtonText}>+</Text>
               </TouchableOpacity>
             </View>
           </View>
+          )}
+
+          {/* Game Title */}
+          {type === 'Group' && (
+            <View style={styles.section}>
+              <Text style={styles.inputLabel}>Game Title</Text>
+              <TextInput
+                style={styles.titleInput}
+                placeholder="Enter a title for your game..."
+                placeholderTextColor="#999"
+                value={title}
+                onChangeText={setTitle}
+              />
+            </View>
           )}
 
 
@@ -566,55 +676,60 @@ export default function CreateGame() {
             style={styles.descriptionInput}
             placeholder="Write a description for your game..."
             placeholderTextColor="#999"
-            value={gameDescription}
-            onChangeText={setGameDescription}
+            value={description}
+            onChangeText={setDescription}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
           />
         </View>
 
-          {/* Payment */}
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => setIsPaid(!isPaid)}
-          >
-            <View style={[styles.checkbox, isPaid && styles.checkboxChecked]}>
-              {isPaid && <Ionicons name="checkmark" size={16} color="#19E675" />}
-            </View>
-            <Text style={styles.checkboxLabel}>Paid</Text>
-          </TouchableOpacity>
+          {/* Cost sharing */}
+          {court_type !== 'Public' && (
+            <>
+              <View style={styles.bookingStatusContainer}>
+                <TouchableOpacity
+                  style={styles.checkboxContainer}
+                  onPress={() => setIs_paid(!is_paid)}
+                >
+                  <View style={[styles.checkbox, is_paid && styles.checkboxChecked]}>
+                    {is_paid && <Ionicons name="checkmark" size={16} color="#19E675" />}
+                  </View>
+                  <Text style={styles.checkboxLabel}>Split court booking cost</Text>
+                </TouchableOpacity>
 
-          {isPaid && (
-            <View style={styles.paymentInputContainer}>
-              <View style={styles.paymentInputWrapper}>
-                <Text style={styles.dollarSign}>$</Text>
-                <TextInput
-                  style={styles.paymentInput}
-                  placeholder="0.00"
-                  keyboardType="numeric"
-                  inputMode="decimal" 
-                  placeholderTextColor="#999"
-                  value={paymentAmount}
-                  onChangeText={(text) => {
-                    let cleaned = text.replace(/[^0-9.]/g, '');
-                  
-                    // only one decimal point
-                    const parts = cleaned.split('.');
-                    if (parts.length > 2) return;
-                  
-                    // limit to 2 decimal places
-                    if (parts[1]?.length > 2) return;
-                  
-                    setPaymentAmount(cleaned);
-                  }}
-                />
+                <TouchableOpacity style={styles.infoIcon} onPress={() => setShowPaidInfoModal(true)}>
+                  <Ionicons name="information-circle-outline" size={18} color="#666" />
+                </TouchableOpacity>
               </View>
-            </View>
+
+              {is_paid && (
+                <View style={styles.paymentInputContainer}>
+                  <Text style={styles.inputLabel}>Amount each player pays</Text>
+                  <View style={styles.paymentInputWrapper}>
+                    <Text style={styles.dollarSign}>$</Text>
+                    <TextInput
+                      style={styles.paymentInput}
+                      placeholder="0" // Changed to a whole number placeholder
+                      keyboardType="number-pad" // Shows a pure number pad without a decimal point on iOS
+                      placeholderTextColor="#999"
+                      value={payment_amount.toString()}
+                      onChangeText={(text) => {
+                        // Strip everything except numbers (no decimals allowed)
+                        const cleaned = text.replace(/[^0-9]/g, '');
+                        setPayment_amount(cleaned.length === 0 ? 0 : Number(cleaned));
+                      }}
+                    />
+                  </View>
+                  <Text style={styles.paymentInputHint}>
+                    Each joining player pays this amount toward the court booking you already paid for.
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
       </ScrollView>
-
       {/* Create Game Button */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
         <TouchableOpacity style={styles.createButton} onPress={handleCreateGame}>
@@ -699,18 +814,82 @@ export default function CreateGame() {
             <View style={styles.bookingInfoModalActions}>
               <TouchableOpacity 
                 style={styles.bookingInfoCancelButton}
-                onPress={() => {setShowBookingInfoModal(false); setIsBooked(false);}}
+                onPress={() => {setShowBookingInfoModal(false); setIs_booked(false);}}
               >
                 <Text style={styles.bookingInfoCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.bookingInfoConfirmButton}
                 onPress={() => {
-                  setIsBooked(true);
+                  setIs_booked(true);
                   setShowBookingInfoModal(false);
                 }}
               >
                 <Text style={styles.bookingInfoConfirmText}>{`Yes, I've booked it`}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Cost Sharing Info Modal */}
+      <Modal
+        visible={showPaidInfoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPaidInfoModal(false)}
+      >
+        <View style={styles.bookingInfoModalOverlay}>
+          <View style={[styles.bookingInfoModalContent, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.bookingInfoModalHeader}>
+              <Text style={styles.bookingInfoModalTitle}>
+                {`What does "Split court booking cost" mean?`}
+              </Text>
+              <TouchableOpacity onPress={() => setShowPaidInfoModal(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.bookingInfoModalBody}>
+              <Text style={styles.bookingInfoModalText}>
+                Use this when you have already paid to book the court and want joining players to chip in their share.
+              </Text>
+              <View style={styles.bookingInfoList}>
+                <View style={styles.bookingInfoItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
+                  <Text style={styles.bookingInfoItemText}>You paid the court booking upfront</Text>
+                </View>
+                <View style={styles.bookingInfoItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
+                  <Text style={styles.bookingInfoItemText}>Other players reimburse you for their portion</Text>
+                </View>
+                <View style={styles.bookingInfoItem}>
+                  <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
+                  <Text style={styles.bookingInfoItemText}>The amount you enter is what each joining player should pay you</Text>
+                </View>
+              </View>
+              <Text style={styles.bookingInfoNote}>
+                This is not the total court fee — enter the per-player share only. Sportiner does not handle payments; you collect from players directly.
+              </Text>
+            </View>
+            <View style={styles.bookingInfoModalActions}>
+              <TouchableOpacity
+                style={styles.bookingInfoCancelButton}
+                onPress={() => {
+                  setShowPaidInfoModal(false);
+                  setIs_paid(false);
+                  setPayment_amount(0);
+                }}
+              >
+                <Text style={styles.bookingInfoCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.bookingInfoConfirmButton}
+                onPress={() => {
+                  setIs_paid(true);
+                  setShowPaidInfoModal(false);
+                }}
+              >
+                <Text style={styles.bookingInfoConfirmText}>Yes, split the cost</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -753,7 +932,7 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   section: {
-    gap: 16,
+    gap: 10,
   },
   sectionTitle: {
     fontSize: 23,
@@ -854,7 +1033,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '300',
     color: '#000',
-    marginBottom: -9
+    marginBottom: 1
   },
   visibilityLable: {
     fontSize: 16,
@@ -868,7 +1047,7 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     color: '#000',
     marginTop: 12,
-    marginBottom: -10
+    marginBottom: -3
   },
   dateTimeRow: {
     flexDirection: 'row',
@@ -930,7 +1109,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
     zIndex: 1000,
-    maxHeight: 200,
+    maxHeight: 270,
   },
   locationSuggestionItem: {
     flexDirection: 'row',
@@ -942,6 +1121,11 @@ const styles = StyleSheet.create({
   },
   locationSuggestionTextWrap: {
     flex: 1,
+  },
+  locationSuggestionDistanceSelected: {
+    fontSize: 12,
+    color: '#ffffff',
+    marginTop: 2,
   },
   locationSuggestionDistance: {
     fontSize: 12,
@@ -993,7 +1177,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 8,
+    marginTop: 12,
   },
   checkboxContainer: {
     flexDirection: 'row',
@@ -1034,6 +1218,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#000',
   },
+  numberSelectorSublabel: {
+    fontSize: 14,
+    fontWeight: '300',
+    color: '#000',
+  },
   numberSelector: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1069,8 +1258,23 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlignVertical: 'top',
   },
+  titleInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#000',
+    marginBottom: 12,
+  },
   paymentInputContainer: {
     marginTop: 12,
+  },
+  paymentInputHint: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#666',
+    marginTop: 8,
+    lineHeight: 18,
   },
   paymentInputWrapper: {
     flexDirection: 'row',

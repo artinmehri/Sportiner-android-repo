@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
   Image,
   Dimensions,
@@ -20,7 +19,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames, Game } from '@/context/GameContext';
 import { supabase, useAuth } from '@/context/AuthContext';
-import { openGameChat } from '@/lib/openGameChat';
+import { chatNavigator } from '@/context/ChatContext';
 
 interface GameRequest {
   game_id: string;
@@ -44,158 +43,30 @@ type GameCard = {
   id: string;
   title: string;
   level?: string;
+  type?: string;
   distance?: string;
   address?: string;
   cost?: string;
   time?: string;
-  avatar?: string;
+  avatar?: string | null;
   statuses?: GameStatus[];
   date?: string;
-  image?: string;
+  image?: string | null;
   verified?: boolean,
   status?: GameStatus;
   players?: {
-    avatar: string;
+    avatar: string | null;
     name?: string;
     skillLevel?: string;
   }[];
   extraPlayers?: number;
   section?: 'hosted' | 'played';
+  location?: string;
 };
 
-const pastHostedGamesData: GameCard[] = [
-  {
-    id: '4',
-    title: "Alex's Tennis Doubles",
-    date: 'Played Oct 12',
-    level: 'Advanced',
-    distance: '500m',
-    verified: false,
-    image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
-    status: {
-      type: 'verify',
-      label: 'Verify Game & Levels',
-      color: '#002000',
-      backgroundcolor: '#19E675',
-      icon: 'checkmark',
-    },
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=100&q=80', name: 'Michael Chen', skillLevel: 'Advanced' },
-      { avatar: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?auto=format&fit=crop&w=100&q=80', name: 'Emma Wilson', skillLevel: 'Intermediate' },
-      { avatar: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=100&q=80', name: 'James Rodriguez', skillLevel: 'Beginner' },
-    ],
-    extraPlayers: 1,
-    section: 'hosted',
-  },
-  {
-    id: '7',
-    title: "Alex's Tennis Singles",
-    date: 'Played Oct 10',
-    level: 'Advanced',
-    distance: '500m',
-    verified: true,
-    image: 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=400&q=80',
-    status: {
-      type: 'verified',
-      label: 'Game & Levels Verified',
-      color: '#005124',
-      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
-      icon: 'checkmark-circle',
-    },
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', name: 'David Kim', skillLevel: 'Advanced' },
-      { avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?auto=format&fit=crop&w=100&q=80', name: 'Sophie Turner', skillLevel: 'Advanced' },
-    ],
-    section: 'hosted',
-  },
-  {
-    id: '8',
-    title: "Alex's Mixed Doubles",
-    date: 'Played Oct 8',
-    level: 'Advanced',
-    distance: '500m',
-    verified: true,
-    image: 'https://images.unsplash.com/photo-1554068394-1e8e0a0b5d8d?auto=format&fit=crop&w=400&q=80',
-    status: {
-      type: 'verified',
-      label: 'Game & Levels Verified',
-      color: '#005124',
-      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
-      icon: 'checkmark-circle',
-    },
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80', name: 'Robert Johnson', skillLevel: 'Intermediate' },
-      { avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?auto=format&fit=crop&w=100&q=80', name: 'Lisa Anderson', skillLevel: 'Intermediate' },
-      { avatar: 'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?auto=format&fit=crop&w=100&q=80', name: 'Tom Martinez', skillLevel: 'Beginner' },
-      { avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80', name: 'Nina Patel', skillLevel: 'Advanced' },
-    ],
-    section: 'hosted',
-  },
-];
+const pastHostedGamesData: GameCard[] = [];
 
-const pastPlayedGamesData: GameCard[] = [
-  {
-    id: '5',
-    title: "Alex's Tennis Single",
-    level: 'Advanced',
-    distance: '500m',
-    verified: true,
-    date: 'Played Oct 12',
-    image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
-    status: {
-      type: 'verified',
-      label: 'Game & Levels Verified',
-      color: '#005124',
-      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
-      icon: 'checkmark-circle',
-    },
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=100&q=80', name: 'Chris Taylor', skillLevel: 'Advanced' },
-    ],
-    section: 'played',
-  },
-  {
-    id: '6',
-    title: "Alex's Tennis Single",
-    level: 'Intermediate',
-    distance: '1.2km',
-    date: 'Played Oct 12',
-    verified: false,
-    image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
-    status: {
-      type: 'verified',
-      label: 'Verify Game & Levels',
-      color: '#002000',
-      backgroundcolor: '#19E675',
-      icon: 'checkmark',
-    },
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=100&q=80', name: 'Jordan Lee', skillLevel: 'Intermediate' },
-    ],
-    section: 'played',
-  },
-  {
-    id: '9',
-    title: "Alex's Tennis Doubles",
-    level: 'Beginner',
-    distance: '800m',
-    date: 'Played Oct 9',
-    verified: true,
-    image: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=400&q=80',
-    status: {
-      type: 'verified',
-      label: 'Game & Levels Verified',
-      color: '#005124',
-      backgroundcolor: 'rgba(25, 230, 117, 0.2)',
-      icon: 'checkmark-circle',
-    },
-    players: [
-      { avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80', name: 'Ryan Garcia', skillLevel: 'Beginner' },
-      { avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=100&q=80', name: 'Amanda White', skillLevel: 'Advanced' },
-    ],
-    section: 'played',
-  },
-];
+const pastPlayedGamesData: GameCard[] = [];
 
 function gameToPastCard(game: Game, section: 'hosted' | 'played'): GameCard {
   const playedLabel = game.date
@@ -366,8 +237,8 @@ export default function Games() {
       title: game.title,
       level: game.skillLevel,
       distance: 'Nearby',
-      address: game.location,
-      cost: game.isPaid ? `$${game.paymentAmount} Entry` : 'Free',
+      address: game.location_name,
+      cost: game.isPaid ? `$${game.payment_amount} Entry` : 'Free',
       time: `${formatDate(game.date)} • ${formatTime(game.time)}`,
       avatar: game.host.avatar,
       statuses: game.statuses || [],
@@ -400,7 +271,7 @@ export default function Games() {
   );
 
   const pendingRequestCount = useMemo(
-    () => incomingRequests.filter((r) => r.status === 'pending').length,
+    () => incomingRequests.length,
     [incomingRequests]
   );
 
@@ -587,25 +458,6 @@ export default function Games() {
     setSelectedGame(null);
   };
 
-  const handleJoinGame = async (gameId: string) => {
-    try {
-      const response = await requestToJoin(gameId);
-      if (response === 'joined') {
-        const playingList = await getMyPlayingGames();
-        setMyPlayingGames(playingList);
-        Alert.alert('Success', 'You joined this game.');
-      } else if (response === 'created') {
-        Alert.alert('Success', 'Request sent to join game.');
-      } else if (response === 'already_requested') {
-        Alert.alert('Info', 'You have already requested to join this game.');
-      } else if (response === 'already_member') {
-        Alert.alert('Info', 'You are already in this game.');
-      }
-    } catch (err) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to join game');
-    }
-  };
-
   const handleShareGame = async () => {
     try {
       const gameDetails = selectedGame 
@@ -633,11 +485,7 @@ export default function Games() {
 
   const openChatForGame = (game: GameCard, peerName?: string) => {
     closeAllPopups();
-    openGameChat({
-      gameId: game.id,
-      gameTitle: game.title,
-      peerName,
-    });
+    chatNavigator(game.id, game.type);
   };
 
   const handleChatPress = (game: GameCard) => {
@@ -706,99 +554,16 @@ export default function Games() {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {activeTab === 'Past' ? (
           <>
-            {/* Past Hosted Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Hosted</Text>
-              <View style={styles.horizontalScrollContainer}>
-                {pastHostingScrollIndex > 0 && (
-                  <TouchableOpacity
-                    style={styles.scrollArrowLeft}
-                    onPress={() => scrollPastHosting('left')}
-                  >
-                    <Ionicons name="chevron-back" size={24} color="#000" />
-                  </TouchableOpacity>
-                )}
-                {(pastHostingScrollIndex == 0 || pastHostingScrollIndex == 1) && (
-                  <TouchableOpacity
-                    style={styles.scrollArrowRight}
-                    onPress={() => scrollPastHosting('right')}
-                  >
-                    <Ionicons name="chevron-forward" size={24} color="#000" />
-                  </TouchableOpacity>
-                )}
-                <ScrollView
-                  ref={pastHostingScrollRef}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  pagingEnabled
-                  onScroll={(e) => {
-                    const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
-                    setPastHostingScrollIndex(index);
-                  }}
-                
-                  scrollEventThrottle={16}
-                >
-                  {pastHostedGames.map((game, index) => (
-                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === pastHostedGames.length - 1 && styles.lastCard]}>
-                      <View style={styles.cardHeader}>
-                        <TouchableOpacity onPress={() => openChatForGame(game)}>
-                          <Image source={{ uri: game.image }} style={styles.avatar} />
-                        </TouchableOpacity>
-                        <View style={styles.cardInfo}>
-                          <Text style={styles.cardTitle}>{game.title}</Text>
-                          <View style={styles.cardMetaRow}>
-                            <Text style={styles.cardLevel}>{game.level}</Text>
-                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
-                            <Text style={styles.cardDistance}>{game.distance}</Text>
-                          </View>
-                        </View>
-                      </View>
-                      <Text style={styles.cardDate}>{game.date}</Text>
-                      {game.status &&  game.verified == false && (
-                        <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
-                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
-                          <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {game.status && game.verified == true && (
-                        <View style={[styles.verifiedStatus, { backgroundColor: game.status.backgroundcolor }]}>
-                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
-                          <Text style={styles.verifyButtonText}>{game.status.label}</Text>
-                        </View>
-                      )}
-                      <Text style={styles.playersHead}>Players</Text>
-                      <View style={styles.playersSection}>
-                        <View style={styles.playersContainer}>
-                          {game.players?.slice(0, 3).map((player, index) => (
-                            <TouchableOpacity
-                              key={index}
-                              onPress={() => handleViewPlayersPress(game, player.name)}
-                            >
-                              <Image
-                                source={{ uri: player.avatar }}
-                                style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
-                              />
-                            </TouchableOpacity>
-                          ))}
-                          {game.extraPlayers && (
-                            <View style={[styles.extraPlayersBadge, { marginLeft: -8 }]}>
-                              <Text style={styles.extraPlayersText}>+{game.extraPlayers}</Text>
-                            </View>
-                          )}
-                        </View>
-                        <TouchableOpacity style={styles.moreButton} onPress={() => handleMenuPress(game)}>
-                          <Ionicons name="ellipsis-vertical" size={20} color="#000" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-
             {/* Past Played Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Played</Text>
+              <Text style={styles.sectionTitle}>Games You Played</Text>
+              
+              {pastPlayedGames.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No games played</Text>
+                  </View>
+                ) : (
+
               <View style={styles.horizontalScrollContainer}>
                 {pastPlayingScrollIndex > 0 && (
                   <TouchableOpacity
@@ -839,7 +604,7 @@ export default function Games() {
                     >
                       <View style={styles.cardHeader}>
                         <TouchableOpacity onPress={() => openChatForGame(game)}>
-                          <Image source={{ uri: game.image }} style={styles.avatar} />
+                          {game.image ? <Image source={{ uri: game.image }} style={styles.avatar} /> : <View style={styles.avatar} />}
                         </TouchableOpacity>
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
@@ -871,10 +636,10 @@ export default function Games() {
                               key={index}
                               onPress={() => handleViewPlayersPress(game, player.name)}
                             >
-                              <Image
+                              {player.avatar ? <Image
                                 source={{ uri: player.avatar }}
                                 style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
-                              />
+                              /> : <View style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]} />}
                             </TouchableOpacity>
                           ))}
                           {game.extraPlayers && (
@@ -891,93 +656,111 @@ export default function Games() {
                   ))}
                 </ScrollView>
               </View>
+            )}
+            </View>
+
+
+
+                {/* Past Hosted Section */}
+                <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Games You Hosted</Text>
+
+              {pastPlayedGames.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No games played</Text>
+                  </View>
+                ) : (
+
+              <View style={styles.horizontalScrollContainer}>
+                {pastHostingScrollIndex > 0 && (
+                  <TouchableOpacity
+                    style={styles.scrollArrowLeft}
+                    onPress={() => scrollPastHosting('left')}
+                  >
+                    <Ionicons name="chevron-back" size={24} color="#000" />
+                  </TouchableOpacity>
+                )}
+                {(pastHostingScrollIndex == 0 || pastHostingScrollIndex == 1) && (
+                  <TouchableOpacity
+                    style={styles.scrollArrowRight}
+                    onPress={() => scrollPastHosting('right')}
+                  >
+                    <Ionicons name="chevron-forward" size={24} color="#000" />
+                  </TouchableOpacity>
+                )}
+                <ScrollView
+                  ref={pastHostingScrollRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  pagingEnabled
+                  onScroll={(e) => {
+                    const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
+                    setPastHostingScrollIndex(index);
+                  }}
+                
+                  scrollEventThrottle={16}
+                >
+                  {pastHostedGames.map((game, index) => (
+                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === pastHostedGames.length - 1 && styles.lastCard]}>
+                      <View style={styles.cardHeader}>
+                        <TouchableOpacity onPress={() => openChatForGame(game)}>
+                          {game.image ? <Image source={{ uri: game.image }} style={styles.avatar} /> : <View style={styles.avatar} />}
+                        </TouchableOpacity>
+                        <View style={styles.cardInfo}>
+                          <Text style={styles.cardTitle}>{game.title}</Text>
+                          <View style={styles.cardMetaRow}>
+                            <Text style={styles.cardLevel}>{game.level}</Text>
+                            {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
+                            <Text style={styles.cardDistance}>{game.distance}</Text>
+                          </View>
+                        </View>
+                      </View>
+                      <Text style={styles.cardDate}>{game.date}</Text>
+                      {game.status &&  game.verified == false && (
+                        <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
+                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
+                          <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
+                        </TouchableOpacity>
+                      )}
+                      {game.status && game.verified == true && (
+                        <View style={[styles.verifiedStatus, { backgroundColor: game.status.backgroundcolor }]}>
+                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
+                          <Text style={styles.verifyButtonText}>{game.status.label}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.playersHead}>Players</Text>
+                      <View style={styles.playersSection}>
+                        <View style={styles.playersContainer}>
+                          {game.players?.slice(0, 3).map((player, index) => (
+                            <TouchableOpacity
+                              key={index}
+                              onPress={() => handleViewPlayersPress(game, player.name)}
+                            >
+                              {player.avatar ? <Image
+                                source={{ uri: player.avatar }}
+                                style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
+                              /> : <View style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]} />}
+                            </TouchableOpacity>
+                          ))}
+                          {game.extraPlayers && (
+                            <View style={[styles.extraPlayersBadge, { marginLeft: -8 }]}>
+                              <Text style={styles.extraPlayersText}>+{game.extraPlayers}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <TouchableOpacity style={styles.moreButton} onPress={() => handleMenuPress(game)}>
+                          <Ionicons name="ellipsis-vertical" size={20} color="#000" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+              )}
             </View>
           </>
         ) : (
           <>
-            {/* Available Games Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Available Games</Text>
-              <View style={styles.horizontalScrollContainer}>
-                {availableGamesList.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No available games</Text>
-                  </View>
-                ) : (
-                  <>
-                    {hostingScrollIndex > 0 && (
-                      <TouchableOpacity
-                        style={styles.scrollArrowLeft}
-                        onPress={() => scrollHosting('left')}
-                      >
-                        <Ionicons name="chevron-back" size={24} color="#000" />
-                      </TouchableOpacity>
-                    )}
-                    <ScrollView
-                      ref={hostingScrollRef}
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      pagingEnabled
-                      onScroll={(e) => {
-                        const index = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
-                        setHostingScrollIndex(index);
-                      }}
-                      scrollEventThrottle={16}
-                    >
-                      {availableGamesList.map((game, index) => (
-                        <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === availableGamesList.length - 1 && styles.lastCard]}>
-                          <View style={styles.cardHeader}>
-                            <TouchableOpacity onPress={() => openChatForGame(game)}>
-                              <Image source={{ uri: game.avatar }} style={styles.avatar} />
-                            </TouchableOpacity>
-                            <View style={styles.cardInfo}>
-                              <Text style={styles.cardTitle}>{game.title}</Text>
-                              <View style={styles.cardMetaRow}>
-                                <Text style={styles.cardLevel}>{game.level}</Text>
-                                {game.level && game.distance && <Text style={styles.cardMetaDot}> • </Text>}
-                                <Text style={styles.cardDistance}>{game.distance}</Text>
-                              </View>
-                            </View>
-                          </View>
-                          <View style={styles.cardDetails}>
-                            <Text style={styles.detailText}>
-                              {game.address} • {game.cost}
-                            </Text>
-                            <Text style={styles.detailText}>{game.time}</Text>
-                          </View>
-                          <View style={styles.statusContainer}>
-                            {game.statuses?.map((status: any, index: any) => (
-                              <View
-                                key={index}
-                                style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
-                              >
-                                <Ionicons name={status.icon as any} size={14} color={status.color} />
-                                <Text style={styles.statusText}>{status.label}</Text>
-                              </View>
-                            ))}
-                          </View>
-                          <TouchableOpacity 
-                            style={styles.joinButton} 
-                            onPress={() => handleJoinGame(game.id)}
-                          >
-                            <Text style={styles.joinButtonText}>Join Game</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </ScrollView>
-                    {hostingScrollIndex < availableGamesList.length - 1 && (
-                      <TouchableOpacity
-                        style={styles.scrollArrowRight}
-                        onPress={() => scrollHosting('right')}
-                      >
-                        <Ionicons name="chevron-forward" size={24} color="#000" />
-                      </TouchableOpacity>
-                    )}
-                  </>
-                )}
-              </View>
-            </View>
-
             {/* Games You're In */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Games You&apos;re In</Text>
@@ -1011,7 +794,7 @@ export default function Games() {
                         <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === playingGamesList.length - 1 && styles.lastCard]}>
                           <View style={styles.cardHeader}>
                             <TouchableOpacity onPress={() => openChatForGame(game)}>
-                              <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                              {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
                             </TouchableOpacity>
                             <View style={styles.cardInfo}>
                               <Text style={styles.cardTitle}>{game.title}</Text>
@@ -1044,9 +827,10 @@ export default function Games() {
               </View>
             </View>
 
+
             {/* My Games Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>My Games</Text>
+              <Text style={styles.sectionTitle}>Games You&apos;re Hosting</Text>
               <View style={styles.horizontalScrollContainer}>
                 {hostingGamesList.length === 0 ? (
                   <View style={styles.emptyState}>
@@ -1057,8 +841,8 @@ export default function Games() {
                     {hostingScrollIndex > 0 && (
                       <TouchableOpacity
                         style={styles.scrollArrowLeft}
-                        onPress={() => scrollHosting('left')}
-                      >
+                        onPress={() => scrollHosting('left')}                      
+                        >
                         <Ionicons name="chevron-back" size={24} color="#000" />
                       </TouchableOpacity>
                     )}
@@ -1077,7 +861,7 @@ export default function Games() {
                         <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === hostingGamesList.length - 1 && styles.lastCard]}>
                           <View style={styles.cardHeader}>
                             <TouchableOpacity onPress={() => openChatForGame(game)}>
-                              <Image source={{ uri: game.avatar }} style={styles.avatar} />
+                              {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
                             </TouchableOpacity>
                             <View style={styles.cardInfo}>
                               <Text style={styles.cardTitle}>{game.title}</Text>
@@ -1131,36 +915,6 @@ export default function Games() {
                       </TouchableOpacity>
                     )}
                   </>
-                )}
-              </View>
-            </View>
-
-            {/* Incoming Requests Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Incoming Requests</Text>
-              <View style={styles.requestsContainer}>
-                {incomingRequests.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No incoming requests</Text>
-                  </View>
-                ) : (
-                  incomingRequests.map((request) => (
-                    <TouchableOpacity
-                      key={`${request.game_id}-${request.requester_user_id}`}
-                      style={styles.requestItem}
-                      onPress={() =>
-                        openGameChat({
-                          gameId: request.game_id,
-                          gameTitle: request.game_title,
-                        })
-                      }
-                    >
-                      <View style={styles.requestContent}>
-                        <Text style={styles.requestGameTitle}>{request.game_title}</Text>
-                        <Text style={styles.requestStatus}>Status: {request.status}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))
                 )}
               </View>
             </View>
@@ -1264,7 +1018,7 @@ export default function Games() {
                       }}
                     >
                       <View style={styles.playerItem}>
-                        <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} />
+                        {player.avatar ? <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} /> : <View style={styles.playerAvatarLarge} />}
                         <View style={styles.playerInfo}>
                           <Text style={styles.playerName}>{player.name || 'Unknown Player'}</Text>
                           <Text style={styles.playerSkill}>{player.skillLevel || 'Unknown Level'}</Text>
@@ -1299,7 +1053,7 @@ export default function Games() {
                       }}
                     >
                       <View style={styles.playerItem}>
-                        <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} />
+                        {player.avatar ? <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} /> : <View style={styles.playerAvatarLarge} />}
                         <View style={styles.playerInfo}>
                           <Text style={styles.playerName}>{player.name || 'Unknown Player'}</Text>
                           <Text style={styles.playerSkill}>{player.skillLevel || 'Unknown Level'}</Text>

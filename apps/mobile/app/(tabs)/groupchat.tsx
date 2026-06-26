@@ -134,6 +134,7 @@ const GroupChatScreen = () => {
       setUserColors(prev => ({ ...prev, ...newLevels }))
     };
   
+    console.log("game title is: ", gameTitle)
     loadUserData();
   }, [messages]);
 
@@ -154,8 +155,8 @@ const GroupChatScreen = () => {
 
       const gameRow = gameRows?.[0] as GameRow | undefined;
       if (!cancelled) {
-        console.log(gameRow)
         setGame(gameRow ?? null);
+        console.log('this is group chat')
       }
 
       if (gameRow?.title && gameRow.id) {
@@ -716,7 +717,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     paddingHorizontal: 14,
     paddingBottom: 10,
-    paddingTop: 50,
+    paddingTop: 60,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E7EB',
   },

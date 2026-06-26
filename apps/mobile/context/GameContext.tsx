@@ -17,7 +17,7 @@ import {
   resolveIsPaid,
   resolveJoinSetting,
   resolveLocationName,
-  resolvePaymentAmount,
+  resolvePayment_amount,
   resolvePlayerCount,
   type GameRow,
   type JoinResult,
@@ -46,14 +46,15 @@ export interface Game {
   joinSetting: JoinSetting;
   date: string;
   time: string;
-  location: string;
+  location_name: string;
+  locationCoords?: { lat: number; lng: number } | null;
   courtType: CourtType;
   isBooked: boolean;
   numberOfPlayers: number;
   playerCount: number;
   gameDescription: string;
   isPaid: boolean;
-  paymentAmount?: string;
+  payment_amount?: string;
   chatId?: string;
   host: {
     name: string;
@@ -76,10 +77,16 @@ export interface Game {
   address?: string;
   cost?: string;
   avatar?: string;
+  image?: string | null;
 }
 
 export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players' | 'playerCount' | 'chatId'> & {
   locationCoords?: { lat: number; lng: number } | null;
+};
+
+export type GeoCoords = {
+  lat: number;
+  lng: number;
 };
 
 interface GameContextType {
@@ -89,7 +96,6 @@ interface GameContextType {
   isLoading: boolean;
   error: string | null;
   refreshGames: () => Promise<void>;
-  addGame: (game: GameInsert) => Promise<Game>;
   getGameById: (id: string) => Game | undefined;
   getAllGames: () => Promise<Game[]>;
   getMyGames: () => Promise<Game[]>;
@@ -108,14 +114,30 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
+
+export function getDistanceKm(from: GeoCoords, to: GeoCoords): number {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(to.lat - from.lat);
+  const dLng = toRad(to.lng - from.lng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(from.lat)) *
+      Math.cos(toRad(to.lat)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+
 export function formatGameSubtitle(row: GameRow | null | undefined): string {
   console.log(row)
   if (!row) return '';
-  const { meta } = parseGameMeta(row.description ?? null);
-  const location = meta?.location ?? '';
-  const when = row.time ? new Date(row.time) : null;
-  const day = when?.toLocaleDateString(undefined, { weekday: 'short' }) ?? '';
-  const time = when?.toLocaleTimeString(undefined, {
+  const location = resolveLocationName(row);
+  const gameDate = row.time ? new Date(row.time) : new Date();
+  const day = gameDate.toLocaleDateString(undefined, { weekday: 'short' }) ?? '';
+  const time = gameDate.toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
   }) ?? '';
@@ -136,8 +158,58 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
   const courtType = resolveCourtType(row) as CourtType;
   const isBooked = resolveIsBooked(row);
   const isPaid = resolveIsPaid(row);
-  const paymentAmount = resolvePaymentAmount(row);
+  const payment_amount = resolvePayment_amount(row);
   const location = resolveLocationName(row);
+
+  // Parse location coordinates from row.location_cords
+  let locationCoords: { lat: number; lng: number } | null = null;
+  if (row.location_cords) {
+    if (typeof row.location_cords === 'string') {
+      // Check if it's WKB hex format (starts with hex digits like 01)
+      if (/^[0-9a-fA-F]+$/.test(row.location_cords) && row.location_cords.length >= 40) {
+        // Parse EWKB hex format
+        const hex = row.location_cords;
+        // Convert hex to byte array
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < hex.length; i += 2) {
+          bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+        }
+        
+        const view = new DataView(bytes.buffer);
+        const byteOrder = view.getUint8(0); // 0 = big-endian, 1 = little-endian
+        const littleEndian = byteOrder === 1;
+        
+        // Geometry type at offset 1 (4 bytes)
+        const geomType = view.getUint32(1, littleEndian);
+        
+        // Check if SRID is present (bit 0x20000000 set in type)
+        const hasSrid = (geomType & 0x20000000) !== 0;
+        
+        let offset = 5; // After byte order and type
+        if (hasSrid) {
+          offset += 4; // Skip SRID (4 bytes)
+        }
+        
+        // Read X and Y coordinates (8 bytes each, double precision)
+        const x = view.getFloat64(offset, littleEndian);
+        const y = view.getFloat64(offset + 8, littleEndian);
+        
+        locationCoords = { lng: x, lat: y };
+      } else {
+        // Parse PostGIS POINT string format: "POINT(lng lat)"
+        const match = row.location_cords.match(/POINT\s*\(([-\d.]+)\s+([-\d.]+)\)/i);
+        if (match) {
+          locationCoords = { lng: parseFloat(match[1]), lat: parseFloat(match[2]) };
+        }
+      }
+    } else if (typeof row.location_cords === 'object' && 'coordinates' in row.location_cords) {
+      // Handle GeoJSON format
+      const coords = row.location_cords.coordinates;
+      if (Array.isArray(coords) && coords.length >= 2) {
+        locationCoords = { lng: coords[0], lat: coords[1] };
+      }
+    }
+  }
 
   const t = row.time ? new Date(row.time) : new Date();
   const dateIso = row.time ?? '';
@@ -171,14 +243,15 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
     joinSetting,
     date: dateIso,
     time: timeStr,
-    location,
+    location_name: location,
+    locationCoords,
     courtType,
     isBooked,
     numberOfPlayers: row.number_of_players ?? row.capacity ?? 2,
     playerCount,
     gameDescription: cleanDescription,
     isPaid,
-    paymentAmount,
+    payment_amount,
     chatId: row.chat_id ?? undefined,
     host: {
       name: host?.name ?? 'Host',
@@ -196,8 +269,53 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
     ],
     level: skillLevel,
     address: location,
-    cost: isPaid && paymentAmount ? `$${paymentAmount} Entry` : 'Free',
+    cost: isPaid && payment_amount ? `$${payment_amount} Entry` : 'Free',
+    image: row.image ?? null,
   };
+}
+
+export async function addGame( 
+  host_id: any,
+  title: string,
+  description: string,
+  type: string,
+  location_cords: any,
+  time: any,
+  location_name: string,
+  level: string,
+  is_public: any,
+  game_capacity: number,
+  is_booked: boolean,
+  payment_amount: number,
+  image: string,
+  court_type: string,
+  is_paid: boolean,
+  players_enrolled: number) {
+
+    const {data, error} = await supabase.from('games').insert({
+      host_id,
+      title,
+      description,
+      type,
+      location_cords,
+      time,
+      location_name,
+      level,
+      is_public,
+      game_capacity,
+      is_booked,
+      payment_amount,
+      image,
+      court_type,
+      is_paid,
+      players_enrolled
+    }).select().single()
+
+    if (error) {
+      console.log('error while adding game to the database')
+      console.log(error?.message)
+    }
+    return data
 }
 
 async function mapRowsToGames(rows: GameRow[]): Promise<Game[]> {
@@ -208,6 +326,52 @@ async function mapRowsToGames(rows: GameRow[]): Promise<Game[]> {
     fetchPlayerCounts(gameIds),
   ]);
   return rows.map((r) => rowToGame(r, profileMap[r.host_id], counts));
+}
+
+export function isGameInTimeFilter(
+  gameDateIso: string,
+  filter: "Today" | "Tomorrow" | "This Weekend"
+): boolean {
+  if (!gameDateIso) return false;
+
+  const gameDate = new Date(gameDateIso);
+
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  if (filter === "Today") {
+    return isSameDay(gameDate, today);
+  }
+
+  if (filter === "Tomorrow") {
+    return isSameDay(gameDate, tomorrow);
+  }
+
+  if (filter === "This Weekend") {
+    const current = new Date(today);
+    const day = current.getDay(); // 0 Sun, 6 Sat
+
+    const daysUntilSaturday = (6 - day + 7) % 7;
+
+    const saturday = new Date(current);
+    saturday.setDate(current.getDate() + daysUntilSaturday);
+
+    const sunday = new Date(saturday);
+    sunday.setDate(saturday.getDate() + 1);
+
+    return isSameDay(gameDate, saturday) || isSameDay(gameDate, sunday);
+  }
+
+  return true;
 }
 
 export function GameProvider({ children }: { children: ReactNode }) {
@@ -253,75 +417,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshGames();
   }, [refreshGames, authUserId]);
-
-  const addGame = useCallback(
-    async (gameData: GameInsert): Promise<Game> => {
-      const playerCount = gameData.gameType === '1v1' ? 2 : gameData.numberOfPlayers;
-      const normalized = { ...gameData, numberOfPlayers: playerCount };
-
-      if (!isSupabaseConfigured) {
-        const newGame: Game = {
-          ...normalized,
-          id: String(Date.now()),
-          hostId: 'local',
-          playerCount: 1,
-          host: { name: 'You', avatar: DEFAULT_AVATAR },
-          statuses: [
-            {
-              type: 'spots',
-              label: `${playerCount - 1} Left`,
-              color: '#FF9500',
-              backgroundcolor: 'rgba(255, 179, 71, 0.2)',
-              icon: 'person',
-            },
-            {
-              type: 'booked',
-              label: normalized.isBooked ? 'Court booked' : 'Court TBD',
-              color: '#19E675',
-              backgroundcolor: 'rgba(255, 179, 71, 0.2)',
-              icon: 'checkmark',
-            },
-          ],
-        };
-        setGames((prev) => [newGame, ...prev]);
-        return newGame;
-      }
-
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userData.user) {
-        throw new Error('Sign in to create a game.');
-      }
-
-      const insertedRow = await createGameRow(userData.user.id, {
-        title: gameData.title,
-        gameDescription: gameData.gameDescription,
-        gameType: gameData.gameType,
-        skillLevel: gameData.skillLevel,
-        joinSetting: gameData.joinSetting,
-        courtType: gameData.courtType,
-        isBooked: gameData.isBooked,
-        isPaid: gameData.isPaid,
-        paymentAmount: gameData.paymentAmount,
-        locationName: gameData.location,
-        locationCoords: gameData.locationCoords,
-        date: gameData.date,
-        time: gameData.time,
-        numberOfPlayers: normalized.numberOfPlayers,
-      });
-
-      const { data: host } = await supabase
-        .from('users')
-        .select('id, name, profile_picture')
-        .eq('id', userData.user.id)
-        .single();
-
-      const counts = await fetchPlayerCounts([insertedRow.id]);
-      const game = rowToGame(insertedRow, host as UserRow, counts);
-      await refreshGames();
-      return game;
-    },
-    [refreshGames]
-  );
 
   const getGameById = useCallback(
     (id: string) => games.find((game) => game.id === id),
@@ -386,8 +481,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       courtType: gameData.courtType,
       isBooked: gameData.isBooked,
       isPaid: gameData.isPaid,
-      paymentAmount: gameData.paymentAmount,
-      locationName: gameData.location,
+      payment_amount: gameData.payment_amount,
+      location_name: gameData.location_name,
       locationCoords: gameData.locationCoords,
       date: gameData.date,
       time: gameData.time,
@@ -476,7 +571,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
         isLoading,
         error,
         refreshGames,
-        addGame,
         getGameById,
         getAllGames,
         getMyGames,
