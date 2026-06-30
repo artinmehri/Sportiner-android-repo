@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import {
-  createGameRow,
   fetchAllGameRows,
   fetchGameRowsForHost,
   fetchHostProfiles,
@@ -24,7 +23,7 @@ import {
   type PlayerCounts,
   type UserRow,
 } from '@/lib/gamesDb';
-import { appendGameMeta, combineDateAndTimeToIso, parseGameMeta, type GameMeta } from '@/lib/gameMeta';
+import { parseGameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type { JoinResult, GameRow };
@@ -32,7 +31,7 @@ export type { JoinResult, GameRow };
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 type JoinSetting = '👥 Open to Anyone' | '✋ Request Approval';
-type CourtType = 'Public' | 'Private/Club' | 'Condo';
+type CourtType = 'Public' | 'Club' | 'Condo';
 
 const DEFAULT_AVATAR =
   'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60';
@@ -54,7 +53,7 @@ export interface Game {
   playerCount: number;
   gameDescription: string;
   isPaid: boolean;
-  payment_amount?: string;
+  payment_amount?: number | null;
   chatId?: string;
   host: {
     name: string;
@@ -80,10 +79,6 @@ export interface Game {
   image?: string | null;
 }
 
-export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players' | 'playerCount' | 'chatId'> & {
-  locationCoords?: { lat: number; lng: number } | null;
-};
-
 export type GeoCoords = {
   lat: number;
   lng: number;
@@ -101,7 +96,6 @@ interface GameContextType {
   getMyGames: () => Promise<Game[]>;
   getMyPlayingGames: () => Promise<Game[]>;
   getPastGames: () => Promise<{ hosted: Game[]; played: Game[] }>;
-  createGame: (gameData: GameInsert) => Promise<Game>;
   joinGame: (gameId: string) => Promise<JoinResult>;
   requestToJoin: (gameId: string) => Promise<string>;
   getIncomingRequests: () => Promise<Array<{
@@ -150,7 +144,7 @@ export function formatGameSubtitle(row: GameRow | null | undefined): string {
 function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: PlayerCounts): Game {
   const { cleanDescription, meta } = parseGameMeta(row.description ?? '');
   const skillLevel = (row.level as SkillLevel) ?? 'Beginner';
-  const capacity = row.number_of_players ?? row.capacity ?? 2;
+  const capacity = row.game_capacity ?? 2;
   const playerCount = resolvePlayerCount(row, counts);
   const spotsLeft = Math.max(0, capacity - playerCount);
   const gameType = resolveGameType(row) as GameType;
@@ -247,7 +241,7 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
     locationCoords,
     courtType,
     isBooked,
-    numberOfPlayers: row.number_of_players ?? row.capacity ?? 2,
+    numberOfPlayers: row.game_capacity ?? 2,
     playerCount,
     gameDescription: cleanDescription,
     isPaid,
@@ -463,42 +457,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return { hosted: hostedGames, played: playedGames };
   }, [authUserId]);
 
-  const createGame = useCallback(async (gameData: GameInsert): Promise<Game> => {
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userData.user) {
-      throw new Error('Sign in to create a game.');
-    }
-
-    const playerCount = gameData.gameType === '1v1' ? 2 : gameData.numberOfPlayers;
-    const normalized = { ...gameData, numberOfPlayers: playerCount };
-
-    const inserted = await createGameRow(userData.user.id, {
-      title: gameData.title,
-      gameDescription: gameData.gameDescription,
-      gameType: gameData.gameType,
-      skillLevel: gameData.skillLevel,
-      joinSetting: gameData.joinSetting,
-      courtType: gameData.courtType,
-      isBooked: gameData.isBooked,
-      isPaid: gameData.isPaid,
-      payment_amount: gameData.payment_amount,
-      location_name: gameData.location_name,
-      locationCoords: gameData.locationCoords,
-      date: gameData.date,
-      time: gameData.time,
-      numberOfPlayers: normalized.numberOfPlayers,
-    });
-
-    const { data: host } = await supabase
-      .from('users')
-      .select('id, name, profile_picture')
-      .eq('id', userData.user.id)
-      .single();
-
-    const counts = await fetchPlayerCounts([inserted.id]);
-    return rowToGame(inserted, host as UserRow, counts);
-  }, []);
-
   const joinGame = useCallback(
     async (gameId: string): Promise<JoinResult> => {
       if (!isSupabaseConfigured) {
@@ -576,7 +534,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
         getMyGames,
         getMyPlayingGames,
         getPastGames,
-        createGame,
         joinGame,
         requestToJoin,
         getIncomingRequests,
