@@ -85,7 +85,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
 
   }
 
-  const handleReport = () => {
+  const handleReport = async () => {
     Alert.alert(
       'Report User',
       'Are you sure you want to report this user?',
@@ -94,20 +94,50 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
         { 
           text: 'Report', 
           style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Report Sent',
-              'Report was successfully sent, we will further review this account!',
-              [{ text: 'OK' }]
-            );
-            setShowMenu(false);
+          onPress: async () => {
+            try {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) {
+                Alert.alert('Error', 'You must be logged in to report users');
+                return;
+              }
+
+              if (!id) {
+                Alert.alert('Error', 'Invalid user ID');
+                return;
+              }
+
+              const { error } = await supabase
+                .from('reports')
+                .insert({
+                  reporter_id: user.id,
+                  reported_user_id: id,
+                  reason: 'Inappropriate behavior'
+                });
+
+              if (error) {
+                console.log('Report error:', error);
+                Alert.alert('Error', 'Failed to submit report');
+                return;
+              }
+
+              Alert.alert(
+                'Report Sent',
+                'Report was successfully sent, we will further review this account!',
+                [{ text: 'OK' }]
+              );
+              setShowMenu(false);
+            } catch (error) {
+              console.log('Report error:', error);
+              Alert.alert('Error', 'Failed to submit report');
+            }
           }
         }
       ]
     );
   };
 
-  const handleBlock = () => {
+  const handleBlock = async () => {
     Alert.alert(
       'Block User',
       'Are you sure you want to block this user?',
@@ -116,13 +146,54 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
         { 
           text: 'Block', 
           style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'User Blocked',
-              'You have successfully blocked this user!',
-              [{ text: 'OK' }]
-            );
-            setShowMenu(false);
+          onPress: async () => {
+            try {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) {
+                Alert.alert('Error', 'You must be logged in to block users');
+                return;
+              }
+
+              if (!id) {
+                Alert.alert('Error', 'Invalid user ID');
+                return;
+              }
+
+              const { error: blockError } = await supabase
+                .from('blocked_users')
+                .insert({
+                  blocker_id: user.id,
+                  blocked_id: id
+                });
+
+              if (blockError) {
+                console.log('Block error:', blockError);
+                Alert.alert('Error', 'Failed to block user');
+                return;
+              }
+
+              const { error: moderationError } = await supabase
+                .from('moderation_events')
+                .insert({
+                  type: 'block',
+                  actor_id: user.id,
+                  target_id: id
+                });
+
+              if (moderationError) {
+                console.log('Moderation logging error:', moderationError);
+              }
+
+              Alert.alert(
+                'User Blocked',
+                'You have successfully blocked this user!',
+                [{ text: 'OK', onPress: () => handleBack() }]
+              );
+              setShowMenu(false);
+            } catch (error) {
+              console.log('Block error:', error);
+              Alert.alert('Error', 'Failed to block user');
+            }
           }
         }
       ]

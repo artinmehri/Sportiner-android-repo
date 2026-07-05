@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useGames } from '@/context/GameContext';
 import { useAuth } from '@/context/AuthContext';
 import { addUserToChat, getChatId, userInChat, getplayers, chatNavigator } from '@/context/ChatContext';
+import { supabase } from '@/lib/supabase';
 import * as Haptics from 'expo-haptics'
 
 
@@ -28,6 +29,7 @@ export default function EventDetails() {
   const [isHost, setIsHost] = useState(false)
   const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
   const [players, setPlayers] = useState<any[]>([]);
+  const [showMenu, setShowMenu] = useState(false);
 
   
   useFocusEffect(
@@ -232,17 +234,122 @@ export default function EventDetails() {
     }
   };
 
+  const handleReportHost = async () => {
+    if (!game || !user) {
+      Alert.alert('Error', 'You must be logged in to report');
+      return;
+    }
+
+    Alert.alert(
+      'Report Host',
+      'Are you sure you want to report this host?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('reports')
+                .insert({
+                  reporter_id: user.id,
+                  reported_user_id: game.hostId,
+                  reported_post_id: game.id,
+                  reason: 'Inappropriate behavior'
+                });
+
+              if (error) {
+                console.log('Report error:', error);
+                Alert.alert('Error', 'Failed to submit report');
+                return;
+              }
+
+              Alert.alert('Report Sent', 'Thank you for your report. We will review it.');
+              setShowMenu(false);
+            } catch (error) {
+              console.log('Report error:', error);
+              Alert.alert('Error', 'Failed to submit report');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleBlockHost = async () => {
+    if (!game || !user) {
+      Alert.alert('Error', 'You must be logged in to block');
+      return;
+    }
+
+    Alert.alert(
+      'Block Host',
+      'Are you sure you want to block this host?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error: blockError } = await supabase
+                .from('blocked_users')
+                .insert({
+                  blocker_id: user.id,
+                  blocked_id: game.hostId
+                });
+
+              if (blockError) {
+                console.log('Block error:', blockError);
+                Alert.alert('Error', 'Failed to block host');
+                return;
+              }
+
+              const { error: moderationError } = await supabase
+                .from('moderation_events')
+                .insert({
+                  type: 'block',
+                  actor_id: user.id,
+                  target_id: game.hostId
+                });
+
+              if (moderationError) {
+                console.log('Moderation logging error:', moderationError);
+              }
+
+              Alert.alert('Host Blocked', 'You have successfully blocked this host.');
+              setShowMenu(false);
+              router.back();
+            } catch (error) {
+              console.log('Block error:', error);
+              Alert.alert('Error', 'Failed to block host');
+            }
+          }
+        }
+      ]
+    );
+  };
+
 
   return (
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.heroContainer}>
           <Image source={game?.image} style={styles.eventImage} />
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
           >
             <Ionicons name="chevron-back" size={24} color="#000" />
           </TouchableOpacity>
+          {!isHost && (
+            <TouchableOpacity
+              style={styles.menuButton}
+              onPress={() => setShowMenu(true)}
+            >
+              <Ionicons name="ellipsis-vertical" size={24} color="#000" />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.contentCard}>
@@ -372,7 +479,7 @@ export default function EventDetails() {
       transparent={true}
       onRequestClose={() => setShowJoinedGameModal(false)}
     >
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.modalOverlay}
         activeOpacity={1}
         onPress={() => setShowJoinedGameModal(false)}
@@ -385,6 +492,40 @@ export default function EventDetails() {
               <Text style={styles.feedbackTitle}>{ membership === 'joined' ? "Joined Game" : membership === 'pending' ? "Request sent!" : null}</Text>
             </View>
           </View>
+      </TouchableOpacity>
+    </Modal>
+
+    {/* Menu Modal */}
+    <Modal
+      transparent={true}
+      visible={showMenu}
+      animationType="fade"
+      onRequestClose={() => setShowMenu(false)}
+    >
+      <TouchableOpacity
+        style={styles.menuOverlay}
+        activeOpacity={1}
+        onPress={() => setShowMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuContainer}
+          activeOpacity={1}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <TouchableOpacity style={styles.menuItem} onPress={handleReportHost}>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="alert-circle-outline" size={20} color="#FF0000" />
+            </View>
+            <Text style={styles.menuText}>Report Host</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={handleBlockHost}>
+            <View style={styles.menuIconContainer}>
+              <Ionicons name="ban-outline" size={20} color="#FF0000" />
+            </View>
+            <Text style={styles.menuText}>Block Host</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
       </ScrollView>
@@ -408,6 +549,25 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     left: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  menuButton: {
+    position: 'absolute',
+    top: 50,
+    right: 24,
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -714,11 +874,44 @@ const styles = StyleSheet.create({
    marginBottom: 1,
    marginRight: 7
  },
- feedbackTitle: {
+  feedbackTitle: {
    fontSize: 20,
    fontWeight: '700',
    color: '#19E675',
    textAlign: 'center',
    marginBottom: 3
  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  menuContainer: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 20,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  menuIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFF5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  menuText: {
+    fontSize: 16,
+    color: '#FF0000',
+    fontWeight: '500',
+  },
 });

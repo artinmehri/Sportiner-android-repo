@@ -101,27 +101,64 @@ export default function SignUp() {
         nonce: rawNonce
       });
 
-      const response = await userExists()
-
-      if (response == true) {
-        console.log("user already exists!")
-
-        isOnboarding.current = false
-
-        router.push('/(tabs)');
-      } else {
-        console.log("user doesn't exist! from apple signup in signup.tsx!")
-
-      isOnboarding.current = true;
-
       if (error) {
-        isOnboarding.current = false;
         Alert.alert('Apple sign up failed');
         return;
       }
 
-      router.push({ pathname: '/SignupFlow', params: { method: 'apple' }}); 
-    }
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData?.user;
+
+      if (!user) {
+        Alert.alert('Error', 'User session not ready');
+        return;
+      }
+
+      const response = await userExists()
+
+      if (response == true) {
+        console.log("user already exists!")
+        isOnboarding.current = false;
+        router.replace('/(tabs)');
+      } else {
+        console.log("user doesn't exist! from apple signup in signup.tsx!")
+        isOnboarding.current = true;
+
+        const fullName = credential.fullName;
+        const givenName = fullName?.givenName || '';
+        const familyName = fullName?.familyName || '';
+        const displayName = `${givenName} ${familyName}`.trim() || user.email?.split('@')[0] || 'User';
+        const userEmail = user.email || null;
+
+        let elo = 400;
+
+        const { error: dbError } = await supabase.from('users')
+        .insert([
+            {
+                id: user.id,
+                name: displayName,
+                email: userEmail,
+                age_group: '19-25',
+                level: 'beginner',
+                availability: {},
+                profile_picture: '',
+                city: 'Toronto',
+                elo: elo,
+                last_active_at: new Date().toISOString(),
+                gamesPlayed: 0,
+                reliability_score: 75
+            }
+        ]).select().single()
+
+        if (dbError) {
+          console.log('Error creating user from Apple sign-up:', dbError.message);
+          Alert.alert('Error', 'Failed to create account');
+          return;
+        }
+
+        isOnboarding.current = false;
+        router.replace('/(tabs)');
+      }
 
   } catch(error: any) {
     console.log('Apple error:', error);

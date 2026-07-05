@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, getBlockedUserIds } from '@/context/AuthContext';
 import {
   fetchAllGameRows,
   fetchGameRowsForHost,
@@ -398,7 +398,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     try {
       const rows = await fetchAllGameRows();
       const mapped = await mapRowsToGames(rows);
-      setGames(mapped);
+      
+      const blockedUserIds = await getBlockedUserIds();
+      const filteredGames = mapped.filter(game => !blockedUserIds.includes(game.hostId));
+      
+      setGames(filteredGames);
       await refreshMembership();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load games');
