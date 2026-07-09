@@ -165,3 +165,20 @@ export function useAuth(): { session: Session | null; user: User | null; loading
 
     return { session, user, loading }
 }
+
+export async function getBlockedUserIds(): Promise<string[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from('blocked_users')
+    .select('blocked_id')
+    .eq('blocker_id', user.id);
+
+  if (error) {
+    console.log('Error fetching blocked users:', error);
+    return [];
+  }
+
+  return (data ?? []).map((row: { blocked_id: string }) => row.blocked_id);
+}

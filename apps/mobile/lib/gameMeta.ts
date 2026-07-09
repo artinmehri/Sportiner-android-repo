@@ -1,10 +1,10 @@
 export type GameMeta = {
   gameType: '1v1' | 'Group';
   joinSetting: '👥 Open to Anyone' | '✋ Request Approval';
-  courtType: 'Public' | 'Private/Club' | 'Condo';
+  courtType: 'Public' | 'Club' | 'Condo';
   isBooked: boolean;
   isPaid: boolean;
-  paymentAmount?: string;
+  paymentAmount?: number;
   location: string;
 };
 

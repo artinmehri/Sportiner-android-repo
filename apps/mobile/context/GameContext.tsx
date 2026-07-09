@@ -1,8 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { getCurrentUserId } from '@/context/AuthContext';
+import { useAuth, getBlockedUserIds } from '@/context/AuthContext';
 import {
-  createGameRow,
   fetchAllGameRows,
   fetchGameRowsForHost,
   fetchHostProfiles,
@@ -26,7 +25,7 @@ import {
   type PlayerCounts,
   type UserRow,
 } from '@/lib/gamesDb';
-import { appendGameMeta, combineDateAndTimeToIso, parseGameMeta, type GameMeta } from '@/lib/gameMeta';
+import { parseGameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type { JoinResult, GameRow };
@@ -34,7 +33,7 @@ export type { JoinResult, GameRow };
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 type JoinSetting = '👥 Open to Anyone' | '✋ Request Approval';
-type CourtType = 'Public' | 'Private/Club' | 'Condo';
+type CourtType = 'Public' | 'Club' | 'Condo';
 
 const DEFAULT_AVATAR =
   'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=200&q=60';
@@ -56,7 +55,7 @@ export interface Game {
   capacity: number;
   gameDescription: string;
   isPaid: boolean;
-  payment_amount?: string;
+  payment_amount?: number | null;
   chatId?: string;
   host: {
     name: string;
@@ -82,10 +81,6 @@ export interface Game {
   image?: string | null;
 }
 
-export type GameInsert = Omit<Game, 'id' | 'host' | 'hostId' | 'statuses' | 'players' | 'playerCount' | 'chatId'> & {
-  locationCoords?: { lat: number; lng: number } | null;
-};
-
 export type GeoCoords = {
   lat: number;
   lng: number;
@@ -103,7 +98,6 @@ interface GameContextType {
   getMyGames: () => Promise<Game[]>;
   getMyPlayingGames: () => Promise<Game[]>;
   getPastGames: () => Promise<{ hosted: Game[]; played: Game[] }>;
-  createGame: (gameData: GameInsert) => Promise<Game>;
   joinGame: (gameId: string) => Promise<JoinResult>;
   requestToJoin: (gameId: string) => Promise<string>;
   getIncomingRequests: () => Promise<Array<{
@@ -439,7 +433,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     try {
       const rows = await fetchAllGameRows();
       const mapped = await mapRowsToGames(rows);
-      setGames(mapped);
+      
+      const blockedUserIds = await getBlockedUserIds();
+      const filteredGames = mapped.filter(game => !blockedUserIds.includes(game.hostId));
+      
+      setGames(filteredGames);
       await refreshMembership();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load games');
@@ -619,7 +617,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
         getMyGames,
         getMyPlayingGames,
         getPastGames,
-        createGame,
         joinGame,
         requestToJoin,
         getIncomingRequests,
