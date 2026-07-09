@@ -1,5 +1,6 @@
 import { parseGameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { findCourtByName, type GeoCoords } from '@/lib/courtSuggestions';
 
 export type JoinResult =
   | 'joined'
@@ -28,6 +29,7 @@ export type GameRow = {
   location_cords: GeographyPoint | null;
   time: string | null;
   location_name: string | null;
+  chat_id: string;
   level: string | null;
   is_public: boolean | null;
   game_capacity: number | null;
@@ -35,9 +37,25 @@ export type GameRow = {
   payment_amount: number | null;
   image: string | null;
   court_type: string | null;
-  location_name: string | null;
   is_paid: boolean | null;
   players_enrolled: number | null;
+};
+
+export type GameInsertPayload = {
+  title: string;
+  gameDescription: string;
+  gameType: '1v1' | 'Group';
+  skillLevel: string;
+  joinSetting: '👥 Open to Anyone' | '✋ Request Approval';
+  courtType: string;
+  isBooked: boolean;
+  isPaid: boolean;
+  payment_amount?: string | number | null;
+  location_name: string;
+  locationCoords?: GeoCoords | null;
+  date: string;
+  time: string;
+  numberOfPlayers: number;
 };
 
 export type UserRow = {
@@ -47,6 +65,53 @@ export type UserRow = {
 };
 
 export type PlayerCounts = Record<string, number>;
+
+function parseCategoryParts(category: string | null | undefined): {
+  gameType?: '1v1' | 'Group';
+  courtType?: string;
+} {
+  if (!category?.trim()) {
+    return {};
+  }
+
+  const parts = category
+    .split(/[|•·,-]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const normalized = category.toLowerCase();
+  const gameType = normalized.includes('1v1') || normalized.includes('1 vs 1')
+    ? '1v1'
+    : normalized.includes('group')
+      ? 'Group'
+      : undefined;
+
+  const courtType = parts.find((part) => {
+    const value = part.toLowerCase();
+    return value === 'public' || value === 'club' || value === 'condo';
+  });
+
+  return { gameType, courtType };
+}
+
+function combineDateAndTimeToIso(dateValue: string, timeValue: string): string {
+  const safeDate = dateValue?.trim();
+  const safeTime = timeValue?.trim();
+
+  if (!safeDate || !safeTime) {
+    return new Date().toISOString();
+  }
+
+  const datePart = safeDate.includes('T') ? safeDate.split('T')[0] : safeDate;
+  const normalizedTime = /^\d{2}:\d{2}$/.test(safeTime) ? `${safeTime}:00` : safeTime;
+  const combined = new Date(`${datePart}T${normalizedTime}`);
+
+  if (Number.isNaN(combined.getTime())) {
+    return new Date().toISOString();
+  }
+
+  return combined.toISOString();
+}
 
 export function resolveLocationName(row: GameRow): string {
   if (row.location_name?.trim()) {
@@ -72,6 +137,7 @@ export function resolveGameType(row: GameRow): '1v1' | 'Group' {
   return raw?.startsWith('1v1') ? '1v1' : 'Group';
 }
 
+
 export function resolveCourtType(row: GameRow): string {
   if (row.court_type?.trim()) {
     return row.court_type.trim();
@@ -86,6 +152,12 @@ export function resolveCourtType(row: GameRow): string {
 }
 
 export function resolveGameCapacity(row: GameRow): number {
+  const gameType = resolveGameType(row);
+
+  if (gameType === '1v1') {
+    return 2;
+  }
+
   return row.game_capacity ?? 2;
 }
 
@@ -331,9 +403,9 @@ export async function createGameRow(
     is_booked: payload.isBooked,
     is_paid: payload.isPaid,
     payment_amount:
-      payload.isPaid && payload.payment_amount?.trim()
+      payload.isPaid && payload.payment_amount != null && String(payload.payment_amount).trim()
         ? (() => {
-            const amount = Math.round(parseFloat(payload.payment_amount!));
+            const amount = Math.round(parseFloat(String(payload.payment_amount)));
             return Number.isFinite(amount) && amount > 0 ? amount : null;
           })()
         : null,
@@ -362,7 +434,7 @@ export async function createGameRow(
   if (playerErr && playerErr.code !== '23505') {
     throw new Error(playerErr.message);
   }
-  return 1;
+  return inserted as GameRow;
 }
 
 async function getGameCapacityState(gameId: string): Promise<{

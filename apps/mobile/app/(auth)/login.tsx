@@ -16,6 +16,28 @@ GoogleSignin.configure({
   scopes: ['profile', 'email'],
 });
 
+async function hasAcceptedTermsForCurrentUser(): Promise<boolean> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+
+  if (userError || !userId) {
+    console.log('Unable to check accepted terms: missing user session', userError?.message);
+    return false;
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('accepted_terms')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.log('Unable to check accepted terms:', error.message);
+    return false;
+  }
+
+  return data?.accepted_terms === true;
+}
 
 export default function Login () {
   const router = useRouter();
@@ -45,14 +67,26 @@ export default function Login () {
       const response = await userExists()
    
     if (response == true) {
-      console.log("user exists from google login in login.tsx!")
+      console.log("user exists from google login in login.tsx!");
+      const acceptedTerms = await hasAcceptedTermsForCurrentUser();
+
+      if (!acceptedTerms) {
+        isOnboarding.current = true;
+        router.replace({
+          pathname: '/(auth)/user-agreement' as never,
+          params: { method: 'google' },
+        });
+        return;
+      }
+
+      isOnboarding.current = false;
       router.replace('/(tabs)');
     } else {
-      console.log("user doesn't exist from google login in login.tsx!")
+      console.log("user doesn't exist from google login in login.tsx!");
       isOnboarding.current = true;
       router.replace({
-      pathname: '/SignupFlow',
-      params: { method: 'google' }
+        pathname: '/(auth)/user-agreement' as never,
+        params: { method: 'google' },
       });
     }     
     
@@ -110,47 +144,36 @@ export default function Login () {
       const response = await userExists()
 
       if (response == true) {
-        console.log("user exists from apple login in login.tsx!")
-        isOnboarding.current = false;
-        router.replace('/(tabs)');
-      } else {
-        console.log("user doesn't exist in apple login from login.tsx")
-        isOnboarding.current = true;
+        console.log("user exists from apple login in login.tsx!");
+        const acceptedTerms = await hasAcceptedTermsForCurrentUser();
 
-        const fullName = credential.fullName;
-        const givenName = fullName?.givenName || '';
-        const familyName = fullName?.familyName || '';
-        const displayName = `${givenName} ${familyName}`.trim() || user.email?.split('@')[0] || 'User';
-        const userEmail = user.email || null;
-
-        let elo = 400;
-
-        const { error: dbError } = await supabase.from('users')
-        .insert([
-            {
-                id: user.id,
-                name: displayName,
-                email: userEmail,
-                age_group: '19-25',
-                level: 'beginner',
-                availability: {},
-                profile_picture: '',
-                city: 'Toronto',
-                elo: elo,
-                last_active_at: new Date().toISOString(),
-                gamesPlayed: 0,
-                reliability_score: 75
-            }
-        ]).select().single()
-
-        if (dbError) {
-          console.log('Error creating user from Apple sign-in:', dbError.message);
-          Alert.alert('Error', 'Failed to create account');
+        if (!acceptedTerms) {
+          isOnboarding.current = true;
+          router.replace({
+            pathname: '/(auth)/user-agreement' as never,
+            params: { method: 'apple' },
+          });
           return;
         }
 
         isOnboarding.current = false;
         router.replace('/(tabs)');
+      } else {
+        console.log("user doesn't exist in apple login from login.tsx");
+        isOnboarding.current = true;
+
+        const appleDisplayName = [credential.fullName?.givenName, credential.fullName?.familyName]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+
+        router.replace({
+          pathname: '/(auth)/user-agreement' as never,
+          params: {
+            method: 'apple',
+            providerName: appleDisplayName,
+          },
+        });
       }
     } catch (error: any) {
         console.log('Apple error:', error);
@@ -175,7 +198,20 @@ export default function Login () {
         Alert.alert("You don't seem to have an account, please make one!")
       }
     } else {
-      console.log('signed in', data.session)
+      console.log('signed in', data.session);
+      const acceptedTerms = await hasAcceptedTermsForCurrentUser();
+
+      if (!acceptedTerms) {
+        isOnboarding.current = true;
+        router.replace({
+          pathname: '/(auth)/user-agreement' as never,
+          params: { method: 'email' },
+        });
+        return;
+      }
+
+      isOnboarding.current = false;
+      router.replace('/(tabs)');
     }
   };
 
@@ -185,7 +221,7 @@ export default function Login () {
         <View style={styles.pageContainer}>
 
             <View>
-                <Image style={styles.logoCircle} source={require('@/assets/images/icon.png')}></Image>
+                <Image style={styles.logoCircle} source={require('@/assets/images/icon.png')} />
                 <Text style={styles.heading}>Welcome Back</Text>
                 <Text style={styles.subheading}>Sign in to your Sportiner account</Text>
             </View>
@@ -252,7 +288,7 @@ export default function Login () {
             <Text style={styles.loginBtnText}>Log In</Text>
             </TouchableOpacity>
             <View style={styles.loginTxtContainer}>
-              <Text style={styles.loginTxt}>Don't have an account? <Text onPress={() => router.replace('/SignUp')} style={styles.login}>Sign up</Text></Text>
+              <Text style={styles.loginTxt}>Don't have an account? <Text onPress={() => router.replace('/(auth)/SignUp')} style={styles.login}>Sign up</Text></Text>
             </View>
 
         </View>
@@ -281,10 +317,8 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 70,
     height: 70,
-    marginLeft: 150,
+    alignSelf: 'center',
     borderRadius: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 10,
   },
   logoText: {

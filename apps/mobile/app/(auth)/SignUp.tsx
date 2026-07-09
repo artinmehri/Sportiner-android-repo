@@ -27,13 +27,15 @@ export default function SignUp() {
 
   const handleGoogleSignUp = async () => {
     try {
+        isOnboarding.current = true;
         await GoogleSignin.hasPlayServices();
         const userInfo = await GoogleSignin.signIn();
         const idToken = userInfo.data?.idToken;
         
         if (!idToken) {
-          console.log('user rejected')
-            return;
+          console.log('user rejected');
+          isOnboarding.current = false;
+          return;
         }
 
         const { error } = await supabase.auth.signInWithIdToken({
@@ -56,11 +58,10 @@ export default function SignUp() {
           console.log("user doesn't exist!")
           isOnboarding.current = true
 
-
           if (error) {
-            isOnboarding.current = false
-              Alert.alert('Google sign up failed');
-              return;
+            isOnboarding.current = false;
+            Alert.alert('Google sign up failed');
+            return;
           }
   
           console.log("redirecting the user to signup process!")
@@ -71,13 +72,14 @@ export default function SignUp() {
   
         }
     } catch (error) {
-      console.log(error)
+      isOnboarding.current = false;
+      console.log(error);
     }
 };
 
   const handleAppleSignUp = async () => {
     try {
-
+      isOnboarding.current = true;
       const rawNonce = Math.random().toString(36).substring(2, 10);
 
       const hashedNonce = await Crypto.digestStringAsync(
@@ -90,7 +92,7 @@ export default function SignUp() {
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
-        nonce: hashedNonce
+        nonce: hashedNonce,
       });
 
       const appleDisplayName = [credential.fullName?.givenName, credential.fullName?.familyName]
@@ -99,6 +101,7 @@ export default function SignUp() {
         .trim();
 
       if (!credential.identityToken) {
+        isOnboarding.current = false;
         Alert.alert('Error', 'Login failed, please try again!');
         return;
       }
@@ -106,82 +109,39 @@ export default function SignUp() {
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
         token: credential.identityToken,
-        nonce: rawNonce
+        nonce: rawNonce,
       });
 
       if (error) {
+        isOnboarding.current = false;
         Alert.alert('Apple sign up failed');
         return;
       }
 
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData?.user;
+      const response = await userExists();
 
-      if (!user) {
-        Alert.alert('Error', 'User session not ready');
+      if (response === true) {
+        console.log('user already exists!');
+        isOnboarding.current = false;
+        router.replace('/(tabs)');
         return;
       }
 
-      const response = await userExists()
+      console.log("user doesn't exist! from apple signup in signup.tsx!");
+      isOnboarding.current = true;
 
-      if (response == true) {
-        console.log("user already exists!")
-        isOnboarding.current = false;
-        router.replace('/(tabs)');
-      } else {
-        console.log("user doesn't exist! from apple signup in signup.tsx!")
-        isOnboarding.current = true;
-
-        const fullName = credential.fullName;
-        const givenName = fullName?.givenName || '';
-        const familyName = fullName?.familyName || '';
-        const displayName = `${givenName} ${familyName}`.trim() || user.email?.split('@')[0] || 'User';
-        const userEmail = user.email || null;
-
-        let elo = 400;
-
-        const { error: dbError } = await supabase.from('users')
-        .insert([
-            {
-                id: user.id,
-                name: displayName,
-                email: userEmail,
-                age_group: '19-25',
-                level: 'beginner',
-                availability: {},
-                profile_picture: '',
-                city: 'Toronto',
-                elo: elo,
-                last_active_at: new Date().toISOString(),
-                gamesPlayed: 0,
-                reliability_score: 75
-            }
-        ]).select().single()
-
-        if (dbError) {
-          console.log('Error creating user from Apple sign-up:', dbError.message);
-          Alert.alert('Error', 'Failed to create account');
-          return;
-        }
-
-        isOnboarding.current = false;
-        router.replace('/(tabs)');
-      }
-
-      router.push({
+      router.replace({
         pathname: '/(auth)/user-agreement' as never,
         params: {
           method: 'apple',
           providerName: appleDisplayName,
         },
-      }); 
+      });
+    } catch (error: any) {
+      isOnboarding.current = false;
+      console.log('Apple error:', error);
     }
-
-  } catch(error: any) {
-    console.log('Apple error:', error);
-    
-  }
-};
+  };
 
 
   const handleEmailSignUp = () => {
@@ -235,7 +195,7 @@ export default function SignUp() {
             </TouchableOpacity>
 
             <View style={styles.loginTxtContainer}>
-              <Text style={styles.loginTxt}>Already a member? <Text onPress={() => router.replace({ pathname: '/(auth)/user-agreement' as never, params: { next: 'login' } })} style={styles.login}>Log in</Text></Text>
+              <Text style={styles.loginTxt}>Already a member? <Text onPress={() => router.replace('/(auth)/login')} style={styles.login}>Log in</Text></Text>
             </View>
 
           </BottomSheetView>

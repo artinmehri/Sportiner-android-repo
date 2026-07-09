@@ -2,35 +2,70 @@ import 'react-native-reanimated';
 import { useEffect, useState, useRef } from 'react';
 import { isOnboarding, supabase } from '@/context/AuthContext';
 import { Slot, useRouter } from 'expo-router';
+import type { Session } from '@supabase/supabase-js';
 import { GameTicketsProvider } from '@/context/GameTicketsContext';
 import { GameProvider } from '@/context/GameContext';
 import * as SplashScreen from 'expo-splash-screen';
 
 SplashScreen.preventAutoHideAsync();
 
+async function userHasAcceptedTerms(session: Session | null): Promise<boolean> {
+    const userId = session?.user?.id;
+
+    if (!userId) {
+        return false;
+    }
+
+    const { data, error } = await supabase
+        .from('users')
+        .select('accepted_terms')
+        .eq('id', userId)
+        .maybeSingle();
+
+    if (error) {
+        console.log('Error checking accepted terms:', error.message);
+        return false;
+    }
+
+    return data?.accepted_terms === true;
+}
+
 export default function RootLayout() {
     const [session, setSession] = useState<boolean | null>(null);
     const router = useRouter();
     const splashHidden = useRef(false);
-    const isInitialLoad = useRef(true); // ✅ tracks if this is the first session check
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(!!session);
-            isInitialLoad.current = false;
+        supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (!session) {
+                setSession(false);
+                return;
+            }
+
+            const acceptedTerms = await userHasAcceptedTerms(session);
+            setSession(acceptedTerms);
         });
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN') {
                 if (isOnboarding.current) return;
-                setSession(true)
+
+                setTimeout(async () => {
+                    const acceptedTerms = await userHasAcceptedTerms(session);
+
+                    if (!acceptedTerms) {
+                        return;
+                    }
+
+                    setSession(true);
+                }, 0);
+
                 return;
             }
 
-            // ✅ Only redirect on SIGNED_OUT (logout) or initial session restore
             if (event === 'SIGNED_OUT') {
                 setSession(false);
-                router.replace('/SignUp')
+                router.replace('/(auth)/SignUp')
             }
         });
 

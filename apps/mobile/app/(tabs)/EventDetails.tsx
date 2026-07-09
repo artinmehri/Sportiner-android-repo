@@ -8,7 +8,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useGames, userInGame } from '@/context/GameContext';
 import { useAuth } from '@/context/AuthContext';
 import { addUserToChat, getChatId, userInChat, getplayers, chatNavigator } from '@/context/ChatContext';
-import { supabase } from '@/lib/supabase';
 import * as Haptics from 'expo-haptics'
 
 

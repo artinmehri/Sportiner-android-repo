@@ -489,17 +489,22 @@ export default function Games() {
           text: 'Yes',
           style: 'destructive',
           onPress: async () => {
-            const success = await deleteGameFromDb(gameId);
+            try {
+              const success = await deleteGameFromDb(gameId);
 
-            if (!success) {
+              if (!success) {
+                Alert.alert('Error', 'Could not cancel this game. Please try again.');
+                return;
+              }
+
+              setMyGames((current) => current.filter((game) => game.id !== gameId));
+              setMyHostedGames((current) => current.filter((game) => game.id !== gameId));
+              await refreshGames();
+              Alert.alert('Game Cancelled', 'Your hosted game has been cancelled.');
+            } catch (error) {
+              console.log('Failed cancelling hosted game:', error);
               Alert.alert('Error', 'Could not cancel this game. Please try again.');
-              return;
             }
-
-            setMyGames((current) => current.filter((game) => game.id !== gameId));
-            setMyHostedGames((current) => current.filter((game) => game.id !== gameId));
-            await refreshGames();
-            Alert.alert('Game Cancelled', 'Your hosted game has been cancelled.');
           },
         },
       ],
