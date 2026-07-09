@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.26.0",
   "scripts": {
-    "dev": "pnpm -r dev",
+    "dev": "pnpm --filter meetaro dev",
     "mobile:dev": "pnpm --filter mobile start",
     "expo:start": "pnpm --filter mobile start",
     "mobile:ios": "pnpm --filter mobile ios",

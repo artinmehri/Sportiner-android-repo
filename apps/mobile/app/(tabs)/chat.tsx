@@ -22,7 +22,7 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker'
 import * as Clipboard from 'expo-clipboard';
-import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming, useDerivedValue } from 'react-native-reanimated';
 import { deleteMessage, editMessage, findOtherPlayer, getGameInfo, getMessages, replyMessage, sendMessage } from '@/context/ChatContext';
 import { getCurrentUserId, getUser, } from '@/context/AuthContext';
 import { formatGameSubtitle, type GameRow } from '@/context/GameContext';
@@ -51,12 +51,11 @@ const SWIPE_THRESHOLD = 80;
 type SwipeableMessageProps = {
   message: Message;
   onReply: (message: Message) => void;
-  onSwipeProgress?: (message: Message | null) => void;
   children: React.ReactNode;
 };
 
 
-const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: SwipeableMessageProps) => {
+const SwipeableMessage = ({ message, onReply, children }: SwipeableMessageProps) => {
   const translateX = useSharedValue(0);
 
   const panGesture = Gesture.Pan()
@@ -64,9 +63,6 @@ const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: Swipe
     .onUpdate((e) => {
       if (e.translationX >= 0) {
         translateX.value = e.translationX;
-        if (e.translationX > 20 && onSwipeProgress) {
-          runOnJS(onSwipeProgress)(message);
-        }
       }
     })
     .onEnd((e) => {
@@ -74,9 +70,6 @@ const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: Swipe
         runOnJS(onReply)(message);
       }
       translateX.value = withTiming(0, { duration: 200 });
-      if (onSwipeProgress) {
-        runOnJS(onSwipeProgress)(null);
-      }
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -124,7 +117,7 @@ const ChatScreen = () => {
       );
   
       const newNames: Record<string, string> = {};
-      users.forEach(user => {
+      users.forEach((user: { id: string | number; name: string; }) => {
         if (user) {
           newNames[user.id] = user.name;
         }
@@ -178,7 +171,7 @@ const ChatScreen = () => {
 
       if (messages) {
         setMessages(
-          messages.map((message) => {
+          messages.map((message: { id: any; sender_id: any; message: any; type: any; image: any; reply_to: any; is_reply: any; created_at: any; updated_at: any; is_edited: any; status: any; }) => {
             return {
               id: message.id,
               sender_id: message.sender_id,
@@ -221,7 +214,6 @@ const ChatScreen = () => {
   const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showImage, setShowImage] = useState<string | null>(null);
-  const [swipeReplyMessage, setSwipeReplyMessage] = useState<Message | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
@@ -267,62 +259,53 @@ const ChatScreen = () => {
       // Replying to a message
     } else if (isReplying && replyInfo) {
 
-    if (currentUserId && replyInfo?.id && id) {
-      console.log('replying message')
-      await replyMessage(replyInfo.id, 'text', inputText.trim(), id)
-      setIsReplying(false);
-      inputRef.current?.focus();
-    }
-
-    if (currentUserId) {
-    const newReply: Message = {
-      sender_id: currentUserId,
-      message: inputText.trim(),
-      type: 'text',
-      reply_to: replyInfo.id,
-      is_reply: true,
-    };
-
-    setMessages([...messages, newReply]);
-  }
-
-    setInputText('');
-    setSelectedMedia(null);
-    setReplyInfo(null);
-    setIsReplying(false);
-    setSwipeReplyMessage(null); 
-
-
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    // Sending a normal message 
-    } else {
-      if (currentUserId) {
-      const newMessage: Message = {
-        sender_id: currentUserId,
-        message: inputText.trim(),
-        type: 'text'
-      };
-    
-      if (id) {
-      await sendMessage(inputText.trim(), 'text', id)
+      if (!replyInfo.id || !id) {
+        Alert.alert('Could not send reply', 'Please try again in a moment.');
+        return;
       }
-      
-      setMessages([...messages, newMessage]);
 
+      console.log('replying message')
+      const savedReply = await replyMessage(replyInfo.id, 'text', inputText.trim(), id)
 
-      // Reseting both text and media after sending
+      if (!savedReply) {
+        Alert.alert('Could not send reply', 'Please try again.');
+        return;
+      }
+
+      setMessages(prev => [...prev, savedReply]);
       setInputText('');
       setSelectedMedia(null);
       setReplyInfo(null);
       setIsReplying(false);
-      
+      inputRef.current?.focus();
+
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
-    };
+
+    // Sending a normal message 
+    } else {
+      if (id) {
+        const savedMessage = await sendMessage(inputText.trim(), 'text', id)
+
+        if (!savedMessage) {
+          Alert.alert('Could not send message', 'Please try again.');
+          return;
+        }
+      
+        setMessages(prev => [...prev, savedMessage]);
+
+
+        // Reseting both text and media after sending
+        setInputText('');
+        setSelectedMedia(null);
+        setReplyInfo(null);
+        setIsReplying(false);
+      
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
   }
 }   
 
@@ -332,7 +315,6 @@ const ChatScreen = () => {
   }
 
   const handleReply = (message: Message) => {
-    setSwipeReplyMessage(null)
     setReplyInfo(message)
     setIsReplying(true)
     inputRef.current?.focus();
@@ -403,33 +385,19 @@ const ChatScreen = () => {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender_id === currentUserId;
-    const repliedMessage = item.is_reply
-    const isSwipeReplying = swipeReplyMessage?.id === item.id;
+    const repliedMessage = !!item.reply_to
 
     return (
       <SwipeableMessage
         message={item}
         onReply={handleReply}
-        onSwipeProgress={setSwipeReplyMessage}
       >
-
-        
         <View style={styles.messageWrapper}>
-
-
-        {isSwipeReplying && (
-                <View style={styles.swipeReplyIndicator}>
-                  <Ionicons style={styles.swipeReplyIcon} name="arrow-undo" size={30} color="#22C55E" />
-                </View>
-            )}
-
-
           <TouchableOpacity
             onLongPress={(e) => handleLongPress(item, e)}
             style={[
               styles.messageBubble,
               isMe ? styles.sentMessage : styles.receivedMessage,
-              isSwipeReplying && styles.swipeReplyingMessage,
             ]}
           >
     
@@ -564,12 +532,6 @@ const ChatScreen = () => {
 
 
         <View style={inputStyling}>
-            <TouchableOpacity 
-              style={styles.composerIconButton}
-              onPress={pickImgae}
-            >
-              <Ionicons name="image-outline" size={20} color="#111" />
-            </TouchableOpacity>
 
             <TextInput
               ref={inputRef}

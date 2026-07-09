@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { getCurrentUserId } from '@/context/AuthContext';
 import {
   createGameRow,
   fetchAllGameRows,
@@ -12,6 +13,7 @@ import {
   fetchUserGameMembership,
   joinGame as joinGameDb,
   resolveCourtType,
+  resolveGameCapacity,
   resolveGameType,
   resolveIsBooked,
   resolveIsPaid,
@@ -50,8 +52,8 @@ export interface Game {
   locationCoords?: { lat: number; lng: number } | null;
   courtType: CourtType;
   isBooked: boolean;
-  numberOfPlayers: number;
-  playerCount: number;
+  players_enrolled: number;
+  capacity: number;
   gameDescription: string;
   isPaid: boolean;
   payment_amount?: string;
@@ -130,6 +132,20 @@ export function getDistanceKm(from: GeoCoords, to: GeoCoords): number {
   return R * c;
 }
 
+function getCutoffTime(): Date {
+  return new Date(Date.now() + 2 * 60 * 60 * 1000);
+}
+
+function isPastGame(gameTime: string): boolean {
+  if (!gameTime) return false;
+  return new Date(gameTime) < getCutoffTime();
+}
+
+function isUpcomingGame(gameTime: string): boolean {
+  if (!gameTime) return false;
+  return new Date(gameTime) >= getCutoffTime();
+}
+
 
 export function formatGameSubtitle(row: GameRow | null | undefined): string {
   console.log(row)
@@ -147,10 +163,10 @@ export function formatGameSubtitle(row: GameRow | null | undefined): string {
 }
 
 
-function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: PlayerCounts): Game {
+export function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: PlayerCounts): Game {
   const { cleanDescription, meta } = parseGameMeta(row.description ?? '');
   const skillLevel = (row.level as SkillLevel) ?? 'Beginner';
-  const capacity = row.number_of_players ?? row.capacity ?? 2;
+  const capacity = resolveGameCapacity(row);
   const playerCount = resolvePlayerCount(row, counts);
   const spotsLeft = Math.max(0, capacity - playerCount);
   const gameType = resolveGameType(row) as GameType;
@@ -236,7 +252,7 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
 
   return {
     id: row.id,
-    hostId: row.host_id,
+    hostId: row.host_id ?? '',
     title: row.title ?? 'Game',
     gameType,
     skillLevel,
@@ -247,8 +263,8 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
     locationCoords,
     courtType,
     isBooked,
-    numberOfPlayers: row.number_of_players ?? row.capacity ?? 2,
-    playerCount,
+    capacity: resolveGameCapacity(row),
+    players_enrolled: playerCount,
     gameDescription: cleanDescription,
     isPaid,
     payment_amount,
@@ -275,15 +291,15 @@ function rowToGame(row: GameRow, host: UserRow | null | undefined, counts: Playe
 }
 
 export async function addGame( 
-  host_id: any,
+  host_id: string,
   title: string,
   description: string,
   type: string,
-  location_cords: any,
-  time: any,
+  location_cords: string | null,
+  time: string,
   location_name: string,
   level: string,
-  is_public: any,
+  is_public: boolean,
   game_capacity: number,
   is_booked: boolean,
   payment_amount: number,
@@ -292,7 +308,7 @@ export async function addGame(
   is_paid: boolean,
   players_enrolled: number) {
 
-    const {data, error} = await supabase.from('games').insert({
+    const { data, error } = await supabase.from('games').insert({
       host_id,
       title,
       description,
@@ -308,24 +324,43 @@ export async function addGame(
       image,
       court_type,
       is_paid,
-      players_enrolled
-    }).select().single()
+      players_enrolled,
+    }).select().single();
 
     if (error) {
-      console.log('error while adding game to the database')
-      console.log(error?.message)
+      console.log('error while adding game to the database');
+      console.log(error.message);
+      return null;
     }
-    return data
+
+    if (data?.id && host_id) {
+      const { error: playerErr } = await supabase.from('game_players').insert({
+        game_id: data.id,
+        user_id: host_id,
+        role: 'host',
+      });
+
+      if (playerErr && playerErr.code !== '23505') {
+        console.log('error while adding host to game_players');
+        console.log(playerErr.message);
+      }
+    }
+
+    return data;
+}
+
+export async function suggestedGames() {
+
 }
 
 async function mapRowsToGames(rows: GameRow[]): Promise<Game[]> {
-  const hostIds = [...new Set(rows.map((r) => r.host_id))];
+  const hostIds = [...new Set(rows.map((r) => r.host_id).filter(Boolean))] as string[];
   const gameIds = rows.map((r) => r.id);
   const [profileMap, counts] = await Promise.all([
     fetchHostProfiles(hostIds),
     fetchPlayerCounts(gameIds),
   ]);
-  return rows.map((r) => rowToGame(r, profileMap[r.host_id], counts));
+  return rows.map((r) => rowToGame(r, r.host_id ? profileMap[r.host_id] : undefined, counts));
 }
 
 export function isGameInTimeFilter(
@@ -448,7 +483,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return [];
     }
     const rows = await fetchUpcomingGameRowsForPlayer(authUserId);
-    return mapRowsToGames(rows);
+    const games = await mapRowsToGames(rows);
+
+    return games.filter((g) => isUpcomingGame(g.date));
   }, [authUserId]);
 
   const getPastGames = useCallback(async (): Promise<{ hosted: Game[]; played: Game[] }> => {
@@ -460,7 +497,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       mapRowsToGames(hosted),
       mapRowsToGames(played),
     ]);
-    return { hosted: hostedGames, played: playedGames };
+    return {
+      hosted: hostedGames.filter((g) => isPastGame(g.date)),
+      played: playedGames.filter((g) => isPastGame(g.date)),
+    };
   }, [authUserId]);
 
   const createGame = useCallback(async (gameData: GameInsert): Promise<Game> => {
@@ -469,7 +509,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       throw new Error('Sign in to create a game.');
     }
 
-    const playerCount = gameData.gameType === '1v1' ? 2 : gameData.numberOfPlayers;
+    const playerCount = gameData.gameType === '1v1' ? 2 : gameData.capacity;
     const normalized = { ...gameData, numberOfPlayers: playerCount };
 
     const inserted = await createGameRow(userData.user.id, {
@@ -539,6 +579,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (result === 'full') {
         throw new Error('This game is full.');
       }
+      if (result === 'not_found') {
+        throw new Error('This game is no longer available.');
+      }
       if (result === 'not_authenticated') {
         throw new Error('User not authenticated');
       }
@@ -585,6 +628,151 @@ export function GameProvider({ children }: { children: ReactNode }) {
       {children}
     </GameContext.Provider>
   );
+}
+
+export async function gameVerified(gameId: string, playerId: string) {
+  const { data: member, error } = await supabase
+    .from('game_players')
+    .select('game_verified')
+    .eq('game_id', gameId)
+    .eq('user_id', playerId)
+    .maybeSingle();
+
+  if (error) {
+    console.log(error.message);
+    return false;
+  }
+
+  return member?.game_verified || false;
+}
+
+export async function getClosestOpenGames() {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('games')
+    .select('*')
+    .gt('time', oneHourAgo)
+    .order('time', { ascending: true });
+
+  if (error) {
+    console.log('Error fetching closest games:', error.message);
+    return [];
+  }
+
+  if (!data) return [];
+
+  const openGames = data.filter((game: { players_enrolled: any; game_capacity: any; time: any; }) => {
+    const enrolled = game.players_enrolled;
+    const capacity = game.game_capacity;
+
+    if (!game.time) return false;
+
+    return enrolled < capacity;
+  });
+
+  return openGames.slice(0, 2);
+}
+
+// Checking if the user is already in game
+export async function userInGame(gameId: string) {
+  if (!gameId) return false;
+
+  const userId = await getCurrentUserId();
+
+  if (!userId) return false;
+
+  const { data: member, error } = await supabase
+      .from('game_players')
+      .select('id')
+      .eq('game_id', gameId)
+      .eq('user_id', userId.id)
+      .maybeSingle();
+
+      if (error) {
+          console.log(error.message)
+          return false
+      }
+
+      if (member === null) {
+          console.log('returned null!')
+          return false
+      }
+      return !!member;
+}
+
+
+export async function deleteGame(gameId: string) {
+  if (!gameId) return false;
+
+  const user = await getCurrentUserId();
+
+  if (!user?.id) {
+    console.log('Error deleting game: missing current user');
+    return false;
+  }
+
+  const deleteHostedGame = async () => {
+    return supabase
+      .from('games')
+      .delete()
+      .eq('id', gameId)
+      .eq('host_id', user.id);
+  };
+
+  const { error: gameError } = await deleteHostedGame();
+
+  if (!gameError) {
+    return true;
+  }
+
+  console.log('Error deleting game first:', gameError.message, gameError.code);
+
+  const needsPlayerCleanup = gameError.code === '23503';
+
+  if (!needsPlayerCleanup) {
+    return false;
+  }
+
+  const { error: playersError } = await supabase
+    .from('game_players')
+    .delete()
+    .eq('game_id', gameId);
+
+  if (playersError) {
+    console.log('Error deleting game players after game delete failed:', playersError.message, playersError.code);
+    return false;
+  }
+
+  const { error: retryGameError } = await deleteHostedGame();
+
+  if (retryGameError) {
+    console.log('Error deleting game after player cleanup:', retryGameError.message, retryGameError.code);
+    return false;
+  }
+
+  return true;
+}
+
+export async function withdrawRequest(gameId: string) {
+  if (!gameId) return false;
+
+  const user = await getCurrentUserId();
+
+  if (!user?.id) return false;
+
+  const { error } = await supabase
+    .from('game_players')
+    .delete()
+    .eq('game_id', gameId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    console.log('Error withdrawing from game:', error.message);
+    return false;
+  }
+
+  return true;
 }
 
 export function useGames() {

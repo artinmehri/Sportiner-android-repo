@@ -9,9 +9,10 @@ import {
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
-import { useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import { getConversations } from "@/context/ChatContext";
+import { getCurrentUserId } from "@/context/AuthContext";
 
 const DEFAULT_AVATAR =
   "https://images.unsplash.com/photo-1622668460389-f92e9ed21616?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
@@ -27,6 +28,7 @@ type InboxChat = {
   time: string;
   unread: boolean;
 };
+
 
 function formatChatTimestamps(iso: string | null | undefined) {
   if (!iso) return { day: "", time: "", timeElapsed: "" };
@@ -51,21 +53,26 @@ function formatChatTimestamps(iso: string | null | undefined) {
   };
 }
 
-function toInboxChat(row: {
-  id: string;
-  type: string;
-  name: string | null;
-  photo: string | null;
-  last_message: string | null;
-  last_message_at: string | null;
-  conversation_members?: { last_read_at: string | null }[];
-}): InboxChat {
+function toInboxChat(
+  row: {
+    id: string;
+    type: string;
+    name: string | null;
+    photo: string | null;
+    last_message: string | null;
+    last_message_at: string | null;
+    last_message_id: string | null;
+    last_message_sender_id: string | null;
+    conversation_members?: { last_read_message_id: string | null }[];
+  },
+  currentUserId: string
+): InboxChat {
   const { day, time, timeElapsed } = formatChatTimestamps(row.last_message_at);
-  const lastReadAt = row.conversation_members?.[0]?.last_read_at;
+  const lastReadMessageId = row.conversation_members?.[0]?.last_read_message_id;
   const unread =
-    !!row.last_message_at &&
-    (!lastReadAt ||
-      new Date(row.last_message_at) > new Date(lastReadAt));
+  !!row.last_message_id &&
+  row.last_message_id !== lastReadMessageId &&
+  row.last_message_sender_id !== currentUserId;
 
   return {
     id: row.id,
@@ -81,23 +88,34 @@ function toInboxChat(row: {
 }
 
 export default function Inbox() {
+  const [currentUserId, setCurrentUserId] = useState<any | null>('');
   const [selectedFilter, setSelectedFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [chats, setChats] = useState<InboxChat[]>([]);
   const router = useRouter();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const rows = await getConversations();
-      if (!cancelled) {
-        setChats((rows ?? []).map(toInboxChat));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      (async () => {
+        const rows = await getConversations();
+        const currentUserId = await getCurrentUserId();
+        if (cancelled) return;
+
+        setCurrentUserId(currentUserId);
+        if (currentUserId) {
+          setChats((rows ?? []).map(row => toInboxChat(row, currentUserId.id)));
+        } else {
+          setChats([]);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -199,7 +217,7 @@ function ChatItem({
       style={styles.chatItem}
       onPress={() => isGroupChat ? router.push({ pathname: "/(tabs)/groupchat", params: { id: chat.id} }) : router.push({ pathname: "/(tabs)/chat", params: { id: chat.id }})}
     >
-      <Image source={{ uri: chat.avatar }} style={styles.avatar} />
+      <Image source={{ uri: chat.avatar || DEFAULT_AVATAR }} style={styles.avatar} />
       <View style={styles.chatContent}>
         <Text style={styles.chatName}>{chat.name}</Text>
         <Text style={[styles.chatMessage, isUnread && styles.unreadMessage]}>

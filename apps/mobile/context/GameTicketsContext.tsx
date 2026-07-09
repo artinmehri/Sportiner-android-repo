@@ -54,6 +54,8 @@ function joinResultMessage(result: JoinResult): string | null {
       return 'You already requested this game.';
     case 'full':
       return 'This game is full.';
+    case 'not_found':
+      return 'This game is no longer available.';
     case 'not_authenticated':
       return 'Sign in to request a spot.';
     case 'not_configured':

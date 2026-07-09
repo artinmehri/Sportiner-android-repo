@@ -2,16 +2,15 @@ import { useEffect, useState } from "react";
 import FirstOnbPage from "./firstOnbPage";
 import SecondOnbPage from "./secondOnbPage";
 import ThirdOnbPage from "./thirdOnbPage";
-import { supabase, isOnboarding, getUserId } from "@/context/AuthContext";
-import { router, useLocalSearchParams, useRouter } from "expo-router";
+import { supabase, isOnboarding, getCurrentUserId } from "@/context/AuthContext";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert } from "react-native";
 import FifthOnbPage from "./fifthOnbPage";
-import FourthOnbPage from "./fourthOnbPage";
 import { decode } from 'base64-arraybuffer';
 
 
 export default function SignupFlow() {
-    const { method } = useLocalSearchParams();
+    const { method, acceptedTerms, providerName } = useLocalSearchParams();
     const router = useRouter()
     type SignupData = {
         name: string,
@@ -28,6 +27,7 @@ export default function SignupFlow() {
         created_at: string,
         gamesPlayed: number;
         reliability_score: number;
+        method?: string;
     }
     
     const [step, setStep] = useState(1);
@@ -45,17 +45,38 @@ export default function SignupFlow() {
         id: '',
         created_at: '',
         gamesPlayed: 0,
-        reliability_score: 75
+        reliability_score: 75,
+        method: method as string | undefined,
     })
 
     const name = formData.name
 
     useEffect(() => {
+        if (acceptedTerms !== 'true') {
+            router.replace({ pathname: '/(auth)/user-agreement' as never });
+            return;
+        }
+
         isOnboarding.current = true;
         return () => {
             isOnboarding.current = false;
         };
-    }, []);
+    }, [acceptedTerms, router]);
+
+    useEffect(() => {
+        if (method === 'apple' && providerName) {
+            setFormData((prev) => ({
+                ...prev,
+                name: String(providerName),
+                method: 'apple',
+            }));
+        } else if (method === 'google') {
+            setFormData((prev) => ({
+                ...prev,
+                method: 'google',
+            }));
+        }
+    }, [method, providerName]);
 
     const handleBack = () => {
         if (step === 1) {
@@ -68,33 +89,38 @@ export default function SignupFlow() {
 
     const handleImageUpload = async (base64String: any) => {
         try {
-    
-        const user = await getUserId()
-        const userId = user?.id;
-    
-      if (!userId) throw new Error("No user ID found");
-    
+
+        const user = await getCurrentUserId()
+
+      if (!user) throw new Error("No user ID found");
+
+      const userId = user.id;
       const filePath = `${userId}/avatar_${Date.now()}.png`;
-      
-      
+
+      // Strip data URI prefix if present
+      const base64Data = base64String.includes('base64,')
+        ? base64String.split('base64,')[1]
+        : base64String;
+
         const { data, error } = await supabase.storage
-          .from('files') 
-          .upload(filePath, decode(base64String), {
+          .from('files')
+          .upload(filePath, decode(base64Data), {
             contentType: 'image/png',
             upsert: true,
           });
 
         if (error) {
             Alert.alert('Error occured while uploading your profile picture!')
+            throw error;
         }
-    
+
         const { data: urlData } = supabase.storage
         .from('files')
         .getPublicUrl(filePath);
-    
-    
+
+
         const publicUrl = urlData.publicUrl;
-    
+
 
         const {data: dbData, error: dbError} = await supabase.from('users')
         .update({
@@ -106,18 +132,20 @@ export default function SignupFlow() {
             Alert.alert('error updating profile image')
             console.log(dbError)
             console.log(dbError.message)
+            throw dbError;
         }
 
         if (dbData) {
             console.log('image successfully updated!')
+            setFormData(prev => ({ ...prev, profile_picture: publicUrl }))
         }
-        
-        if (error) throw error;
+
         return data.path
-        
+
         } catch (err) {
           Alert.alert("Couldn't upload image!");
           console.log(err)
+          throw err;
         }
     }
 
@@ -188,8 +216,18 @@ export default function SignupFlow() {
         .maybeSingle();
     
         if (existing) {
-        console.log('User already exists, skipping insert');
-        return true
+            const { error: acceptedTermsError } = await supabase
+            .from('users')
+            .update({ accepted_terms: true })
+            .eq('id', user.id);
+
+            if (acceptedTermsError) {
+                console.log('error updating accepted_terms', acceptedTermsError.message);
+                return false;
+            }
+
+            console.log('User already exists, updated accepted_terms');
+            return true;
         }
 
         const { error: dbError } = await supabase.from('users')
@@ -206,15 +244,32 @@ export default function SignupFlow() {
                 elo: formData.elo,
                 last_active_at: new Date().toISOString(),
                 gamesPlayed: 0,
-                reliability_score: 75
+                reliability_score: 75,
+                accepted_terms: true
             }
         ]).select().single()
     
         formData.password = '';
-        
-        if (formData.profile_picture) {
+
+        // Only upload if it's a base64 string (user uploaded), not a default URL
+        if (formData.profile_picture && !formData.profile_picture.startsWith('http')) {
             console.log("about to upload the image...")
-            await handleImageUpload(formData.profile_picture)
+            try {
+                await handleImageUpload(formData.profile_picture)
+            } catch (err) {
+                console.log('Image upload failed, but continuing with signup', err)
+                // Don't fail the entire signup if image upload fails
+            }
+        } else if (formData.profile_picture && formData.profile_picture.startsWith('http')) {
+            // It's a default image URL, save it directly to the database
+            const { error: dbError } = await supabase.from('users')
+            .update({
+                profile_picture: formData.profile_picture
+            }).eq('id', user.id)
+
+            if (dbError) {
+                console.log('error updating default profile image', dbError.message)
+            }
         }
     
         if (dbError) {
@@ -237,9 +292,19 @@ export default function SignupFlow() {
         }
 
 
+    if (acceptedTerms !== 'true') {
+        return null;
+    }
+
     if (step === 1) {
         return (
-            <FirstOnbPage onNext={() => setStep(2)} changeData={setFormData} onBack={handleBack} method={method as string}/>
+            <FirstOnbPage
+                onNext={() => setStep(2)}
+                changeData={setFormData}
+                onBack={handleBack}
+                method={method as string}
+                providerName={providerName as string}
+            />
         ) 
     } else if (step === 2) {
         return (
@@ -251,15 +316,6 @@ export default function SignupFlow() {
         ) 
     } else if (step === 4) {
         return (
-            <FourthOnbPage 
-            onNext={() => setStep(5)} 
-            onBack={handleBack}
-            changeData={setFormData}
-            data={name}
-        />
-        ) 
-    } else if (step === 5) {
-        return (
             <FifthOnbPage 
             onNext={handleSubmit} 
             onBack={handleBack}
@@ -267,5 +323,4 @@ export default function SignupFlow() {
         />
         ) 
     }
-
 }

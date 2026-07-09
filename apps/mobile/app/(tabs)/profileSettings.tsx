@@ -64,6 +64,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
 
       const profilePicture = user?.profile_picture;
       setProfileImage(profilePicture ?? null);
+      setProfileImageRead(profilePicture ?? null);
     };
 
     loadUser();
@@ -79,17 +80,22 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   if (!userId) throw new Error("No user ID found");
 
   const filePath = `${userId}/avatar_${Date.now()}.png`;
-  
-  
+
+  // Strip data URI prefix if present
+  const base64Data = base64String.includes('base64,')
+    ? base64String.split('base64,')[1]
+    : base64String;
+
     const { data, error } = await supabase.storage
-      .from('files') 
-      .upload(filePath, decode(base64String), {
+      .from('files')
+      .upload(filePath, decode(base64Data), {
         contentType: 'image/png',
         upsert: true,
       });
 
     if (error) {
         Alert.alert('Error occured while uploading your profile picture!')
+        throw error;
     }
 
     const { data: urlData } = supabase.storage
@@ -110,18 +116,21 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
         Alert.alert('error updating profile image')
         console.log(dbError)
         console.log(dbError.message)
+        throw dbError;
     }
 
     if (dbData) {
         console.log('image successfully updated!')
+        setProfileImage(publicUrl)
+        setProfileImageRead(publicUrl)
     }
-    
-    if (error) throw error;
+
     return data.path
-    
+
     } catch (err) {
       Alert.alert("Couldn't upload image!");
       console.log(err)
+      throw err;
     }
 }
 
@@ -244,7 +253,6 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
     .update({
       name: displayName,
       availability: availabilityForDb,
-      profile_picture: profileImage
     }).eq('id', userId)
 
     if (error) {
@@ -736,15 +744,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderColor: '#EA4335',
     borderWidth: 2,
-    minWidth: 10,
-    maxWidth: 200,
+    width: 200,
     borderRadius: 90,
     justifyContent: 'space-evenly',
     minHeight: 40,
-    position: 'relative',
-    marginLeft: 90,
-    marginTop: 30,
-    marginBottom: 20
+    alignSelf: 'center',
+    marginTop: 70,
+    marginBottom: 30
   },
   logoutLogo: {
     color: '#EA4335',
@@ -763,15 +769,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#EA4335',
     borderColor: '#fff',
-    minWidth: 10,
-    maxWidth: 200,
+    width: 200,
     borderRadius: 90,
     justifyContent: 'space-evenly',
     minHeight: 43,
-    position: 'relative',
-    marginLeft: 90,
+    alignSelf: 'center',
     marginTop: 30,
-    marginBottom: 20
+    marginBottom: 40
   },
   deleteText: {
     color: '#fff',

@@ -8,6 +8,7 @@ export type JoinResult =
   | 'already_member'
   | 'already_requested'
   | 'full'
+  | 'not_found'
   | 'not_authenticated'
   | 'not_configured';
 
@@ -18,22 +19,24 @@ export type GeographyPoint = {
 
 export type GameRow = {
   id: string;
-  host_id: string;
+  created_at: string;
+  host_id: string | null;
   title: string | null;
   description: string | null;
   type: string | null;
   location_cords: GeographyPoint | null;
   time: string | null;
   level: string | null;
-  public: boolean | null;
-  capacity: number | null;
-  number_of_players: number | null;
-  booked: boolean | null;
+  is_public: boolean | null;
+  game_capacity: number | null;
+  is_booked: boolean | null;
   payment_amount: number | null;
   chat_id: string | null;
   image: string | null;
-  created_at: string;
+  court_type: string | null;
   location_name: string | null;
+  is_paid: boolean | null;
+  players_enrolled: number | null;
 };
 
 function parseCategoryParts(category: string | null): {
@@ -92,6 +95,10 @@ export function resolveLocationName(row: GameRow): string {
 }
 
 export function resolveGameType(row: GameRow): '1v1' | 'Group' {
+  const raw = row.type?.trim();
+  if (raw === '1v1' || raw === 'Group') {
+    return raw;
+  }
   const fromCategory = parseCategoryParts(row.type).gameType;
   if (fromCategory === '1v1' || fromCategory === 'Group') {
     return fromCategory;
@@ -100,10 +107,13 @@ export function resolveGameType(row: GameRow): '1v1' | 'Group' {
   if (meta?.gameType) {
     return meta.gameType;
   }
-  return row.type?.trim().startsWith('1v1') ? '1v1' : 'Group';
+  return raw?.startsWith('1v1') ? '1v1' : 'Group';
 }
 
 export function resolveCourtType(row: GameRow): string {
+  if (row.court_type?.trim()) {
+    return row.court_type.trim();
+  }
   const fromCategory = parseCategoryParts(row.type).courtType;
   if (fromCategory) {
     return fromCategory;
@@ -115,23 +125,34 @@ export function resolveCourtType(row: GameRow): string {
   return 'Public';
 }
 
+export function resolveGameCapacity(row: GameRow): number {
+  return row.game_capacity ?? 2;
+}
+
+function resolveGameIsOpen(row: GameRow): boolean {
+  return row.is_public !== false;
+}
+
 export function resolveJoinSetting(row: GameRow): '👥 Open to Anyone' | '✋ Request Approval' {
   const { meta } = parseGameMeta(row.description);
   if (meta?.joinSetting) {
     return meta.joinSetting;
   }
-  return row.public !== false ? '👥 Open to Anyone' : '✋ Request Approval';
+  return resolveGameIsOpen(row) ? '👥 Open to Anyone' : '✋ Request Approval';
 }
 
 export function resolveIsBooked(row: GameRow): boolean {
-  if (typeof row.booked === 'boolean') {
-    return row.booked;
+  if (typeof row.is_booked === 'boolean') {
+    return row.is_booked;
   }
   const { meta } = parseGameMeta(row.description);
   return meta?.isBooked ?? false;
 }
 
 export function resolveIsPaid(row: GameRow): boolean {
+  if (row.is_paid === true) {
+    return true;
+  }
   if (typeof row.payment_amount === 'number' && row.payment_amount > 0) {
     return true;
   }
@@ -312,6 +333,9 @@ export async function fetchUserGameMembership(userId: string): Promise<{
 }
 
 function legacyPlayerCount(row: GameRow): number {
+  if (typeof row.players_enrolled === 'number' && row.players_enrolled > 0) {
+    return row.players_enrolled;
+  }
   return 0;
 }
 
@@ -341,16 +365,16 @@ export async function createGameRow(
     host_id: userId,
     title: payload.title,
     description: payload.gameDescription.trim(),
-    category: payload.gameType,
-    location: coords
+    type: payload.gameType,
+    location_cords: coords
       ? `POINT(${coords.lng} ${coords.lat})`
       : null,
     time: gameTime,
     level: payload.skillLevel,
-    public: isOpen,
-    capacity: payload.numberOfPlayers,
-    number_of_players: payload.numberOfPlayers,
-    booked: payload.isBooked,
+    is_public: isOpen,
+    game_capacity: payload.numberOfPlayers,
+    is_booked: payload.isBooked,
+    is_paid: payload.isPaid,
     payment_amount:
       payload.isPaid && payload.payment_amount?.trim()
         ? (() => {
@@ -358,6 +382,9 @@ export async function createGameRow(
             return Number.isFinite(amount) && amount > 0 ? amount : null;
           })()
         : null,
+    court_type: payload.courtType,
+    location_name: payload.location_name,
+    players_enrolled: 1,
   };
 
   const { data: inserted, error: insErr } = await supabase
@@ -392,7 +419,7 @@ async function getGameCapacityState(gameId: string): Promise<{
 } | null> {
   const { data: game, error } = await supabase
     .from('games')
-    .select('id, host_id, capacity, public')
+    .select('*')
     .eq('id', gameId)
     .maybeSingle();
 
@@ -400,14 +427,15 @@ async function getGameCapacityState(gameId: string): Promise<{
     return null;
   }
 
+  const row = game as GameRow;
   const counts = await fetchPlayerCounts([gameId]);
   const playerCount = counts[gameId] ?? 1;
 
   return {
-    capacity: game.capacity ?? 2,
+    capacity: resolveGameCapacity(row),
     playerCount,
-    isOpen: game.public !== false,
-    hostId: game.host_id as string,
+    isOpen: resolveGameIsOpen(row),
+    hostId: row.host_id ?? '',
   };
 }
 
@@ -445,7 +473,7 @@ export async function joinGame(gameId: string, userId: string): Promise<JoinResu
 
   const state = await getGameCapacityState(gameId);
   if (!state) {
-    throw new Error('Game not found');
+    return 'not_found';
   }
 
   if (state.playerCount >= state.capacity) {
@@ -454,6 +482,11 @@ export async function joinGame(gameId: string, userId: string): Promise<JoinResu
 
   if (state.isOpen) {
     await addPlayerToGame(gameId, userId, 'member');
+    // Increment players_enrolled in games table
+    await supabase
+      .from('games')
+      .update({ players_enrolled: state.playerCount + 1 })
+      .eq('id', gameId);
     return 'joined';
   }
 
@@ -517,6 +550,11 @@ export async function approveJoinRequest(requestId: string): Promise<void> {
   }
 
   await addPlayerToGame(request.game_id as string, request.user_id as string, 'member');
+  // Increment players_enrolled in games table
+  await supabase
+    .from('games')
+    .update({ players_enrolled: state.playerCount + 1 })
+    .eq('id', request.game_id as string);
 }
 
 export async function declineJoinRequest(requestId: string): Promise<void> {

@@ -22,7 +22,7 @@ export default function SignUp() {
   const router = useRouter();
   // ref
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['34%', '40%'], []);
+  const snapPoints = useMemo(() => ['40%', '48%'], []);
   
 
   const handleGoogleSignUp = async () => {
@@ -64,7 +64,10 @@ export default function SignUp() {
           }
   
           console.log("redirecting the user to signup process!")
-          router.push({ pathname: '/SignupFlow', params: { method: 'google' }});
+          router.push({
+            pathname: '/(auth)/user-agreement' as never,
+            params: { method: 'google' },
+          });
   
         }
     } catch (error) {
@@ -89,6 +92,11 @@ export default function SignUp() {
         ],
         nonce: hashedNonce
       });
+
+      const appleDisplayName = [credential.fullName?.givenName, credential.fullName?.familyName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
 
       if (!credential.identityToken) {
         Alert.alert('Error', 'Login failed, please try again!');
@@ -120,7 +128,13 @@ export default function SignUp() {
         return;
       }
 
-      router.push({ pathname: '/SignupFlow', params: { method: 'apple' }}); 
+      router.push({
+        pathname: '/(auth)/user-agreement' as never,
+        params: {
+          method: 'apple',
+          providerName: appleDisplayName,
+        },
+      }); 
     }
 
   } catch(error: any) {
@@ -131,7 +145,10 @@ export default function SignUp() {
 
 
   const handleEmailSignUp = () => {
-    router.push('/SignupFlow');
+    router.push({
+      pathname: '/(auth)/user-agreement' as never,
+      params: { method: 'email' },
+    });
   };
 
   // renders
@@ -150,6 +167,14 @@ export default function SignUp() {
           snapPoints={snapPoints}
           enableDynamicSizing={false}>
           <BottomSheetView style={styles.container}>
+            <View style={styles.introContainer}>
+              <View style={styles.tennisBadge}>
+                <Ionicons name="tennisball-outline" size={16} color="#002000" />
+                <Text style={styles.tennisBadgeText}>Tennis community</Text>
+              </View>
+              <Text style={styles.signupTitle}>Find tennis games near you</Text>
+            </View>
+
             <View style={styles.socialBtnContainer}>
               <TouchableOpacity style={styles.socialBtn} onPress={handleAppleSignUp}>
                 <Ionicons size={30} name="logo-apple"></Ionicons>
@@ -170,7 +195,7 @@ export default function SignUp() {
             </TouchableOpacity>
 
             <View style={styles.loginTxtContainer}>
-              <Text style={styles.loginTxt}>Already a member? <Text onPress={() => router.replace('/login')} style={styles.login}>Log in</Text></Text>
+              <Text style={styles.loginTxt}>Already a member? <Text onPress={() => router.replace({ pathname: '/(auth)/user-agreement' as never, params: { next: 'login' } })} style={styles.login}>Log in</Text></Text>
             </View>
 
           </BottomSheetView>
@@ -186,12 +211,50 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+    paddingHorizontal: 24,
   },
   inner: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+  },
+  introContainer: {
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  tennisBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#E9FFF2',
+    borderRadius: 9999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  tennisBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#002000',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  signupTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#111111',
+    textAlign: 'center',
+    letterSpacing: -0.4,
+  },
+  signupSubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   frameImage: {
     marginTop: -190,
@@ -273,29 +336,30 @@ const styles = StyleSheet.create({
     marginTop: 0,
     paddingVertical: 15,
     paddingHorizontal: 15,
-    borderWidth: 1.3,
+    borderWidth: 1.3, 
     borderColor: '#F3F4F6', 
   },
   socialBtnContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
+    justifyContent: 'center',
+    gap: 70,
     alignItems: 'center',
-    padding: 16,
-    marginTop: -5
+    paddingVertical: 14,
   },
   emailBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
     borderRadius: 9999,
     marginTop: -9,
     paddingVertical: 15,
-    paddingHorizontal: 90,
+    paddingHorizontal: 24,
     backgroundColor: '#19E675'
   },
   emailBtnText: {
     fontSize: 18,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#002000',
   },
 });

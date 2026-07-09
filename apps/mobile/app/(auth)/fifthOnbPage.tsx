@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,40 +10,162 @@ import {
   ScrollView,
   Modal,
   Vibration,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SignupInterface } from '@/context/SignupInterface.type';
+import { getClosestOpenGames, rowToGame, getDistanceKm, type GameRow, type Game } from '@/context/GameContext';
+import { fetchHostProfiles, fetchPlayerCounts, type PlayerCounts } from '@/lib/gamesDb';
+
+import * as Location from 'expo-location';
+import { type GeoCoords } from '@/lib/courtSuggestions';
+
+const JOIN_REDIRECT_DELAY_MS = 700;
 
 
 export default function FifthOnbPage ({onNext}: SignupInterface) {
   const [showPopup, setShowPopup] = useState(false);
-  const [JoinedGame, setJoinedGame] = useState(false);
-  const [JoinedGame2, setJoinedGame2] = useState(false);
+  const [joinedGameIds, setJoinedGameIds] = useState<Set<string>>(new Set());
+  const [games, setGames] = useState<Game[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
 
   const buzzPhone = () => {
     Vibration.vibrate()
   }
 
-  const handleJoinGame = (num: number) => {
-    if (!JoinedGame && num === 1) {
-      setShowPopup(true);
-      setJoinedGame(true);
-      buzzPhone()
+  useEffect(() => {
+    loadGames();
+  }, []);
 
-      setTimeout(() => {
-        setShowPopup(false);
-        onNext()
-      }, 2500);
-    } else if (!JoinedGame2 && num === 2) {
-      setShowPopup(true);
-      setJoinedGame2(true);
-      buzzPhone()
+  useEffect(() => {
+    let active = true;
 
-      setTimeout(() => {
-        setShowPopup(false);
-        onNext()
-      }, 2500);
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          console.log('No location permission for onboarding distance');
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Highest,
+        });
+
+        if (!active) return;
+
+        setSafeOrigin({
+          lat: Number(position.coords.latitude),
+          lng: Number(position.coords.longitude),
+        });
+      } catch (error) {
+        console.log('Onboarding location error:', error);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const setSafeOrigin = (coords: GeoCoords) => {
+    if (
+      !coords ||
+      !isFinite(coords.lat) ||
+      !isFinite(coords.lng) ||
+      Math.abs(coords.lat) > 90 ||
+      Math.abs(coords.lng) > 180
+    ) {
+      console.log('Invalid onboarding origin rejected:', coords);
+      return;
     }
+
+    if (coords.lat === 0 && coords.lng === 0) {
+      console.log('Invalid zero onboarding origin rejected:', coords);
+      return;
+    }
+
+    setNearbyOrigin(coords);
+  };
+
+  const loadGames = async () => {
+    try {
+      setIsLoading(true);
+      const gameRows = await getClosestOpenGames();
+      
+      const hostIds = [...new Set(gameRows.map((r) => r.host_id).filter(Boolean))] as string[];
+      const gameIds = gameRows.map((r) => r.id);
+      const [profileMap, counts] = await Promise.all([
+        fetchHostProfiles(hostIds),
+        fetchPlayerCounts(gameIds),
+      ]);
+      
+      const mappedGames = gameRows.map((r) => 
+        rowToGame(r, r.host_id ? profileMap[r.host_id] : undefined, counts)
+      );
+      
+      setGames(mappedGames);
+    } catch (error) {
+      console.error('Error loading games:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleJoinGame = (gameId: string) => {
+    if (joinedGameIds.has(gameId)) {
+      onNext();
+      return;
+    }
+
+    setShowPopup(true);
+    setJoinedGameIds(prev => new Set(prev).add(gameId));
+    buzzPhone();
+
+    setTimeout(() => {
+      setShowPopup(false);
+      onNext();
+    }, JOIN_REDIRECT_DELAY_MS);
+  };
+
+  const formatGameTime = (dateIso: string) => {
+    if (!dateIso) return '';
+    const date = new Date(dateIso);
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const isToday = date.toDateString() === today.toDateString();
+    const isTomorrow = date.toDateString() === tomorrow.toDateString();
+
+    let day;
+    if (isToday) {
+      day = 'today';
+    } else if (isTomorrow) {
+      day = 'tomorrow';
+    } else {
+      day = date.toLocaleDateString(undefined, { weekday: 'short' });
+    }
+
+    const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `${day} @ ${time}`;
+  };
+
+  const formatDistance = (game: Game) => {
+    if (!nearbyOrigin || !game.locationCoords) {
+      return null;
+    }
+
+    const distance = getDistanceKm(
+      { lat: nearbyOrigin.lat, lng: nearbyOrigin.lng },
+      { lat: game.locationCoords.lat, lng: game.locationCoords.lng }
+    );
+
+    return `${distance.toFixed(1)} km away`;
   };
   return (
     <SafeAreaView style={styles.container}>
@@ -58,71 +180,64 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
 
         {/* Game Cards */}
         <View style={styles.cardsContainer}>
-          {/* First Game Card */}
-          <View style={styles.gameCard}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1719360568896-55788b9ddea5?w=900&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OHx8dGVubmlzJTIwY291cnRzfGVufDB8fDB8fHww' }}
-              style={styles.gameImage}
-              resizeMode="cover"
-            />
-            <View style={styles.gameInfo}>
-              <Text style={styles.gameTitle}>Double Match</Text>
-              <Text style={styles.gameLevel}>Level: Intermediate</Text>
-              
-              <View style={styles.gameDetails}>
-                <View style={styles.detailRow}>
-                  <View style={styles.icon}>
-                  <MaterialCommunityIcons name="calendar" size={16} color="#19E675" />
-                  <Text style={styles.detailText}>Tue @ 6 PM</Text>
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#19E675" />
+            </View>
+          ) : games.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.noGamesText}>No games available nearby</Text>
+            </View>
+          ) : (
+            games.map((game) => (
+              <View key={game.id} style={styles.gameCard}>
+                <Image
+                  source={{ uri: game.image || 'https://images.unsplash.com/photo-1719360568896-55788b9ddea5?w=900&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OHx8dGVubmlzJTIwY291cnRzfGVufDB8fDB8fHww' }}
+                  style={styles.gameImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.gameInfo}>
+                  <Text style={styles.gameTitle}>{game.title}</Text>
+                  <View style={styles.gameMetaRow}>
+                    <Text style={styles.gameLevel}>Level: {game.skillLevel}</Text>
+                    {formatDistance(game) ? (
+                      <>
+                        <Text style={styles.gameMetaDot}> • </Text>
+                        <Text style={styles.gameDistance}>{formatDistance(game)}</Text>
+                      </>
+                    ) : null}
                   </View>
-                  <View style={styles.spacer} />
-                  <View style={styles.icon}>
-                  <MaterialCommunityIcons name="map-marker" size={16} color="#19E675" />
-                  <Text style={styles.detailText}>300 Steels Avenue</Text>
+                  
+                  <View style={styles.gameDetails}>
+                    <View style={styles.detailRow}>
+                      <View style={styles.icon}>
+                        <MaterialCommunityIcons name="calendar" size={16} color="#19E675" />
+                        <Text style={styles.detailText}>{formatGameTime(game.date)}</Text>
+                      </View>
+                      <View style={styles.spacer} />
+                      <View style={styles.icon}>
+                        <MaterialCommunityIcons name="map-marker" size={16} color="#19E675" />
+                        <Text style={styles.detailText}>{game.location_name}</Text>
+                      </View>
+                    </View>
                   </View>
+                  
+                  <TouchableOpacity 
+                    style={joinedGameIds.has(game.id) ? styles.joinedButton : styles.joinButton} 
+                    onPress={() => handleJoinGame(game.id)}
+                  >
+                    <Text style={joinedGameIds.has(game.id) ? styles.joinedButtonText : styles.joinButtonText}>
+                      {joinedGameIds.has(game.id) ? "Joined" : "Join Game"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-              
-              <TouchableOpacity style={ JoinedGame ? styles.joinedButton : styles.joinButton} onPress={ () => {handleJoinGame(1)}}>
-                <Text style={JoinedGame ? styles.joinedButtonText : styles.joinButtonText}>{JoinedGame ? "Joined" : "Join Game"}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Second Game Card */}
-          <View style={styles.gameCard}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1766675122854-28fc70f50132?w=900&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTR8fHRlbm5pcyUyMGNvdXJ0c3xlbnwwfHwwfHx8MA%3D%3D' }}
-              style={styles.gameImage}
-              resizeMode="cover"
-            />
-            <View style={styles.gameInfo}>
-              <Text style={styles.gameTitle}>Alex{"'"}s game</Text>
-              <Text style={styles.gameLevel}>Level: Beginner</Text>
-              
-              <View style={styles.gameDetails}>
-                <View style={styles.detailRow}>
-                  <View style={styles.icon}>
-                  <MaterialCommunityIcons name="calendar" size={16} color="#19E675" />
-                  <Text style={styles.detailText}>Sat @ 7 PM</Text>
-                  </View>
-                  <View style={styles.spacer} />
-                  <View style={styles.icon}>
-                  <MaterialCommunityIcons name="map-marker" size={16} color="#19E675" />
-                  <Text style={styles.detailText}>120 Yonge Street</Text>
-                  </View>
-                </View>
-              </View>
-              
-              <TouchableOpacity style={ JoinedGame2 ? styles.joinedButton : styles.joinButton} onPress={ () => {handleJoinGame(2); setJoinedGame2(true);}}>
-                <Text style={JoinedGame2 ? styles.joinedButtonText : styles.joinButtonText}>{JoinedGame2 ? "Joined" : "Join Game"}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+            ))
+          )}
         </View>
 
         {/* Footer */}
-        <TouchableOpacity onPress={onNext} style={styles.footer}>
+        <TouchableOpacity onPress={() => onNext()} style={styles.footer}>
           <View style={{ padding: 10 }}>
             <Text style={styles.footerText}>
               Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
@@ -303,11 +418,27 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     marginBottom: 4,
   },
+  gameMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginBottom: 15,
+    marginTop: 5,
+  },
   gameLevel: {
     fontSize: 14,
     color: '#6B7280',
-    marginBottom: 15,
-    marginTop: 5,
+    fontWeight: '500',
+  },
+  gameMetaDot: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  gameDistance: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   gameDetails: {
     marginBottom: 16,
@@ -408,5 +539,13 @@ const styles = StyleSheet.create({
     color: '#19E675',
     textAlign: 'center',
     marginBottom: 3
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  noGamesText: {
+    fontSize: 16,
+    color: '#6B7280',
   },
 });

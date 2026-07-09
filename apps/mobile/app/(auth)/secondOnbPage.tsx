@@ -21,11 +21,11 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);  
   type IconName = ComponentProps<typeof Ionicons>['name'];
   
-  const levels: { id: string; label: string; icon: IconName }[] = [    
-    { id: 'beginner', label: "I don't know how to play", icon: 'tennisball-outline' },
-    { id: 'intermediate', label: "I know the rules and basics", icon: 'trending-up-outline' },
-    { id: 'advanced', label: "I know strategies and tactics", icon: 'flame-outline' },
-    { id: 'pro', label: "I'm a tournament player", icon: 'trophy-outline' },
+  const levels: { id: string; label: string; icon: IconName }[] = [
+    { id: 'beginner', label: "I'm new to tennis", icon: 'tennisball-outline' },
+    { id: 'intermediate', label: 'I know the tennis rules and basics', icon: 'trending-up-outline' },
+    { id: 'advanced', label: 'I understand tennis strategy and tactics', icon: 'flame-outline' },
+    { id: 'pro', label: "I'm a competitive tennis player", icon: 'trophy-outline' },
   ];
 
 
@@ -61,7 +61,10 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
 
       <View style={styles.content}>
         <View style={styles.titleSection}>
-          <Text style={styles.title}>How{"'"}s your game?</Text>
+          <Text style={styles.title}>What{"'"}s your tennis level?</Text>
+          <Text style={styles.subtitle}>
+            Choose the option that best describes your tennis experience.
+          </Text>
         </View>
 
         {levels.map((level) => {
@@ -75,8 +78,15 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
         { backgroundColor: isSelected ? '#19E675' : (pressed ? '#E5E5E5' : '#fff') }
       ]}
     >
-      <Ionicons name={level.icon} size={28} color={isSelected ? '#002000' : '#666'} />
-      <Text style={[styles.levelDescription, { color: isSelected ? '#002000' : '#666' }]}>
+      <View style={styles.levelIconContainer}>
+        <Ionicons name={level.icon} size={26} color={isSelected ? '#002000' : '#666'} />
+      </View>
+      <Text
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.88}
+        style={[styles.levelDescription, { color: isSelected ? '#002000' : '#666' }]}
+      >
         {level.label}
       </Text>
     </Pressable>
@@ -144,14 +154,30 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlign: 'center',
   },
+  subtitle: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   levelCard: {
     borderRadius: 16,
-    padding: 23,
+    paddingVertical: 20,
+    paddingHorizontal: 18,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E5E5E5',
-    flexDirection: 'row'
+    flexDirection: 'row',
+    minHeight: 76,
+  },
+  levelIconContainer: {
+    width: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
   },
   levelNumber: {
     fontSize: 48,
@@ -160,12 +186,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   levelDescription: {
+    flex: 1,
+    flexShrink: 1,
     fontWeight: '600',
-    fontSize: 16,
+    fontSize: 15,
     color: '#666',
-    textAlign: 'center',
+    textAlign: 'left',
     lineHeight: 20,
-    marginLeft: 17
   },
   sliderContainer: {
     height: 60,

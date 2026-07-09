@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Share, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import ProfileSettingsScreen from './profileSettings';
 import { supabase } from '@/context/AuthContext';
 
@@ -31,11 +32,14 @@ export default function ProfileScreen() {
     evening: [],
 });
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [imageTimestamp, setImageTimestamp] = useState(Date.now());
 
 
-  useEffect(() => {
-    getUser()
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      getUser();
+    }, [])
+  );
 
   async function getUser() {
     const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -65,12 +69,13 @@ export default function ProfileScreen() {
     setGamesPlayed(data.gamesPlayed);
     setReliabilityScore(data.reliability_score);
     setProfileImage(data.profile_picture);
+    setImageTimestamp(Date.now());
     console.log("profile image: ")
     console.log(data.profile_picture)
     // ProfileScreen — convert object to 7-item arrays for display
     if (data.availability) {
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      
+
       setAvailability({
           morning: days.map(day => data.availability[day]?.morning ? 'filled' : ''),
           afternoon: days.map(day => data.availability[day]?.afternoon ? 'filled' : ''),
@@ -117,10 +122,10 @@ export default function ProfileScreen() {
       {/* Profile Info */}
       <View style={styles.profileSection}>
         <TouchableOpacity onPress={() => setShowFullScreenImage(true)}>
-          
-        <Image 
-          source={{ uri: profileImage ?? undefined }} 
-          style={styles.profileImage} 
+
+        <Image
+          source={{ uri: profileImage ? `${profileImage}?t=${imageTimestamp}` : undefined }}
+          style={styles.profileImage}
         />
         </TouchableOpacity>
         <Text style={styles.profileName}>{name}</Text>
@@ -224,9 +229,9 @@ export default function ProfileScreen() {
           >
             <Ionicons name="close" size={28} color="white" />
           </TouchableOpacity>
-          <Image 
-            source={{ uri: profileImage ?? undefined }} 
-            style={styles.fullScreenImage} 
+          <Image
+            source={{ uri: profileImage ? `${profileImage}?t=${imageTimestamp}` : undefined }}
+            style={styles.fullScreenImage}
             resizeMode="contain"
           />
         </View>

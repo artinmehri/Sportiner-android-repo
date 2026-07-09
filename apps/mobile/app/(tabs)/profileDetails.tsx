@@ -255,7 +255,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
             <Ionicons name="close" size={28} color="white" />
           </TouchableOpacity>
           <Image 
-            source={{ uri: 'https://picsum.photos/seed/nature-landscape/400/400' }} 
+            source={{ uri: profileImage ?? undefined }} 
             style={styles.fullScreenImage} 
             resizeMode="contain"
           />
@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    marginTop: 40
+    marginTop: 10
   },
   profileSection: {
     alignItems: 'center',

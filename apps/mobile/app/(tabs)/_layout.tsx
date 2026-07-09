@@ -64,6 +64,7 @@ export default function TabLayout() {
         options={{
           title: 'Chat',
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
@@ -71,6 +72,7 @@ export default function TabLayout() {
         options={{
           title: 'Group Chat',
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
@@ -155,6 +157,7 @@ export default function TabLayout() {
         options={{
           title: 'Game Verification',
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen

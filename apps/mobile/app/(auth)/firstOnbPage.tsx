@@ -16,7 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { SignupInterface } from '../../context/SignupInterface.type';
 
 
-export default function FirstOnbPage({onNext, changeData, onBack, method} : SignupInterface) {
+export default function FirstOnbPage({onNext, changeData, onBack, method, providerName} : SignupInterface) {
 
 
   const [displayName, setDisplayName] = useState('');
@@ -28,16 +28,38 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
   const [profileImage, setProfileImage] = useState<any | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
+  const isAppleSignup = method === 'apple';
+  const isSocialSignup = method === 'apple' || method === 'google';
+
   const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
 
+  const defaultTennisImages = [
+    'https://images.unsplash.com/photo-1519611103964-90f61a50d3e6?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MzZ8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://plus.unsplash.com/premium_photo-1666914327596-78e418cc87e1?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
+    'https://images.unsplash.com/photo-1604967438356-597a56e99a05?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MzV8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://plus.unsplash.com/premium_photo-1673995611957-9c039a5d4d90?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NDV8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://images.unsplash.com/photo-1651007852633-7d2b35950f70?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NTB8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://images.unsplash.com/photo-1510846699902-9211b99dac11?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NTF8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://images.unsplash.com/photo-1560012057-4372e14c5085?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NTR8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D',
+    'https://plus.unsplash.com/premium_photo-1666913872772-78302c791a8a?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NTN8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D'
+  ];
+
+  const getRandomDefaultImage = () => {
+    const randomIndex = Math.floor(Math.random() * defaultTennisImages.length);
+    return defaultTennisImages[randomIndex];
+  };
 
   const handleContinue = async () => {
-    if (!displayName.trim()) {
+    const resolvedDisplayName = isAppleSignup
+      ? providerName?.trim() || 'Apple User'
+      : displayName.trim();
+
+    if (!isAppleSignup && !resolvedDisplayName) {
       Alert.alert('Error', 'Please enter your display name');
       return;
     }
 
-    if (!method) {
+    if (!isSocialSignup) {
       if (!email.trim()) {
         Alert.alert('Error', 'Please enter your email address');
         return;
@@ -61,8 +83,8 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
 
     changeData((prev: any) => ({
       ...prev,
-      name: displayName,
-      profile_picture: profileImage,
+      name: resolvedDisplayName,
+      profile_picture: profileImage || getRandomDefaultImage(),
       email: email,
       password: password,
       age_group: selectedAgeGroup,
@@ -139,20 +161,22 @@ export default function FirstOnbPage({onNext, changeData, onBack, method} : Sign
         </View>
 
         <View style={styles.formSection}>
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, focusedField === 'displayName' && styles.labelFocused]}>Display Name</Text>
-            <TextInput
-              style={[styles.input, focusedField === 'displayName' && styles.inputFocused]}
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder="Enter your display name"
-              onFocus={() => setFocusedField('displayName')}
-              onBlur={() => setFocusedField(null)}
-            />
-          </View>
+          {!isAppleSignup && (
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, focusedField === 'displayName' && styles.labelFocused]}>Display Name</Text>
+              <TextInput
+                style={[styles.input, focusedField === 'displayName' && styles.inputFocused]}
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="Enter your display name"
+                onFocus={() => setFocusedField('displayName')}
+                onBlur={() => setFocusedField(null)}
+              />
+            </View>
+          )}
 
           {/* Only show email/password fields for email auth */}
-          {!method && (
+          {!isSocialSignup && (
             <>
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, focusedField === 'email' && styles.labelFocused]}>Email</Text>

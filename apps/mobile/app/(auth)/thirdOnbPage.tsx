@@ -110,7 +110,7 @@ export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterfa
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.titleSection}>
-          <Text style={styles.title}>When are you usually to play?</Text>
+          <Text style={styles.title}>When are you usually free to play?</Text>
           <Text style={styles.subtitle}>
             Select all times that work for you. We{"'"}ll notify you when games match
           </Text>

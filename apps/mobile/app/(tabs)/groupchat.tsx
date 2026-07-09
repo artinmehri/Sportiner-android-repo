@@ -27,7 +27,7 @@ import { formatGameSubtitle, GameRow } from '@/context/GameContext';
 import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 const { width, height } = Dimensions.get('window');
 import { Gesture } from 'react-native-gesture-handler';
-import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming, useDerivedValue } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker'
 
 
@@ -51,12 +51,11 @@ const SWIPE_THRESHOLD = 80;
 type SwipeableMessageProps = {
   message: Message;
   onReply: (message: Message) => void;
-  onSwipeProgress?: (message: Message | null) => void;
   children: React.ReactNode;
 };
 
 
-const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: SwipeableMessageProps) => {
+const SwipeableMessage = ({ message, onReply, children }: SwipeableMessageProps) => {
   const translateX = useSharedValue(0);
 
   const panGesture = Gesture.Pan()
@@ -64,9 +63,6 @@ const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: Swipe
     .onUpdate((e) => {
       if (e.translationX >= 0) {
         translateX.value = e.translationX;
-        if (e.translationX > 20 && onSwipeProgress) {
-          runOnJS(onSwipeProgress)(message);
-        }
       }
     })
     .onEnd((e) => {
@@ -74,9 +70,6 @@ const SwipeableMessage = ({ message, onReply, onSwipeProgress, children }: Swipe
         runOnJS(onReply)(message);
       }
       translateX.value = withTiming(0, { duration: 200 });
-      if (onSwipeProgress) {
-        runOnJS(onSwipeProgress)(null);
-      }
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -206,11 +199,6 @@ const GroupChatScreen = () => {
     position: { x: 0, y: 0 },
   });
   const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
-  const [showMediaPicker, setShowMediaPicker] = useState(false);
-  const [userPhotos, setUserPhotos] = useState<any[]>([]);
-  const [userVideos, setUserVideos] = useState<any[]>([]);
-  const [mediaPermission, setMediaPermission] = useState<string | null>(null);
-  const [swipeReplyMessage, setSwipeReplyMessage] = useState<Message | null>(null);
   const [currentUserId, setCurrentUserId] = useState()
 
 
@@ -258,63 +246,53 @@ const GroupChatScreen = () => {
       // Replying to a message
     } else if (isReplying && replyInfo) {
 
-    if (currentUserId && replyInfo?.id && id) {
-      console.log('replying message')
-      await replyMessage(replyInfo.id, 'text', inputText.trim(), id)
-      setIsReplying(false);
-      inputRef.current?.focus();
-    }
-
-    if (currentUserId) {
-    const newReply: Message = {
-      sender_id: currentUserId,
-      message: inputText.trim(),
-      type: 'text',
-      reply_to: replyInfo.id,
-      is_reply: true,
-    };
-
-    setMessages([...messages, newReply]);
-  }
-
-    setInputText('');
-    setSelectedMedia(null);
-    setReplyInfo(null);
-    setIsReplying(false);
-    setSwipeReplyMessage(null); 
-
-
-          
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    // Sending a normal message 
-    } else {
-      if (currentUserId) {
-      const newMessage: Message = {
-        sender_id: currentUserId,
-        message: inputText.trim(),
-        type: 'text'
-      };
-    
-      if (id) {
-      await sendMessage(inputText.trim(), 'text', id)
+      if (!replyInfo.id || !id) {
+        Alert.alert('Could not send reply', 'Please try again in a moment.');
+        return;
       }
-      
-      setMessages([...messages, newMessage]);
 
+      console.log('replying message')
+      const savedReply = await replyMessage(replyInfo.id, 'text', inputText.trim(), id)
 
-      // Reseting both text and media after sending
+      if (!savedReply) {
+        Alert.alert('Could not send reply', 'Please try again.');
+        return;
+      }
+
+      setMessages(prev => [...prev, savedReply]);
       setInputText('');
       setSelectedMedia(null);
       setReplyInfo(null);
       setIsReplying(false);
-      
+      inputRef.current?.focus();
+
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
-    };
+
+    // Sending a normal message 
+    } else {
+      if (id) {
+        const savedMessage = await sendMessage(inputText.trim(), 'text', id)
+
+        if (!savedMessage) {
+          Alert.alert('Could not send message', 'Please try again.');
+          return;
+        }
+      
+        setMessages(prev => [...prev, savedMessage]);
+
+
+        // Reseting both text and media after sending
+        setInputText('');
+        setSelectedMedia(null);
+        setReplyInfo(null);
+        setIsReplying(false);
+      
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
   }
 }   
 
@@ -325,7 +303,6 @@ const getOriginalMessage = (messageId: string) => {
 
 
 const handleReply = (message: Message) => {
-  setSwipeReplyMessage(null)
   setReplyInfo(message)
   setIsReplying(true)
   inputRef.current?.focus();
@@ -362,57 +339,37 @@ const handleEdit = (message: Message) => {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender_id === currentUserId;
-    const repliedMessage = item.is_reply
-    const isSwipeReplying = swipeReplyMessage?.id === item.id;
-    
+    const repliedMessage = !!item.reply_to;
+
     return (
-
-      
-      <View style={styles.messageContainer}>
-        {!isMe && (
-          <View style={styles.messageHeader}>
-            <View style={[styles.avatar, { backgroundColor: userColors[item.sender_id] }]}>
-              <Image source={{ uri: userAvatars[item.sender_id] ?? 'DEFAULT_AVATAR' }} style={styles.avatarImage} />
-            </View>
-            <View style={styles.senderInfo}>
-              <Text style={styles.senderName}>{userNames[item.sender_id] ?? 'User'} · <Text style={[styles.senderLevel, { color: userColors[item.sender_id] }]}>{userLevels[item.sender_id] ?? ''              }</Text></Text>
-            </View>
-          </View>
-        )}
-
-          <View>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onLongPress={(e) => handleLongPress(item, e)}
-              style={[
-                styles.messageBubble,
-                isMe ? styles.sentMessage : styles.receivedMessage,
-                !isMe && styles.receivedMessageWithAvatar,
-                isSwipeReplying && styles.swipeReplyingMessage,
-              ]}
-            >
-            {isSwipeReplying && (
-                <View style={styles.swipeReplyIndicator}>
-                  <Ionicons style={styles.swipeReplyIcon} name="arrow-undo" size={30} color="#22C55E" />
-                </View>
-            )}
-
-             {repliedMessage && item.reply_to && (
+      <SwipeableMessage message={item} onReply={handleReply}>
+        <View style={styles.messageContainer}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onLongPress={(e) => handleLongPress(item, e)}
+            style={[
+              styles.messageBubble,
+              isMe ? styles.sentMessage : styles.receivedMessage,
+            ]}
+          >
+            {repliedMessage && item.reply_to && (
               <View style={styles.messageReplyPreview}>
                 <Text style={styles.messageReplyText}>
-                {(() => {
-                  const original = messages.find(m => m.id === item.reply_to);
-                  const originalSender = userNames[original?.sender_id ?? ''] || 'User';
-                  return `${originalSender}: "${getOriginalMessage(item.reply_to)}"`;
-                })()}                
+                  {(() => {
+                    const original = messages.find(m => m.id === item.reply_to);
+                    const originalSender = userNames[original?.sender_id ?? ''] || 'User';
+                    return `${originalSender}: "${getOriginalMessage(item.reply_to)}"`;
+                  })()}
                 </Text>
               </View>
             )}
-            
-              <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.message}</Text>
-            </TouchableOpacity>
-          </View>
-      </View>
+
+            <Text style={[styles.messageText, isMe && styles.sentMessageText]}>
+              {item.message}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SwipeableMessage>
     );
   };
 
@@ -542,13 +499,6 @@ const handleEdit = (message: Message) => {
 
 
         <View style={inputStyling}>
-            <TouchableOpacity 
-              style={styles.composerIconButton}
-              onPress={pickImgae}
-            >
-              <Ionicons name="image-outline" size={20} color="#111" />
-            </TouchableOpacity>
-
             <TextInput
               ref={inputRef}
               style={styles.composerInput}
@@ -787,9 +737,6 @@ const styles = StyleSheet.create({
   senderLevel: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  receivedMessageWithAvatar: {
-    marginLeft: 48,
   },
   groupAvatar: {
     width: 34,

@@ -319,8 +319,8 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 24,
-    maxWidth: 330,
-    marginLeft: 30
+    width: 330,
+    alignSelf: 'center'
   },
   label: {
     fontSize: 16,
@@ -347,6 +347,7 @@ const styles = StyleSheet.create({
   passwordInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    width: '100%',
   },
   passwordInput: {
     flex: 1,

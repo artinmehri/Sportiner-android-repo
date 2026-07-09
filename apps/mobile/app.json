@@ -15,12 +15,13 @@
     },
     "ios": {
       "bundleIdentifier": "com.sportiner.app",
-      "usesAppleSignIn": true, 
-      "buildNumber": "1",
+      "usesAppleSignIn": true,
+      "buildNumber": "58",
       "simulator": {
         "device": "iPhone 17 Pro"
       },
-      "supportsTablet": true
+      "supportsTablet": false,
+      "appleTeamId": "6YMBF7XTQC"
     },
     "android": {
       "adaptiveIcon": {
@@ -31,7 +32,13 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.sportiner.app"
+      "package": "com.sportiner.app",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ]
     },
     "web": {
       "output": "static",
@@ -40,6 +47,14 @@
     "plugins": [
       "expo-router",
       "expo-apple-authentication",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "dynamic"
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -61,9 +76,18 @@
         }
       ],
       [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow Sportiner to read your calendar so it can display your upcoming sports games, practices, and scheduled events inside the app.",
+  "calendarFullAccessPermission": "Allow Sportiner to create, update, and delete calendar events so it can automatically schedule, adjust, and manage your games, training sessions, and match times.",
+  "remindersPermission": "Allow Sportiner to read your reminders so it can show your existing sports-related tasks and upcoming alerts within the app.",
+  "remindersFullAccessPermission": "Allow Sportiner to create, modify, and remove reminders so it can automatically set alerts for games, practices, and event notifications."
+        }
+      ],
+      [
         "@react-native-google-signin/google-signin",
-        { 
-          "iosUrlScheme": "com.googleusercontent.apps.939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7"        
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7"
         }
       ]
     ],

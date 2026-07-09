@@ -1,10 +1,11 @@
+import { supabase } from '@/lib/supabase';
 import { Image } from 'expo-image';
 import { View, StyleSheet, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { useGames } from '@/context/GameContext';
+import { useGames, userInGame } from '@/context/GameContext';
 import { useAuth } from '@/context/AuthContext';
 import { addUserToChat, getChatId, userInChat, getplayers, chatNavigator } from '@/context/ChatContext';
 import * as Haptics from 'expo-haptics'
@@ -131,7 +132,7 @@ export default function EventDetails() {
 
 
   const title = game?.title ?? "Event";
-  const capacity = game?.numberOfPlayers
+  const capacity = game?.capacity
   const courtLabel = (game?.courtType ?? 'Public').toUpperCase();
   const levelLabel = (game?.skillLevel ?? 'Open').toUpperCase();
   const dateLine = game?.date
@@ -146,8 +147,8 @@ export default function EventDetails() {
     'Details for this match will appear here when loaded from the server.';
 
   const playerCapacity = Number(capacity ?? 0);
-  const currentPlayerCount = players.length + 1;
-  const spotsLeft = Math.max(0, playerCapacity - (currentPlayerCount -1));
+  const currentPlayerCount = game?.players_enrolled ?? 0;
+  const spotsLeft = Math.max(0, playerCapacity - (currentPlayerCount));
   const isFull = spotsLeft === 0;
   const needsApproval = game?.joinSetting === '✋ Request Approval';
 
@@ -175,19 +176,35 @@ export default function EventDetails() {
     isFull;
 
   const handleMessage = async () => {
+
     if (!game) {
+      Alert.alert('Error', 'Game data not loaded');
       return;
     }
+
+    const inGame = await userInGame(game.id);
+    
+    if (!inGame) {
+      Alert.alert('Join game', 'You need to join the game to message players.');
+      return;
+    }
+    
     const inChat = await userInChat(game.id);
     if (!inChat) {
-      await addUserToChat(game.id);
+      const result = await addUserToChat(game.id);
+      if (!result) {
+        Alert.alert('Error', 'Unable to join chat. The chat may not exist yet. Please try again.');
+        return;
+      }
     }
+    
     const chatId = await getChatId(game.id);
-    if (chatId) {
-      router.push({ pathname: '/(tabs)/chat', params: { id: `${chatId}` } });
+    if (!chatId) {
+      Alert.alert('Error', 'Unable to open chat. Please try again.');
       return;
     }
-    chatNavigator(chatId, game.gameType);
+    
+    await chatNavigator(chatId, game.gameType);
   };
 
   const handleOpenPlayerProfile = async (playerId: string) => {
@@ -218,6 +235,10 @@ export default function EventDetails() {
       }
       if (result === 'full') {
         Alert.alert('Game full', 'No spots left in this game.');
+        return;
+      }
+      if (result === 'not_found') {
+        Alert.alert('Game unavailable', 'This game is no longer available.');
         return;
       }
       if (result === 'not_authenticated') {
@@ -320,7 +341,7 @@ export default function EventDetails() {
 
             {players.filter((player) => {const playerRole = player?.role; return playerRole !== 'host'}).map((player, index) => {
               players.find((player) => player.id !== game?.hostId)
-              const playerId = player?.id ?? player?.user_id ?? `${index}`;
+              const playerId = player?.user_id ?? player?.id ?? `${index}`;
               const playerName = player?.name ?? player?.user?.name ?? 'Player';
               const playerImage = player?.profile_picture ?? player?.user?.profile_picture ?? `https://picsum.photos/seed/player-${index}/100/100.jpg`;
 

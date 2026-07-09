@@ -8,7 +8,6 @@ import {
   Image,
   Dimensions,
   Alert,
-  Linking,
   Share,
   Modal,
   TouchableWithoutFeedback,
@@ -17,9 +16,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { useGames, Game } from '@/context/GameContext';
+import { useGames, Game, getDistanceKm, gameVerified, deleteGame as deleteGameFromDb, withdrawRequest } from '@/context/GameContext';
 import { supabase, useAuth } from '@/context/AuthContext';
-import { chatNavigator } from '@/context/ChatContext';
+import { addUserToChat, chatNavigator, getChatId, getplayers, userInChat } from '@/context/ChatContext';
+import * as Location from 'expo-location';
+import { type GeoCoords } from '@/lib/courtSuggestions';
+import { Linking } from 'react-native';
+import * as Calendar from 'expo-calendar';
+import moment from 'moment';
 
 interface GameRequest {
   game_id: string;
@@ -60,45 +64,16 @@ type GameCard = {
     skillLevel?: string;
   }[];
   extraPlayers?: number;
-  section?: 'hosted' | 'played';
+  section?: 'pastHosted' | 'pastPlayed' | 'hosting' | 'playing';
   location?: string;
 };
 
-const pastHostedGamesData: GameCard[] = [];
-
-const pastPlayedGamesData: GameCard[] = [];
-
-function gameToPastCard(game: Game, section: 'hosted' | 'played'): GameCard {
-  const playedLabel = game.date
-    ? `Played ${new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-    : 'Played';
-  return {
-    id: game.id,
-    title: game.title,
-    level: game.skillLevel,
-    distance: 'Nearby',
-    verified: false,
-    date: playedLabel,
-    image:
-      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=400&q=80',
-    status: {
-      type: 'verify',
-      label: 'Verify Game & Levels',
-      color: '#002000',
-      backgroundcolor: '#19E675',
-      icon: 'checkmark',
-    },
-    players: [],
-    section,
-  };
-}
 
 export default function Games() {
   const router = useRouter();
   const {
     games,
     refreshGames,
-    requestToJoin,
     getMyGames,
     getMyPlayingGames,
     getPastGames,
@@ -109,8 +84,59 @@ export default function Games() {
   const { user } = useAuth();
   const [myGames, setMyGames] = useState<Game[]>([]);
   const [myPlayingGames, setMyPlayingGames] = useState<Game[]>([]);
+  const [myHostedGames, setMyHostedGames] = useState<Game[]>([]);
+  const [myPlayedGames, setMyPlayedGames] = useState<Game[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<GameRequest[]>([]);
+  const [verifiedGames, setVerifiedGames] = useState<Set<string>>(new Set());
+  const [playersMap, setPlayersMap] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
+  const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
+
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          console.log('No location permission');
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Highest,
+        });
+
+        if (!active) return;
+
+        const coords = {
+          lat: Number(position.coords.latitude),
+          lng: Number(position.coords.longitude),
+        };
+
+        if (
+          isFinite(coords.lat) &&
+          isFinite(coords.lng) &&
+          Math.abs(coords.lat) <= 90 &&
+          Math.abs(coords.lng) <= 180 &&
+          !(coords.lat === 0 && coords.lng === 0)
+        ) {
+          setNearbyOrigin(coords);
+        }
+      } catch (e) {
+        console.log('Location error', e);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+
   const [error, setError] = useState<string | null>(null);
   const { feedbackSubmitted } = useLocalSearchParams<{ feedbackSubmitted?: string }>();
   const [activeTab, setActiveTab] = useState<'Past' | 'Upcoming'>('Upcoming');
@@ -122,18 +148,12 @@ export default function Games() {
   const [playingScrollIndex, setPlayingScrollIndex] = useState(0);
   const [pastHostingScrollIndex, setPastHostingScrollIndex] = useState(0);
   const [pastPlayingScrollIndex, setPastPlayingScrollIndex] = useState(0);
-  const [selectedGame, setSelectedGame] = useState<GameCard | Game | null>(null);
+  const [selectedGame, setSelectedGame] = useState<GameCard | null>(null);
   const [showPlayers, setShowPlayers] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const isSupabaseConfigured = Boolean(supabase);
 
-  const [pastHostedGames, setPastHostedGames] = useState<GameCard[]>(() =>
-    isSupabaseConfigured ? [] : pastHostedGamesData
-  );
-  const [pastPlayedGames, setPastPlayedGames] = useState<GameCard[]>(() =>
-    isSupabaseConfigured ? [] : pastPlayedGamesData
-  );
   const feedbackShownRef = useRef(false);
 
   useEffect(() => {
@@ -171,9 +191,20 @@ export default function Games() {
             ]);
             setMyGames(myGamesList);
             setMyPlayingGames(playingList);
-            setPastHostedGames(pastGames.hosted.map((g) => gameToPastCard(g, 'hosted')));
-            setPastPlayedGames(pastGames.played.map((g) => gameToPastCard(g, 'played')));
+            setMyHostedGames(pastGames.hosted);
+            setMyPlayedGames(pastGames.played);
             setIncomingRequests(requests);
+
+            // Check verification status for past games
+            const verifiedSet = new Set<string>();
+            const allPastGames = [...pastGames.hosted, ...pastGames.played];
+            for (const game of allPastGames) {
+              const isVerified = await gameVerified(game.id, user.id);
+              if (isVerified) {
+                verifiedSet.add(game.id);
+              }
+            }
+            setVerifiedGames(verifiedSet);
           }
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -185,6 +216,29 @@ export default function Games() {
       loadData();
     }, [refreshGames, user?.id, getMyGames, getMyPlayingGames, getPastGames, getIncomingRequests])
   );
+
+  useEffect(() => {
+    const loadPlayers = async () => {
+      try {
+        const allGames = [...myHostedGames, ...myPlayedGames];
+
+        const entries = await Promise.all(
+          allGames.map(async (game) => {
+            const data = await getplayers(game.id);
+            return [game.id, data ?? []];
+          })
+        );
+
+        setPlayersMap(Object.fromEntries(entries));
+      } catch (e) {
+        console.log('failed loading players map', e);
+      }
+    };
+
+    if (myHostedGames.length || myPlayedGames.length) {
+      loadPlayers();
+    }
+  }, [myHostedGames, myPlayedGames]);
 
   const formatGameDate = (dateString: string | undefined) => {
     if (!dateString) return 'Date TBD';
@@ -204,6 +258,26 @@ export default function Games() {
       });
     }
   };
+
+  const getPlayers = async (gameId: string) => {
+    if (!gameId) {
+      return;
+    }
+
+    try {
+      const data = await getplayers(gameId);
+
+      if (!data || !Array.isArray(data)) {
+        return;
+      }
+
+      return data
+
+    } catch (error) {
+      console.log('failed loading players', error);
+    }
+  };
+
 
   const gameToCard = (game: Game): GameCard => {
     const formatDate = (dateString: string) => {
@@ -225,7 +299,7 @@ export default function Games() {
     };
 
     const formatTime = (timeString: string) => {
-      const [hours, minutes] = timeString.split(':');
+      const [hours] = timeString.split(':');
       const hour = parseInt(hours, 10);
       const ampm = hour >= 12 ? 'PM' : 'AM';
       const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
@@ -236,7 +310,20 @@ export default function Games() {
       id: game.id,
       title: game.title,
       level: game.skillLevel,
-      distance: 'Nearby',
+      type: game.gameType,
+      distance:
+        nearbyOrigin && game.locationCoords
+          ? `${getDistanceKm(
+              {
+                lat: nearbyOrigin.lat,
+                lng: nearbyOrigin.lng,
+              },
+              {
+                lat: game.locationCoords.lat,
+                lng: game.locationCoords.lng,
+              }
+            ).toFixed(1)} km`
+          : '',
       address: game.location_name,
       cost: game.isPaid ? `$${game.payment_amount} Entry` : 'Free',
       time: `${formatDate(game.date)} • ${formatTime(game.time)}`,
@@ -256,17 +343,76 @@ export default function Games() {
           !pendingGameIds.includes(g.id)
         )
         .map(gameToCard),
-    [games, user?.id, joinedGameIds, pendingGameIds]
+    [games, user?.id, joinedGameIds, pendingGameIds, nearbyOrigin]
   );
 
+  const hostedGamesList: GameCard[] = useMemo(
+    () => myHostedGames.map(game => {
+      const card = gameToCard(game);
+      const isVerified = verifiedGames.has(game.id);
+      return {
+        ...card,
+        section: 'pastHosted',
+        verified: isVerified,
+        status: isVerified ? {
+          type: 'verified',
+          label: 'Games & Levels verified',
+          color: '#002000',
+          backgroundcolor: '#19E675',
+          icon: 'checkmark',
+        } : {
+          type: 'verify',
+          label: 'Verify Game & Levels',
+          color: '#002000',
+          backgroundcolor: '#19E675',
+          icon: 'checkmark',
+        },
+      };
+    }),
+    [myHostedGames, verifiedGames]
+  );
+
+  const playedGamesList: GameCard[] = useMemo(
+    () => myPlayedGames.map(game => {
+      const card = gameToCard(game);
+      const isVerified = verifiedGames.has(game.id);
+      return {
+        ...card,
+        section: 'pastPlayed',
+        verified: isVerified,
+        status: isVerified ? {
+          type: 'verified',
+          label: 'Games & Levels verified',
+          color: '#002000',
+          backgroundcolor: '#19E675',
+          icon: 'checkmark',
+        } : {
+          type: 'verify',
+          label: 'Verify Game & Levels',
+          color: '#002000',
+          backgroundcolor: '#19E675',
+          icon: 'checkmark',
+        },
+      };
+    }),
+    [myPlayedGames, verifiedGames]
+  );
+  
   const hostingGamesList: GameCard[] = useMemo(
     () =>
-      myGames.map(gameToCard),
+      myGames.map((game) => ({
+        ...gameToCard(game),
+        section: 'hosting',
+      })),
     [myGames]
   );
 
   const playingGamesList: GameCard[] = useMemo(
-    () => myPlayingGames.map(gameToCard),
+    () =>
+      myPlayingGames.map((game) => ({
+        ...gameToCard(game),
+        section: 'playing',
+      })),
     [myPlayingGames]
   );
 
@@ -306,7 +452,7 @@ export default function Games() {
 
   const scrollPastHosting = (direction: 'left' | 'right') => {
     const newIndex = direction === 'right' ? pastHostingScrollIndex + 1 : pastHostingScrollIndex - 1;
-    if (newIndex >= 0 && newIndex < pastHostedGames.length) {
+    if (newIndex >= 0 && newIndex < hostedGamesList.length) {
       pastHostingScrollRef.current?.scrollTo({ x: newIndex * CARD_WIDTH, animated: true });
       setPastHostingScrollIndex(newIndex);
     }
@@ -314,7 +460,7 @@ export default function Games() {
 
   const scrollPastPlaying = (direction: 'left' | 'right') => {
     const newIndex = direction === 'right' ? pastPlayingScrollIndex + 1 : pastPlayingScrollIndex - 1;
-    if (newIndex >= 0 && newIndex < pastPlayedGames.length) {
+    if (newIndex >= 0 && newIndex < playedGamesList.length) {
       pastPlayingScrollRef.current?.scrollTo({ x: newIndex * CARD_WIDTH, animated: true });
       setPastPlayingScrollIndex(newIndex);
     }
@@ -326,7 +472,39 @@ export default function Games() {
   };
 
   const handleLeaveGame = () => {
-    Alert.alert('Leave Game', 'Game removal functionality coming soon');
+    if (!selectedGame || selectedGame.section !== 'hosting') {
+      setShowMenu(false);
+      setSelectedGame(null);
+      return;
+    }
+
+    const gameId = selectedGame.id;
+
+    Alert.alert(
+      'Cancel Game',
+      'Are you sure you want to cancel this hosted game? This will remove the game for all players.',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await deleteGameFromDb(gameId);
+
+            if (!success) {
+              Alert.alert('Error', 'Could not cancel this game. Please try again.');
+              return;
+            }
+
+            setMyGames((current) => current.filter((game) => game.id !== gameId));
+            setMyHostedGames((current) => current.filter((game) => game.id !== gameId));
+            await refreshGames();
+            Alert.alert('Game Cancelled', 'Your hosted game has been cancelled.');
+          },
+        },
+      ],
+    );
+
     setShowMenu(false);
     setSelectedGame(null);
   };
@@ -350,113 +528,100 @@ export default function Games() {
     }
   };
 
-  const handleAddToCalendar = async (game: GameCard | Game) => {
+  const handleAddToCalendar = async (game: Game) => {
     try {
-      const title = game.title;
-      const location = 'address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court');
-      const notes = `Game Type: ${game.level || 'N/A'}\nCost: ${game.cost || 'Free'}\nJoin us for this tennis game!`;
-      
-      let eventDate: Date;
-      if ('date' in game && game.time) {
-        const dateString = game.date;
-        const timeString = game.time.split(' • ')[1] || game.time;
-        
-        if (dateString === 'Today') {
-          eventDate = new Date();
-        } else if (dateString === 'Tomorrow') {
-          eventDate = new Date();
-          eventDate.setDate(eventDate.getDate() + 1);
-        } else {
-          eventDate = new Date(dateString + ', 2026');
-        }
-        
-        if (timeString) {
-          const timeMatch = timeString.match(/(\d+)\s*(AM|PM)/i);
-          if (timeMatch) {
-            const [, hourStr, period] = timeMatch;
-            let hour = parseInt(hourStr);
-            if (period === 'PM' && hour !== 12) hour += 12;
-            if (period === 'AM' && hour === 12) hour = 0;
-            eventDate.setHours(hour, 0, 0, 0);
-          }
-        }
-      } else {
-        eventDate = new Date();
-        eventDate.setHours(eventDate.getHours() + 2); // Default to 2 hours from now
+      if (!game.date) {
+        Alert.alert('Error', 'Missing game date');
+        return;
       }
-      
-      const startDate = eventDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-      const endDate = new Date(eventDate.getTime() + 2 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-      
-      const calendarUrl = `webcal://?dates=${startDate}/${endDate}&title=${encodeURIComponent(title)}&location=${encodeURIComponent(location || 'Tennis Court')}&notes=${encodeURIComponent(notes)}`;
-      await Linking.openURL(calendarUrl);
-      
+  
+      const startDate = moment(game.date);
+  
+      if (!startDate.isValid()) {
+        Alert.alert('Error', 'Invalid game date');
+        return;
+      }
+  
+      const endDate = moment(startDate).add(2, 'hours');
+  
+      // 2. Request permissions from Calendar object
+      const authStatus = await Calendar.requestCalendarPermissionsAsync();
+  
+      if (authStatus.status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Enable calendar access in Settings to add events.'
+        );
+        return;
+      }
+  
+      // 3. Dynamically fetch the system calendars to grab an ID
+      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+      const primaryCalendar = calendars.find((cal) => cal.isPrimary) || calendars[0];
+  
+      if (!primaryCalendar) {
+        Alert.alert('Error', 'No available calendars found on this device.');
+        return;
+      }
+  
+      // 4. Pass the extracted calendar ID as the first argument
+      const eventId = await Calendar.createEventAsync(primaryCalendar.id, {
+        title: game.title,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        location: game.location_name,
+        notes: `${game.title}`,
+        alarms: [{ relativeOffset: -10 }], // 5. Fixed alarm key
+      });
+  
+      console.log('Calendar event created:', eventId);
+      Alert.alert('Success', 'Event added to your calendar');
     } catch (error) {
-      console.error('Error adding to calendar:', error);
+      console.log('Calendar error:', error);
       Alert.alert('Error', 'Could not add event to calendar');
     }
   };
 
   const handleLeavePlayingGame = () => {
-    if (selectedGame) {
-      Alert.alert(
-        'Leave Game',
-        'Are you sure you want to leave this game?',
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Yes',
-            onPress: () => {
-              Alert.alert('Left Game', 'You have successfully left the game');
-            },
-          },
-        ],
-      );
+    if (!selectedGame || selectedGame.section !== 'playing') {
+      setShowMenu(false);
+      setSelectedGame(null);
+      return;
     }
+
+    const gameId = selectedGame.id;
+
+    Alert.alert(
+      'Leave Game',
+      'Are you sure you want to leave this game?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await withdrawRequest(gameId);
+
+            if (!success) {
+              Alert.alert('Error', 'Could not leave this game. Please try again.');
+              return;
+            }
+
+            setMyPlayingGames((current) => current.filter((game) => game.id !== gameId));
+            await refreshGames();
+            Alert.alert('Left Game', 'You have successfully left the game.');
+          },
+        },
+      ],
+    );
+
     setShowMenu(false);
     setSelectedGame(null);
   };
 
-  const handleDeleteGame = () => {
-    if (selectedGame) {
-      Alert.alert(
-        'Delete Game',
-        'Are you sure you want to delete this game?',
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Yes',
-            onPress: () => {
-              setPastHostedGames(pastHostedGames.filter(game => game.id !== selectedGame.id));
-              setPastPlayedGames(pastPlayedGames.filter(game => game.id !== selectedGame.id));
-            },
-          },
-        ],
-      );
-    }
-    setShowMenu(false);
-    setSelectedGame(null);
-  };
+  const handleDeleteGame = handleLeaveGame;
 
-  const handleWithdrawRequest = () => {
-    if (selectedGame) {
-      Alert.alert(
-        'Withdraw Request',
-        'Are you sure you want to withdraw your request?',
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Yes',
-            onPress: () => {
-              Alert.alert('Request Withdrawn', 'Your game request has been withdrawn');
-            },
-          },
-        ],
-      );
-    }
-    setShowMenu(false);
-    setSelectedGame(null);
-  };
+  const handleWithdrawRequest = handleLeavePlayingGame;
 
   const handleShareGame = async () => {
     try {
@@ -488,25 +653,68 @@ export default function Games() {
     chatNavigator(game.id, game.type);
   };
 
-  const handleChatPress = (game: GameCard) => {
-    openChatForGame(game);
-  };
-
-  const handleViewPlayers = (game: GameCard) => {
-    setSelectedGame(game);
-    setShowMenu(false);
-    setShowPlayers(true);
-  };
-
-  const handleViewPlayersPress = (game: GameCard, peerName?: string) => {
-    if (peerName) {
-      openChatForGame(game, peerName);
+  async function handleOnMessage(
+    gameId: string | undefined,
+    gameType?: string | null
+  ) {
+    if (!gameId) {
+      Alert.alert('Error', 'Missing game ID');
       return;
     }
+
+    try {
+      const chatTitle = gameType?.trim() || 'Tennis Game';
+      const inChat = await userInChat(gameId);
+
+      if (!inChat) {
+        const addedToChat = await addUserToChat(gameId);
+
+        if (!addedToChat) {
+          Alert.alert('Error', 'Unable to join the game chat. Please try again.');
+          return;
+        }
+      }
+
+      const chatId = await getChatId(gameId);
+
+      if (!chatId) {
+        Alert.alert('Error', 'Unable to open this game chat. Please try again.');
+        return;
+      }
+
+      await chatNavigator(chatId, chatTitle);
+    } catch (error) {
+      console.log('Failed opening game chat:', error);
+      Alert.alert('Error', 'Unable to open this game chat. Please try again.');
+    }
+  }
+
+  const handleViewPlayers = async (game: GameCard) => {
     setSelectedGame(game);
     setShowMenu(false);
+    
+    // Load players for the selected game if not already in the map
+    if (game.id && !playersMap[game.id]) {
+      try {
+        const data = await getplayers(game.id);
+        setPlayersMap(prev => ({
+          ...prev,
+          [game.id]: data ?? []
+        }));
+      } catch (error) {
+        console.log('failed loading players for view', error);
+      }
+    }
+    
     setShowPlayers(true);
   };
+
+  function viewProfile(playerId: string) {
+    if (playerId) {
+      router.push({pathname: '/profileDetails', params: {id: playerId}})
+    }
+  }
+
 
   const closeAllPopups = () => {
     setShowMenu(false);
@@ -558,7 +766,7 @@ export default function Games() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Games You Played</Text>
               
-              {pastPlayedGames.length === 0 ? (
+              {playedGamesList.length === 0 ? (
                   <View style={styles.emptyState}>
                     <Text style={styles.emptyStateText}>No games played</Text>
                   </View>
@@ -593,19 +801,17 @@ export default function Games() {
                   }}
                   scrollEventThrottle={16}
                 >
-                  {pastPlayedGames.map((game, index) => (
+                  {playedGamesList.map((game, index) => (
                     <View
                       key={game.id}
                       style={[
                         styles.card,
                         index === 0 && styles.firstCard,
-                        index === pastPlayedGames.length - 1 && styles.lastCard,
+                        index === playedGamesList.length - 1 && styles.lastCard,
                       ]}
                     >
                       <View style={styles.cardHeader}>
-                        <TouchableOpacity onPress={() => openChatForGame(game)}>
-                          {game.image ? <Image source={{ uri: game.image }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                        </TouchableOpacity>
+                        {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
                           <View style={styles.cardMetaRow}>
@@ -615,8 +821,10 @@ export default function Games() {
                           </View>
                         </View>
                       </View>
-                      <Text style={styles.cardDate}>{game.date}</Text>
-                      {game.status &&  game.verified == false && (
+                      {(game.time !== undefined) && (
+                      <Text style={styles.cardDate}>Played {game.time.split('•')[0].trim()}</Text>
+                      )}
+                      {game.status &&  !game.verified && (
                         <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
                           <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
                           <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
@@ -631,13 +839,13 @@ export default function Games() {
                       <Text style={styles.playersHead}>Players</Text>
                       <View style={styles.playersSection}>
                         <View style={styles.playersContainer}>
-                          {game.players?.slice(0, 3).map((player, index) => (
+                          {(playersMap[game.id] ?? []).slice(0, 3).map((player, index) => (
                             <TouchableOpacity
                               key={index}
-                              onPress={() => handleViewPlayersPress(game, player.name)}
+                              onPress={() => viewProfile(player.user?.id)}
                             >
-                              {player.avatar ? <Image
-                                source={{ uri: player.avatar }}
+                              {player.user?.profile_picture ? <Image
+                                source={{ uri: player.user?.profile_picture }}
                                 style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
                               /> : <View style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]} />}
                             </TouchableOpacity>
@@ -659,13 +867,11 @@ export default function Games() {
             )}
             </View>
 
-
-
                 {/* Past Hosted Section */}
                 <View style={styles.section}>
               <Text style={styles.sectionTitle}>Games You Hosted</Text>
 
-              {pastPlayedGames.length === 0 ? (
+              {hostedGamesList.length === 0 ? (
                   <View style={styles.emptyState}>
                     <Text style={styles.emptyStateText}>No games played</Text>
                   </View>
@@ -700,12 +906,10 @@ export default function Games() {
                 
                   scrollEventThrottle={16}
                 >
-                  {pastHostedGames.map((game, index) => (
-                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === pastHostedGames.length - 1 && styles.lastCard]}>
+                  {hostedGamesList.map((game, index) => (
+                    <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === hostedGamesList.length - 1 && styles.lastCard]}>
                       <View style={styles.cardHeader}>
-                        <TouchableOpacity onPress={() => openChatForGame(game)}>
-                          {game.image ? <Image source={{ uri: game.image }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                        </TouchableOpacity>
+                        {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle}>{game.title}</Text>
                           <View style={styles.cardMetaRow}>
@@ -715,7 +919,9 @@ export default function Games() {
                           </View>
                         </View>
                       </View>
-                      <Text style={styles.cardDate}>{game.date}</Text>
+                      {(game.time !== undefined) && (
+                      <Text style={styles.cardDate}>Hosted {game.time.split('•')[0].trim()}</Text>
+                      )}
                       {game.status &&  game.verified == false && (
                         <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
                           <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
@@ -731,13 +937,13 @@ export default function Games() {
                       <Text style={styles.playersHead}>Players</Text>
                       <View style={styles.playersSection}>
                         <View style={styles.playersContainer}>
-                          {game.players?.slice(0, 3).map((player, index) => (
+                          {(playersMap[game.id] ?? []).slice(0, 3).map((player, index) => (
                             <TouchableOpacity
                               key={index}
-                              onPress={() => handleViewPlayersPress(game, player.name)}
+                              onPress={() => viewProfile(player.user?.id)}
                             >
-                              {player.avatar ? <Image
-                                source={{ uri: player.avatar }}
+                              {player.user?.profile_picture ? <Image
+                                source={{ uri: player.user?.profile_picture }}
                                 style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
                               /> : <View style={[styles.playerAvatar, { marginLeft: index > 0 ? -8 : 0 }]} />}
                             </TouchableOpacity>
@@ -793,9 +999,7 @@ export default function Games() {
                       {playingGamesList.map((game, index) => (
                         <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === playingGamesList.length - 1 && styles.lastCard]}>
                           <View style={styles.cardHeader}>
-                            <TouchableOpacity onPress={() => openChatForGame(game)}>
-                              {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                            </TouchableOpacity>
+                            {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
                             <View style={styles.cardInfo}>
                               <Text style={styles.cardTitle}>{game.title}</Text>
                               <View style={styles.cardMetaRow}>
@@ -810,6 +1014,30 @@ export default function Games() {
                               {game.address} • {game.cost}
                             </Text>
                             <Text style={styles.detailText}>{game.time}</Text>
+                          </View>
+                          <View style={styles.actionBar}>
+                            <TouchableOpacity
+                              style={styles.actionButton}
+                              onPress={() => handleOnMessage(game.id, game.type)}
+                            >
+                              <Ionicons name="chatbubble-outline" size={20} color="#000" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
+                              <Ionicons name="location-outline" size={20} color="#000" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => {
+  const realGame = myPlayingGames.find(g => g.id === game.id);
+  if (!realGame) {
+    Alert.alert('Error', 'Game not found');
+    return;
+  }
+  handleAddToCalendar(realGame);
+}}>
+                              <Ionicons name="calendar-outline" size={20} color="#000" />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>
+                              <Ionicons name="ellipsis-vertical" size={20} color="#000" />
+                            </TouchableOpacity>
                           </View>
                         </View>
                       ))}
@@ -860,9 +1088,7 @@ export default function Games() {
                       {hostingGamesList.map((game, index) => (
                         <View key={game.id} style={[styles.card, index === 0 && styles.firstCard, index === hostingGamesList.length - 1 && styles.lastCard]}>
                           <View style={styles.cardHeader}>
-                            <TouchableOpacity onPress={() => openChatForGame(game)}>
-                              {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
-                            </TouchableOpacity>
+                            {game.avatar ? <Image source={{ uri: game.avatar }} style={styles.avatar} /> : <View style={styles.avatar} />}
                             <View style={styles.cardInfo}>
                               <Text style={styles.cardTitle}>{game.title}</Text>
                               <View style={styles.cardMetaRow}>
@@ -879,24 +1105,56 @@ export default function Games() {
                             <Text style={styles.detailText}>{game.time}</Text>
                           </View>
                           <View style={styles.statusContainer}>
-                            {game.statuses?.map((status: any, index: any) => (
-                              <View
-                                key={index}
-                                style={[styles.statusPill, { backgroundColor: status.backgroundcolor }]}
-                              >
-                                <Ionicons name={status.icon as any} size={14} color={status.color} />
-                                <Text style={styles.statusText}>{status.label}</Text>
-                              </View>
-                            ))}
+                            {game.statuses?.map((status: any, index: any) => {
+                              const isCourtBooked = status.label === 'Court Booked' || status.label === 'Booked';
+
+                              return (
+                                <View
+                                  key={index}
+                                  style={[
+                                    styles.statusPill,
+                                    {
+                                      backgroundColor: isCourtBooked ? 'rgba(25, 230, 117, 0.2)' : status.backgroundcolor,
+                                    },
+                                  ]}
+                                >
+                                  <Ionicons
+                                    name={status.icon as any}
+                                    size={14}
+                                    color={isCourtBooked ? '#005124' : '#F59E0B'}
+                                  />
+                                  <Text
+                                    style={[
+                                      styles.statusText,
+                                      {
+                                        color: isCourtBooked ? '#005124' : '#92400E',
+                                      },
+                                    ]}
+                                  >
+                                    {isCourtBooked ? 'Court Booked' : status.label}
+                                  </Text>
+                                </View>
+                              );
+                            })}
                           </View>
                           <View style={styles.actionBar}>
-                            <TouchableOpacity style={styles.actionButton} onPress={() => handleChatPress(game)}>
+                            <TouchableOpacity
+                              style={styles.actionButton}
+                              onPress={() => handleOnMessage(game.id, game.type)}
+                            >
                               <Ionicons name="chatbubble-outline" size={20} color="#000" />
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
                               <Ionicons name="location-outline" size={20} color="#000" />
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionButton} onPress={() => handleAddToCalendar(game)}>
+                            <TouchableOpacity style={styles.actionButton} onPress={() => {
+  const realGame = myGames.find(g => g.id === game.id);
+  if (!realGame) {
+    Alert.alert('Error', 'Game not found');
+    return;
+  }
+  handleAddToCalendar(realGame);
+}}>
                               <Ionicons name="calendar-outline" size={20} color="#000" />
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>
@@ -933,58 +1191,25 @@ export default function Games() {
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.menuContainer}>
-                {selectedGame?.id.startsWith('1') || selectedGame?.id.startsWith('2') ? (
-                  <>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleShareGame}>
-                      <Ionicons name="share-outline" size={20} color="#000" />
-                      <Text style={styles.menuText}>Share Game</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => handleViewPlayersPress(selectedGame)}>
-                      <Ionicons name="people-outline" size={20} color="#000" />
-                      <Text style={styles.menuText}>View Players</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleLeaveGame}>
-                      <Ionicons name="close-outline" size={20} color="#FF0000" />
-                      <Text style={[styles.menuText, { color: '#FF0000' }]}>Cancel Game</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : selectedGame?.id.startsWith('3') ? (
-                  <>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleShareGame}>
-                      <Ionicons name="share-outline" size={20} color="#000" />
-                      <Text style={styles.menuText}>Share Game</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleWithdrawRequest}>
-                      <Ionicons name="close-outline" size={20} color="#FFD700" />
-                      <Text style={[styles.menuText, { color: '#FFD700' }]}>Withdraw Request</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : selectedGame?.id.startsWith('4') || selectedGame?.id.startsWith('7') || selectedGame?.id.startsWith('8') ? (
-                  <>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleShareGame}>
-                      <Ionicons name="share-outline" size={20} color="#000" />
-                      <Text style={styles.menuText}>Share Game</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={() => handleViewPlayersPress(selectedGame)}>
-                      <Ionicons name="people-outline" size={20} color="#000" />
-                      <Text style={styles.menuText}>View Players</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleDeleteGame}>
-                      <Ionicons name="trash-outline" size={20} color="#FF0000" />
-                      <Text style={[styles.menuText, { color: '#FF0000' }]}>Delete Game</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleShareGame}>
-                      <Ionicons name="share-outline" size={20} color="#000" />
-                      <Text style={styles.menuText}>Share Game</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.menuItem} onPress={handleDeleteGame}>
-                      <Ionicons name="trash-outline" size={20} color="#FF0000" />
-                      <Text style={[styles.menuText, { color: '#FF0000' }]}>Delete Game</Text>
-                    </TouchableOpacity>
-                  </>
+                <TouchableOpacity style={styles.menuItem} onPress={handleShareGame}>
+                  <Ionicons name="share-outline" size={20} color="#000" />
+                  <Text style={styles.menuText}>Share Game</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.menuItem} onPress={() => selectedGame && handleViewPlayers(selectedGame)}>
+                  <Ionicons name="people-outline" size={20} color="#000" />
+                  <Text style={styles.menuText}>View Players</Text>
+                </TouchableOpacity>
+                {selectedGame?.section === 'playing' && (
+                  <TouchableOpacity style={styles.menuItem} onPress={handleLeavePlayingGame}>
+                    <Ionicons name="log-out-outline" size={20} color="#FF0000" />
+                    <Text style={[styles.menuText, { color: '#FF0000' }]}>Leave Game</Text>
+                  </TouchableOpacity>
+                )}
+                {selectedGame?.section === 'hosting' && (
+                  <TouchableOpacity style={styles.menuItem} onPress={handleDeleteGame}>
+                    <Ionicons name="trash-outline" size={20} color="#FF0000" />
+                    <Text style={[styles.menuText, { color: '#FF0000' }]}>Cancel Game</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             </TouchableWithoutFeedback>
@@ -1043,20 +1268,20 @@ export default function Games() {
                 <Text style={styles.playersTitle}>Players</Text>
                 </View>
                 <View style={styles.playersContent}>
-                  {selectedGame?.players?.map((player, index) => (
+                  {(playersMap[selectedGame?.id || ''] ?? []).map((player, index) => (
                     <TouchableOpacity
                       key={index}
                       onPress={() => {
-                        if (selectedGame) {
-                          openChatForGame(selectedGame, player.name);
+                        if (player.user?.id) {
+                          viewProfile(player.user.id);
                         }
                       }}
                     >
                       <View style={styles.playerItem}>
-                        {player.avatar ? <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} /> : <View style={styles.playerAvatarLarge} />}
+                        {player.user?.profile_picture ? <Image source={{ uri: player.user.profile_picture }} style={styles.playerAvatarLarge} /> : <View style={styles.playerAvatarLarge} />}
                         <View style={styles.playerInfo}>
-                          <Text style={styles.playerName}>{player.name || 'Unknown Player'}</Text>
-                          <Text style={styles.playerSkill}>{player.skillLevel || 'Unknown Level'}</Text>
+                          <Text style={styles.playerName}>{player.user?.name || 'Unknown Player'}</Text>
+                          <Text style={styles.playerSkill}>{player.user?.level || 'Unknown Level'}</Text>
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -1315,7 +1540,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     fontWeight: '400',
-    marginBottom: 7
+    marginBottom: 10
   },
   cardLevel: {
     fontSize: 14,

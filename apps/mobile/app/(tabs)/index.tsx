@@ -22,6 +22,7 @@ import {
 } from '@/lib/courtSuggestions';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics'
+import { supabase } from '@/lib/supabase';
 
 type Event = {
   title: string;
@@ -82,23 +83,48 @@ function formatDiscoverTime(dateIso: string, timeStr: string): string {
 
 async function handleOnMessage(
   gameId: string | undefined,
-  gameType: string
+  gameType: string,
+  membership: 'joined' | 'pending' | 'none'
 ) {
-  if (!gameId) return;
+  console.log('handleOnMessage fired', { gameId, gameType, membership });
 
-  const inChat = await userInChat(gameId);
-
-  if (!inChat) {
-    await addUserToChat(gameId);
+  if (membership !== 'joined') {
+    Alert.alert(
+      "Can't send message",
+      "You need to join this game before you can message players."
+    );
+    return;
   }
 
-  const chatId = await getChatId(gameId);
-
-  if (chatId) {
-    console.log('calling chat navigator')
-    chatNavigator(chatId, gameType);
-    console.log("game type is: ",gameType)
+  if (!gameId) {
+    Alert.alert('Error', 'Missing gameId');
     return;
+  }
+
+  try {
+    const inChat = await userInChat(gameId);
+
+    if (!inChat) {
+      const result = await addUserToChat(gameId);
+      if (!result) {
+        Alert.alert('Error', 'Unable to join chat. The chat may not exist yet. Please try again.');
+        return;
+      }
+    }
+
+    const chatId = await getChatId(gameId);
+
+    console.log('chatId result:', chatId);
+
+    if (!chatId) {
+      Alert.alert('Error', 'Unable to open chat. Please try again.');
+      return;
+    }
+
+    await chatNavigator(chatId, gameType);
+  } catch (e) {
+    console.log('handleOnMessage error', e);
+    Alert.alert('Error', 'Failed to open chat');
   }
 }
   
@@ -230,6 +256,7 @@ export default function Index() {
 
 function gameToEvent(g: Game): Event {
   const needsApproval = g.joinSetting.includes("Approval");
+  const isFull = g.players_enrolled >= g.capacity;
   return {
     title: g.title,
     level: skillToEventLevel(g.skillLevel),
@@ -242,15 +269,15 @@ function gameToEvent(g: Game): Event {
         : null,
     gameType: g.gameType,
     location_name: g.location_name,
-    status: "open",
+    status: isFull ? "full" : "open",
     time: formatDiscoverTime(g.date, g.time),
     date: '',
     venue: g.courtType,
     cost: g.isPaid && g.payment_amount ? `$${g.payment_amount} Entry` : "Free",
     avatar: g.host.avatar,
     secondaryCta: needsApproval ? "Request Spot" : "Join Game",
-    spotsFilled: g.playerCount,
-    spotsTotal: g.numberOfPlayers,
+    spotsFilled: g.players_enrolled,
+    spotsTotal: g.capacity,
     hasGreenBackground: false,
     gameId: g.id,
     image: g.image ?? undefined
@@ -285,6 +312,7 @@ function gameToEvent(g: Game): Event {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={24} color="#5A545E" />
@@ -498,13 +526,15 @@ function EventCard({
     isFull;
 
   const handleJoinGame = async () => {
+    if (!event.gameId) {
+      Alert.alert("Join request", "This game cannot be joined.");
+      return;
+    }
+
     const hostName = event.title.split("'s")[0];
-    const gameId =
-      event.gameId ??
-      event.title.replace(/\s+/g, "-").toLowerCase();
 
     const { error, result } = await requestJoinGame({
-      gameId,
+      gameId: event.gameId,
       gameTitle: event.title,
       gameType: event.gameType,
       gameStatus: event.status,
@@ -586,7 +616,7 @@ function EventCard({
          {event.spotsFilled !== undefined && event.spotsTotal !== undefined && (
            <>
              <Text style={[event.title === 'Sportiner Event' ? styles.infoTextSportiner : styles.infoText]}>
-               {event.spotsFilled}/{event.spotsTotal} Spots Filled
+               {event.spotsFilled}/{event.spotsTotal} Players Joined
              </Text>
              <View style={styles.progressBarContainer}>
                <View
@@ -621,15 +651,19 @@ function EventCard({
           style={[
             event.status === 'full' ? styles.secondaryButtonFull : styles.secondaryButton,
           ]}
-          onPress={
-            event.status === "full" || !event.gameId
-              ? undefined
-              : () => {
-                const hostName = event.title.includes("'s")
-                  ? event.title.split("'s")[0]
-                  : 'Host';
-                handleOnMessage(event.gameId, event.gameType);
-              }          }
+          onPress={async () => {
+            console.log('📩 MESSAGE BUTTON PRESSED', {
+              gameId: event.gameId,
+              gameType: event.gameType,
+            });
+
+            if (!event.gameId) {
+              Alert.alert('Error', 'Missing gameId');
+              return;
+            }
+
+            await handleOnMessage(event.gameId, event.gameType, membership);
+          }}
         >
           <Text
             style={[

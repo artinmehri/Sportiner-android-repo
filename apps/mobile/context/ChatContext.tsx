@@ -63,61 +63,65 @@ export async function getChatId(gameId: string) {
 
 // Adding user to chat
 export async function addUserToChat(gameId: string) {
-    if (!gameId || !UUID_RE.test(gameId)) return;
+    if (!gameId || !UUID_RE.test(gameId)) return null;
 
     const user = await getCurrentUser();
     const userId = await getCurrentUserId();
-    if (!user || !userId?.id) return;
+    if (!user || !userId?.id) return null;
 
     const alreadyInChat = await userInChat(gameId);
-    const chatId = await getChatId(gameId);
-
     if (alreadyInChat) {
-        // returning chat's id to navigate later!
+        // User is already in chat, get the chat ID
+        const chatId = await getChatId(gameId);
         return chatId;
     }
 
-    const { data: chat, error } = await supabase
+    const { data: chat, error: chatError } = await supabase
             .from('chat')
             .select('id')
             .eq('game_id', gameId)
             .maybeSingle();
 
-    if (chat !== null) {
+    if (chatError) {
+        console.log('Error fetching chat:', chatError.message);
+        return null;
+    }
 
-        const { data, error } = await supabase
+    if (chat === null) {
+        console.log('Chat does not exist for game:', gameId);
+        return null;
+    }
+
+    const { data, error } = await supabase
         .from('conversation_members')
         .insert({
             id: userId.id,
             chat_id: chat.id,
             joined_at: new Date().toISOString(),
-            last_read_at: new Date().toISOString(),
+            last_read_message_id: null,
             level: user.level,
             game_id: gameId,
         });
 
-        if (error) {
-            Alert.alert('Error', 'error while adding user to chat')
-            console.log(error.message)
-            return null
-        }
-
-
-        if (data) {
-            console.log('user successfully added to chat')
-            // returning chat's id
-            return chat.id;
-        } 
-
-
-    } else {
-        Alert.alert('Chat does not exist!')
+    if (error) {
+        console.log('Error adding user to chat:', error.message);
+        return null;
     }
+
+    if (data) {
+        console.log('user successfully added to chat')
+        // returning chat's id
+        return chat.id;
+    }
+
+    return null;
 }
 
 export async function replyMessage(reply_to: string, type: string, reply_message: string, chatId: string, image?: string) {
     const userId = await getCurrentUserId();
-    if (!userId) return;
+    if (!userId) return null;
+
+    const now = new Date().toISOString();
 
     const { data, error } = await supabase
     .from('messages').insert({
@@ -128,38 +132,69 @@ export async function replyMessage(reply_to: string, type: string, reply_message
         is_reply: true,
         type: type,
         image: image,
+        created_at: now,
     })
-
-    if (data) {
-        console.log('user message added successfully!')
-    }
+    .select()
+    .single();
 
     if (error) {
         console.log(error.message)
+        return null;
     }
+
+    console.log('user message added successfully!')
+
+    await supabase
+    .from('chat')
+    .update({
+        last_message: reply_message,
+        last_message_at: now,
+        last_message_id: data.id,
+        last_message_sender_id: userId.id,
+        updated_at: now,
+    })
+    .eq('id', chatId);
+
+    return data;
 }
 
 
 export async function sendMessage(message: string, type: string, chatId: string, image?: string) {
     const userId = await getCurrentUserId();
-    if (!userId) return;
+    if (!userId) return null;
+
+    const now = new Date().toISOString();
 
     const { data, error } = await supabase
-    .from('messages').insert({
+    .from('messages')
+    .insert({
         chat_id: chatId,
         sender_id: userId.id,
         type: type,
         message: message,
         image: image,
+        created_at: now,
     })
-
-    if (data) {
-        console.log('user message added successfully!')
-    }
+    .select()
+    .single();
 
     if (error) {
-        console.log(error.message)
+        console.log(error.message);
+        return null;
     }
+
+    await supabase
+    .from('chat')
+    .update({
+        last_message: message,
+        last_message_at: now,
+        last_message_id: data.id,
+        last_message_sender_id: userId.id,
+        updated_at: now,
+    })
+    .eq('id', chatId);
+
+    return data;
 }
 
 export async function getGameInfo(chatId: string) {
@@ -203,7 +238,8 @@ export async function getplayers(gameId: string) {
         user:users (
             id,
             name,
-            profile_picture
+            profile_picture,
+            level
         )
     `)
     .eq('game_id', gameId)
@@ -253,8 +289,30 @@ export async function deleteMessage(messageId: string) {
     }
 }
 
-export async function markAsRead() {
+export async function markAsRead(chatId: string) {
+    const userId = await getCurrentUserId();
+    if (!userId) return;
 
+    // Step 1 — get latest message
+    const { data: latestMessage } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (!latestMessage) return;
+
+    // Step 2 — update user read state
+    await supabase
+        .from('conversation_members')
+        .update({
+            last_read_message_id: latestMessage.id,
+            last_read_at: new Date().toISOString()
+        })
+        .eq('chat_id', chatId)
+        .eq('id', userId.id);
 }
 
 export async function uploadImage() {   
@@ -269,7 +327,7 @@ export async function getConversations() {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
     .from('chat')
     .select(`
         id,
@@ -277,10 +335,12 @@ export async function getConversations() {
         name,
         photo,
         last_message,
+        last_message_sender_id,
         last_message_at,
+        last_message_id,
         conversation_members!inner (   
             id,
-            last_read_at
+            last_read_message_id
         ),
         members:conversation_members (  
             user:users (
@@ -293,16 +353,23 @@ export async function getConversations() {
     .eq('conversation_members.id', userId.id)
     .order('last_message_at', { ascending: false });
 
+    if (error) {
+        console.log('Error fetching conversations:', error.message);
+        return [];
+    }
+
     if (data) {
         return data
     }
+
+    return [];
 }
 
 export async function getUnreadCount(chatId: string) {
     const userId = await getCurrentUserId();
     if (!userId) return 0;
 
-    // Step 1 — get your last_read_at
+    // Step 1 — get your last_read_message_id
     const { data: member } = await supabase
     .from('conversation_members')
     .select('last_read_at')
@@ -312,36 +379,44 @@ export async function getUnreadCount(chatId: string) {
 
     if (!member) return 0;
 
-    // Step 2 — count messages after last_read_at
-    const { count } = await supabase
-    .from('messages')
-    .select('id', { count: 'exact' })
-    .eq('chat_id', chatId)
-    .gt('created_at', member.last_read_at)
-    .neq('sender_id', userId.id);
+    // Step 2 — count messages after last_read_message_id
+const { count } = await supabase
+.from('messages')
+.select('id', { count: 'exact' })
+.eq('chat_id', chatId)
+.neq('sender_id', userId.id)
+.gt('created_at', member.last_read_at);
 
-    return count ?? 0;
+return count ?? 0;
 }
 
-export function chatNavigator(chatId: string, type: any) {
+export async function chatNavigator(chatId: string, type: any) {
+    await markAsRead(chatId);
 
-    // If it is a 1v1 game, navigate the user to chat component
-    if (type == '1v1') {
-      console.log('navigating to private chat')
-      router.push({
-        pathname: '/(tabs)/chat',
-        params:{ id: chatId },
-    });
-  
-      // otherwise if it's a group game, navigate the user to group chat component
-    } else {
-        console.log('navigating to group chat')
-    router.push({
-      pathname: '/(tabs)/groupchat',
-      params:{ id: chatId },
-    });
+    const normalized = String(type || '').toLowerCase();
+
+    const is1v1 =
+        normalized === '1v1' ||
+        normalized.includes('1v1') ||
+        normalized.includes('1-1') ||
+        normalized.includes('1 vs 1') ||
+        normalized.includes('1v 1');
+
+    if (is1v1) {
+        console.log('navigating to private chat');
+        router.push({
+            pathname: '/(tabs)/chat',
+            params: { id: chatId },
+        });
+        return;
     }
-  }
+
+    console.log('navigating to group chat');
+    router.push({
+        pathname: '/(tabs)/groupchat',
+        params: { id: chatId },
+    });
+}
 
 export async function createChat(
     type: string,
@@ -381,7 +456,7 @@ export async function createChat(
             id: member.id,
             chat_id: chat.id,
             joined_at: now,
-            last_read_at: now,
+            last_read_message_id: null,
             level: member.level,
             game_id: gameId,
             color: colors[index]

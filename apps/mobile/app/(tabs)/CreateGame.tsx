@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { addGame, getDistanceKm } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createChat } from '@/context/ChatContext';
-import { getCurrentUser, getCurrentUserId, supabase, useAuth } from '@/context/AuthContext';
+import { getCurrentUser, getCurrentUserId, supabase } from '@/context/AuthContext';
 import {
   findCourtByName,
   getDefaultCourts,
@@ -36,7 +36,6 @@ type CourtType = 'Public' | 'Club' | 'Condo';
 export default function CreateGame() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
   const [type, setType] = useState<GameType>('1v1');
   const [level, setLevel] = useState<SkillLevel>('Beginner');
   const [is_public, setIs_public] = useState<boolean>(true);
@@ -136,20 +135,29 @@ export default function CreateGame() {
           accuracy: Location.Accuracy.Highest,
         });
 
-        if (!active) return;
+        if (!active || !position?.coords) return;
 
         const coords = {
           lat: Number(position.coords.latitude),
           lng: Number(position.coords.longitude),
         };
 
+        // Validate coords before setting
+        if (!isFinite(coords.lat) || !isFinite(coords.lng)) {
+          console.log('Invalid coordinates from location service');
+          return;
+        }
+
         // Saving Host's user id
         const userId = await getCurrentUserId()
-        setHost_id(userId?.id ?? userId)
+        if (userId?.id) {
+          setHost_id(userId.id)
+        }
 
         const currentUser = await getCurrentUser();
-        const currentUserName = currentUser.name
-        setHostName(currentUserName)
+        if (currentUser && currentUser.name) {
+          setHostName(currentUser.name)
+        }
 
         console.log('LOCKED USER ORIGIN:', coords);
 
@@ -194,7 +202,7 @@ export default function CreateGame() {
         distanceLabel: `${distKm.toFixed(1)} km`,
       };
     });
-    }, [location, nearbyOrigin, originReady]);
+    }, [location_name, nearbyOrigin, originReady]);
 
   const selectGameType = (type: GameType) => {
     setType(type);
@@ -286,6 +294,11 @@ export default function CreateGame() {
       return;
     }
     
+    if (type == 'Group' && !title.trim()) {
+      Alert.alert('Missing Information', 'Please enter a creative title for your game');
+      return;
+    }
+
     if (!description.trim()) {
       Alert.alert('Missing Information', 'Please provide a description for your game');
       return;
@@ -302,26 +315,28 @@ export default function CreateGame() {
       return;
     }
 
-    if (type == 'Group' && !title) {
-      Alert.alert('Missing Information', 'Please enter a creative title for your game');
-      return;
-    }
     
     try {
 
-    const gameImage = imageRandomizer();
-
-    if (type == '1v1') {
-      console.log('about to set the title')
-      const gameTitle = `${hostName}'s Tennis Game`
-      setTitle(gameTitle) 
-      console.log('setted the title')
+    if (!host_id) {
+      Alert.alert('Error', 'User authentication failed. Please log in again.');
+      return;
     }
-    const players_enrolled = 0;
 
-    const game = await addGame(   
+    const gameImage = imageRandomizer();
+    const resolvedTitle =
+      type === '1v1' ? `${hostName || 'Your'}'s Tennis Game` : title;
+
+    if (type === '1v1') {
+      setTitle(resolvedTitle);
+    }
+
+    const resolvedCapacity = type === '1v1' ? 2 : game_capacity;
+    const players_enrolled = 1;
+
+    const game = await addGame(
       host_id,
-      title,
+      resolvedTitle,
       description,
       type,
       location_cords,
@@ -329,7 +344,7 @@ export default function CreateGame() {
       location_name,
       level!,
       is_public,
-      game_capacity,
+      resolvedCapacity,
       is_booked,
       payment_amount,
       gameImage,
@@ -342,7 +357,7 @@ export default function CreateGame() {
       return;
     }
     const chatType = type === '1v1' ? 'private' : 'group';
-    const members = user ? [{ id: user.id, level: level! }] : [];
+    const members = host_id ? [{ id: host_id, level: level! }] : [];
     const chatId = await createChat(chatType, game.title, '', game.id, game.image, members);
 
     await supabase
