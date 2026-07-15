@@ -38,7 +38,6 @@ export default function CreateGame() {
   const insets = useSafeAreaInsets();
   const [type, setType] = useState<GameType>('1v1');
   const [level, setLevel] = useState<SkillLevel>('Beginner');
-  const [is_public, setIs_public] = useState<boolean>(true);
   const [host_id, setHost_id] = useState<any>('')
   const [title, setTitle] = useState<string>('');
   const [date, setDate] = useState<string>('');
@@ -124,10 +123,20 @@ export default function CreateGame() {
 
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const userId = await getCurrentUserId()
+        if (active && userId?.id) {
+          setHost_id(userId.id)
+        }
+
+        const currentUser = await getCurrentUser();
+        if (active && currentUser && currentUser.name) {
+          setHostName(currentUser.name)
+        }
+
+        const { status } = await Location.getForegroundPermissionsAsync();
 
         if (status !== 'granted') {
-          console.log('No location permission');
+          console.log('Location permission not granted; court suggestions remain manual');
           return;
         }
 
@@ -146,17 +155,6 @@ export default function CreateGame() {
         if (!isFinite(coords.lat) || !isFinite(coords.lng)) {
           console.log('Invalid coordinates from location service');
           return;
-        }
-
-        // Saving Host's user id
-        const userId = await getCurrentUserId()
-        if (userId?.id) {
-          setHost_id(userId.id)
-        }
-
-        const currentUser = await getCurrentUser();
-        if (currentUser && currentUser.name) {
-          setHostName(currentUser.name)
         }
 
         console.log('LOCKED USER ORIGIN:', coords);
@@ -311,7 +309,7 @@ export default function CreateGame() {
 
     
     if (is_paid && !payment_amount) {
-      Alert.alert('Missing Information', 'Please enter how much each player should pay');
+      Alert.alert('Missing Information', 'Please enter the offline reimbursement amount per player');
       return;
     }
 
@@ -343,7 +341,6 @@ export default function CreateGame() {
       `${date.split('T')[0]}T${time}:00.000Z`,
       location_name,
       level!,
-      is_public,
       resolvedCapacity,
       is_booked,
       payment_amount,
@@ -461,43 +458,6 @@ export default function CreateGame() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
-
-          {/* Join Settings */}
-          <Text style={styles.visibilityLable}>Visibility</Text>
-          <View style={styles.joinSettingsContainer}>
-            <TouchableOpacity
-              style={styles.joinSettingButton}
-              onPress={() => setIs_public(true)}
-            >
-              <Text
-                style={[
-                  styles.joinSettingText,
-                  is_public && styles.joinSettingTextActive,
-                ]}
-              >
-                👥 Open to Anyone
-              </Text>
-              {is_public && (
-                <View style={styles.underline} />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.joinSettingButton}
-              onPress={() => setIs_public(false)}
-            >
-              <Text
-                style={[
-                  styles.joinSettingText,
-                  !is_public && styles.joinSettingTextActive,
-                ]}
-              >
-                ✋ Request Approval
-              </Text>
-              {!is_public && (
-                <View style={styles.underline} />
-              )}
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -720,7 +680,7 @@ export default function CreateGame() {
 
               {is_paid && (
                 <View style={styles.paymentInputContainer}>
-                  <Text style={styles.inputLabel}>Amount each player pays</Text>
+                  <Text style={styles.inputLabel}>Offline reimbursement amount per player</Text>
                   <View style={styles.paymentInputWrapper}>
                     <Text style={styles.dollarSign}>$</Text>
                     <TextInput
@@ -737,7 +697,7 @@ export default function CreateGame() {
                     />
                   </View>
                   <Text style={styles.paymentInputHint}>
-                    Each joining player pays this amount toward the court booking you already paid for.
+                    This is an offline reimbursement note only. Sportiner does not process payments or collect money.
                   </Text>
                 </View>
               )}
@@ -866,12 +826,12 @@ export default function CreateGame() {
             </View>
             <View style={styles.bookingInfoModalBody}>
               <Text style={styles.bookingInfoModalText}>
-                Use this when you have already paid to book the court and want joining players to chip in their share.
+                Use this when you have already reserved the court and want joining players to coordinate their share offline.
               </Text>
               <View style={styles.bookingInfoList}>
                 <View style={styles.bookingInfoItem}>
                   <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
-                  <Text style={styles.bookingInfoItemText}>You paid the court booking upfront</Text>
+                  <Text style={styles.bookingInfoItemText}>The court was reserved upfront</Text>
                 </View>
                 <View style={styles.bookingInfoItem}>
                   <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
@@ -879,11 +839,11 @@ export default function CreateGame() {
                 </View>
                 <View style={styles.bookingInfoItem}>
                   <Ionicons name="checkmark-circle" size={20} color="#19E675" style={styles.bookingInfoIcon} />
-                  <Text style={styles.bookingInfoItemText}>The amount you enter is what each joining player should pay you</Text>
+                  <Text style={styles.bookingInfoItemText}>The amount you enter is the per-player court share for offline reimbursement</Text>
                 </View>
               </View>
               <Text style={styles.bookingInfoNote}>
-                This is not the total court fee — enter the per-player share only. Sportiner does not handle payments; you collect from players directly.
+                This is an offline reimbursement note only. Sportiner does not process payments, sell digital goods, or offer subscriptions. This is for physical court cost sharing between players.
               </Text>
             </View>
             <View style={styles.bookingInfoModalActions}>

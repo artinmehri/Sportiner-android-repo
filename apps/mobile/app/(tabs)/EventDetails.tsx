@@ -7,9 +7,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames, userInGame } from '@/context/GameContext';
 import { useAuth } from '@/context/AuthContext';
-import { addUserToChat, getChatId, userInChat, getplayers, chatNavigator } from '@/context/ChatContext';
+import { addUserToChat, blockUser, getChatId, userInChat, getplayers, chatNavigator } from '@/context/ChatContext';
+import { formatCourtShare } from '@/lib/gamesDb';
 import * as Haptics from 'expo-haptics'
 
+const WEATHER_API_KEY = "Z3CQUVZMBCCHJVSHVHU2J9KGY";
 
 export default function EventDetails() {
   const router = useRouter();
@@ -23,33 +25,17 @@ export default function EventDetails() {
     pendingGameIds,
   } = useGames();
   const [submitting, setSubmitting] = useState(false);
-  const API_KEY = "Z3CQUVZMBCCHJVSHVHU2J9KGY"
   const game = id ? getGameById(String(id)) : undefined;
   const [weather, setWeather] = useState(null);
-  const [isHost, setIsHost] = useState(false)
   const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
   const [players, setPlayers] = useState<any[]>([]);
   const [showMenu, setShowMenu] = useState(false);
-
-  
-  useFocusEffect(
-    useCallback(() => {
-      refreshGames();
-    }, [refreshGames])
-  );
-
-  useEffect(() => {
-    if (game) {
-      handleWeather();
-    }
-  }, [game?.location_name, game?.date]);
 
   const membership = useMemo(() => {
     if (!game || !user?.id) {
       return 'none' as const;
     }
     if (game.hostId === user.id) {
-      setIsHost(true)
       return 'host' as const;
     }
     if (joinedGameIds.includes(game.id)) {
@@ -60,6 +46,13 @@ export default function EventDetails() {
     }
     return 'none' as const;
   }, [game, user?.id, joinedGameIds, pendingGameIds]);
+  const isHost = membership === 'host';
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshGames();
+    }, [refreshGames])
+  );
 
   useEffect(() => {
     const loadPlayers = async () => {
@@ -99,7 +92,10 @@ export default function EventDetails() {
     return () => clearTimeout(timeout);
   }, [showJoinedGameModal]);
 
-  const handleWeather =  async () => {
+  const handleWeather = useCallback(async () => {
+    if (!game?.date || !game?.location_name) {
+      return;
+    }
 
     const timestamp = game?.date;
     const apiDateFormat = timestamp?.split('T')[0];
@@ -108,8 +104,8 @@ export default function EventDetails() {
     const encodedLocation = encodeURIComponent(rawLocation);
     
     // FIX: Added the absolute path route required by Visual Crossing
-    const url = `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${encodedLocation}/${apiDateFormat}?key=${API_KEY}&unitGroup=metric`;    
-    
+    const url = `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${encodedLocation}/${apiDateFormat}?key=${WEATHER_API_KEY}&unitGroup=metric`;
+
     try {
       const response = await fetch(url);
       
@@ -129,7 +125,11 @@ export default function EventDetails() {
     } catch (error) {
       console.error("Network or parse error:", error);
     }
-  }
+  }, [game?.date, game?.location_name]);
+
+  useEffect(() => {
+    handleWeather();
+  }, [handleWeather]);
 
 
   const title = game?.title ?? "Event";
@@ -141,8 +141,10 @@ export default function EventDetails() {
     : '—';
   const timeLine = game?.time ?? '—';
   const locationLine = game?.location_name ?? '—';
-  const entryLine =
-    game?.isPaid && game.payment_amount ? `$${game.payment_amount}` : 'Free';
+  const courtShareLine = formatCourtShare(
+    game?.isPaid ?? false,
+    game?.payment_amount
+  );
   const aboutText =
     game?.gameDescription?.trim() ||
     'Details for this match will appear here when loaded from the server.';
@@ -184,24 +186,26 @@ export default function EventDetails() {
     }
 
     const inGame = await userInGame(game.id);
-    
+
     if (!inGame) {
       Alert.alert('Join game', 'You need to join the game to message players.');
       return;
     }
-    
+
     const inChat = await userInChat(game.id);
+    let joinedChatId: string | null = null;
+
     if (!inChat) {
-      const result = await addUserToChat(game.id);
-      if (!result) {
-        Alert.alert('Error', 'Unable to join chat. The chat may not exist yet. Please try again.');
+      joinedChatId = await addUserToChat(game.id, game.gameType);
+      if (!joinedChatId) {
+        Alert.alert('Error', 'Unable to open this game chat. Please try again.');
         return;
       }
     }
     
-    const chatId = await getChatId(game.id);
+    const chatId = joinedChatId ?? await getChatId(game.id);
     if (!chatId) {
-      Alert.alert('Error', 'Unable to open chat. Please try again.');
+      Alert.alert('Error', 'Unable to open this game chat. Please try again.');
       return;
     }
     
@@ -313,15 +317,9 @@ export default function EventDetails() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { error: blockError } = await supabase
-                .from('blocked_users')
-                .insert({
-                  blocker_id: user.id,
-                  blocked_id: game.hostId
-                });
+              const blocked = await blockUser(game.hostId);
 
-              if (blockError) {
-                console.log('Block error:', blockError);
+              if (!blocked) {
                 Alert.alert('Error', 'Failed to block host');
                 return;
               }
@@ -414,8 +412,8 @@ export default function EventDetails() {
               <View style={styles.iconContainer}>
                 <Ionicons name="cash-outline" size={20} color="#19E675" />
               </View>
-              <Text style={styles.lableText}>ENTRY</Text>
-              <Text style={styles.detailText}>{entryLine}</Text>
+              <Text style={styles.lableText}>COURT SHARE</Text>
+              <Text style={styles.detailText}>{courtShareLine}</Text>
             </View>
 
           </View>
@@ -435,7 +433,7 @@ export default function EventDetails() {
 
 
           <View style={styles.section}>
-            <Text style={styles.playingTitle}>Who's Playing</Text>
+            <Text style={styles.playingTitle}>Who is Playing</Text>
 
             <TouchableOpacity onPress={() => handleOpenPlayerProfile(game?.hostId ?? '')} style={styles.playerCard}>
               <Image source={{ uri: game?.host.avatar ?? 'https://picsum.photos/seed/sarah/100/100.jpg' }} style={styles.playerImage} />

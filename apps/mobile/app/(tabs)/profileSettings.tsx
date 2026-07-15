@@ -1,11 +1,12 @@
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, TextInput, Alert, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, TextInput, Alert, Image, Modal, Linking, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { decode } from 'base64-arraybuffer';
-import { supabase, getCurrentUser, getCurrentUserId } from '@/context/AuthContext';
+import { supabase, getCurrentUser, getCurrentUserId, signOutCurrentUser } from '@/context/AuthContext';
 import { useRouter } from 'expo-router';
+import { LEGAL_LAST_UPDATED, LEGAL_LINKS } from '@/constants/legal';
 
 type ProfileSettingsData = {
   displayName?: string;
@@ -39,12 +40,19 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   const [showWebModal, setShowWebModal] = useState(false);
   const [webContentType, setWebContentType] = useState('');
   const [rating, setRating] = useState(5);
-  const [userId, setUserId] = useState()
+  const [userId, setUserId] = useState<string | undefined>()
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const logoutInFlight = useRef(false);
   const router = useRouter()
   useEffect(() => {
     const loadUser = async () => {
       // Getting user
       const user = await getCurrentUser();
+
+      if (!user) {
+        console.log('No user found in profileSettings');
+        return;
+      }
 
       const userId = user.id;
       setUserId(userId)
@@ -162,59 +170,78 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   };
 
 
-  const logout = async() => {
-    await supabase.auth.signOut();
-    console.log('loged out')
-  }
-
-  const handleDeleteAccount = async () => {
-    const { data: authData } = await supabase.auth.getUser();
-    const currentUserId = authData?.user?.id ?? userId;
-
-    if (!currentUserId) {
-      Alert.alert('Error', 'Could not determine your user id. Please try again.');
+  const logout = useCallback(async () => {
+    if (logoutInFlight.current) {
       return;
     }
 
+    logoutInFlight.current = true;
+    setIsLoggingOut(true);
+
+    try {
+      const { error } = await signOutCurrentUser();
+
+      if (error) {
+        Alert.alert(
+          'Logout failed',
+          `${error.message} Please try again.`,
+        );
+        return;
+      }
+
+      setDisplayName('');
+      setProfileImage(null);
+      setProfileImageRead(null);
+      setUserId(undefined);
+      router.replace('/(auth)/SignUp');
+      Alert.alert('Logged out', 'You successfully logged out.');
+    } catch (error) {
+      console.warn('Unexpected logout error:', error);
+      Alert.alert(
+        'Logout failed',
+        'We could not log you out. Please check your connection and try again.',
+      );
+    } finally {
+      logoutInFlight.current = false;
+      setIsLoggingOut(false);
+    }
+  }, [router]);
+
+  const handleDeleteAccount = async () => {
     const { data, error } = await supabase.functions.invoke('delete-user', {
-      body: { userId: currentUserId },
+      body: {},
     });
 
-    if (error) {
-      console.error('Error calling function:', error);
+    if (error || data?.error) {
       Alert.alert(
         'Delete failed',
-        `Edge Function failed: ${error.message ?? 'Unknown server error'}. Check Supabase logs for "delete-account".`
+        'Unable to delete your account. Please try again later or contact support.'
       );
       return;
     }
 
-    if (!error) {
     await supabase.auth.signOut();
-    console.log('Function response:', data?.message ?? data);
     Alert.alert('Account deleted', 'Your account was deleted successfully.');
     router.replace('/SignUp');
-    }
   }
 
 
   const deleteAccount = async() => {
     Alert.alert(
-      "Delete Account", // Title
-      "Are you sure? This will permanently remove all your data.", // Message
+      "Delete Account",
+      "This permanently deletes your Sportiner account, profile, photos, games, messages, and personal data where deletion is legally permitted. This cannot be undone.",
       [
         {
           text: "Cancel",
-          onPress: () => console.log("Cancel Pressed"),
-          style: "cancel" // Special styling on iOS
+          style: "cancel"
         },
         { 
-          text: "Delete", 
-          onPress: () => handleDeleteAccount(), // Call your deletion function
-          style: "destructive" // Red text on iOS
+          text: "Delete Account",
+          onPress: () => handleDeleteAccount(),
+          style: "destructive"
         }
       ],
-      { cancelable: false } // Prevents closing by tapping outside (Android)
+      { cancelable: false }
     );
   }
 
@@ -397,6 +424,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
         {/* Support & Legal Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support & Legal</Text>
+          <Text style={styles.legalUpdatedText}>Last updated: {LEGAL_LAST_UPDATED}</Text>
           
           <TouchableOpacity style={styles.menuRow} onPress={() => openWebContent('help')}>
             <View style={styles.menuLeft}>
@@ -414,25 +442,64 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
             <Ionicons name="chevron-forward" size={20} color="#666" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuRow} onPress={() => openWebContent('terms')}>
+          <TouchableOpacity style={styles.menuRow} onPress={() => Linking.openURL(LEGAL_LINKS.terms)}>
             <View style={styles.menuLeft}>
               <Ionicons name="document-text-outline" size={24} color="#666" />
-              <Text style={styles.menuText}>Terms of Service / Privacy</Text>
+              <Text style={styles.menuText}>Terms of Use</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#666" />
           </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuRow} onPress={() => Linking.openURL(LEGAL_LINKS.privacy)}>
+            <View style={styles.menuLeft}>
+              <Ionicons name="lock-closed-outline" size={24} color="#666" />
+              <Text style={styles.menuText}>Privacy Policy</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuRow} onPress={() => Linking.openURL(LEGAL_LINKS.communityGuidelines)}>
+            <View style={styles.menuLeft}>
+              <Ionicons name="people-outline" size={24} color="#666" />
+              <Text style={styles.menuText}>Community Guidelines</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuRow} onPress={() => Linking.openURL(LEGAL_LINKS.support)}>
+            <View style={styles.menuLeft}>
+              <Ionicons name="help-buoy-outline" size={24} color="#666" />
+              <Text style={styles.menuText}>Support</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuRow} onPress={() => Linking.openURL(LEGAL_LINKS.supportMailto)}>
+            <View style={styles.menuLeft}>
+              <Ionicons name="mail-outline" size={24} color="#666" />
+              <Text style={styles.menuText}>Contact Support</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+
+
+          <TouchableOpacity style={styles.menuRow} onPress={logout}>
+            <View style={styles.menuLeft}>
+              <Ionicons name="exit-outline" size={24} color="#BA1A1A" />
+              <Text style={[styles.menuText, { color: '#BA1A1A' }]}>Log Out</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#BA1A1A" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuRow} onPress={deleteAccount}>
+            <View style={styles.menuLeft}>
+              <Ionicons name="trash-outline" size={24} color="#BA1A1A" />
+              <Text style={[styles.menuText, { color: '#BA1A1A' }]}>Delete Account</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#BA1A1A" />
+          </TouchableOpacity>
+
         </View>
-
-
-        <TouchableOpacity onPress={logout} style={styles.logoutButton}>
-          <Ionicons style={styles.logoutLogo} name='log-out-outline' size={24}></Ionicons>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-
-
-        <TouchableOpacity onPress={deleteAccount} style={styles.deleteButton}>
-          <Text style={styles.deleteText}>Delete My Account</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {/* Web Content Modal */}
@@ -492,6 +559,17 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
                     <Text style={styles.helpDescription}>Your profile is only visible to other tennis players. We never share your personal information with third parties.</Text>
                   </View>
                 </View>
+
+                <View style={styles.supportContactSection}>
+                  <Text style={styles.supportContactTitle}>Contact Support</Text>
+                  <Text style={styles.supportContactText}>Questions or safety concerns? Contact support@sportiner.com.</Text>
+                  <TouchableOpacity onPress={() => Linking.openURL(LEGAL_LINKS.supportMailto)}>
+                    <Text style={styles.supportContactEmail}>{LEGAL_LINKS.supportEmail}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => Linking.openURL(LEGAL_LINKS.support)}>
+                    <Text style={styles.supportContactLink}>Visit Support Page</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -525,35 +603,6 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
               </View>
             )}
 
-            {webContentType === 'terms' && (
-              <View style={styles.termsContent}>
-                <Text style={styles.contentTitle}>Privacy & Terms</Text>
-                
-                <View style={styles.termsSection}>
-                  <Text style={styles.termsSubtitle}>🔒 Your Privacy Matters</Text>
-                  <Text style={styles.termsText}>
-                    {`We only collect what's necessary to help you find tennis partners. Your profile, schedule, and match history are kept private and secure.`}
-                  </Text>
-                </View>
-
-                <View style={styles.termsSection}>
-                  <Text style={styles.termsSubtitle}>🤝 Community Guidelines</Text>
-                  <Text style={styles.termsText}>Be respectful, show up on time for matches, and play fairly. Good sportsmanship makes tennis better for everyone.</Text>
-                </View>
-
-                <View style={styles.termsSection}>
-                  <Text style={styles.termsSubtitle}>📱 How We Use Your Data</Text>
-                  <Text style={styles.termsText}>Your information helps us match you with compatible players and improve the app experience. We never sell your data to advertisers.</Text>
-                </View>
-
-                <View style={styles.termsSection}>
-                  <Text style={styles.termsSubtitle}>⚖️ Fair Play Policy</Text>
-                  <Text style={styles.termsText}>All players must follow tennis etiquette and rules. Reports of misconduct are taken seriously and may result in account suspension.</Text>
-                </View>
-                
-                <Text style={styles.termsFooter}>Last updated: January 2026</Text>
-              </View>
-            )}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -598,12 +647,21 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
+    marginBottom: 30
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: 'black',
     marginBottom: 16,
+  },
+  legalUpdatedText: {
+    color: '#666',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: -8,
+    marginBottom: 8,
+    textTransform: 'uppercase',
   },
   profileImageContainer: {
     alignItems: 'center',
@@ -734,8 +792,10 @@ const styles = StyleSheet.create({
   menuLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   menuText: {
+    flex: 1,
     fontSize: 16,
     color: 'black',
     marginLeft: 12,
@@ -751,6 +811,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 70,
     marginBottom: 30
+  },
+  logoutButtonDisabled: {
+    opacity: 0.65,
   },
   logoutLogo: {
     color: '#EA4335',
@@ -893,5 +956,34 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     marginTop: 32,
+  },
+  supportContactSection: {
+    marginTop: 32,
+    padding: 20,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+  },
+  supportContactTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#19E675',
+    marginBottom: 8,
+  },
+  supportContactText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+  },
+  supportContactEmail: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#19E675',
+    marginBottom: 8,
+  },
+  supportContactLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    textDecorationLine: 'underline',
   },
 });

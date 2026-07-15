@@ -126,6 +126,41 @@ export async function userExists() {
 }
 
 export const isOnboarding = { current: false}
+export const isPasswordRecovery = { current: false}
+
+export async function signOutCurrentUser(): Promise<{ error: Error | null }> {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError) {
+        return { error: new Error(`Unable to check your session: ${sessionError.message}`) };
+    }
+
+    if (!sessionData.session) {
+        isOnboarding.current = false;
+        isPasswordRecovery.current = false;
+        return { error: null };
+    }
+
+    const { error: signOutError } = await supabase.auth.signOut();
+
+    if (signOutError) {
+        return { error: new Error(`Unable to log out: ${signOutError.message}`) };
+    }
+
+    const { data: verificationData, error: verificationError } = await supabase.auth.getSession();
+
+    if (verificationError) {
+        return { error: new Error(`Unable to confirm logout: ${verificationError.message}`) };
+    }
+
+    if (verificationData.session) {
+        return { error: new Error('Your session is still active. Please try again.') };
+    }
+
+    isOnboarding.current = false;
+    isPasswordRecovery.current = false;
+    return { error: null };
+}
 
 export function useAuth(): { session: Session | null; user: User | null; loading: boolean } {
     const [session, setSession] = useState<Session | null>(null)

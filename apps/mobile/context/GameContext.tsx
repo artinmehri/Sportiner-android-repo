@@ -8,9 +8,11 @@ import {
   fetchHostProfiles,
   fetchPastGamesForUser,
   fetchPendingRequestsForHost,
+  fetchPendingRequestedGameRowsForPlayer,
   fetchPlayerCounts,
   fetchUpcomingGameRowsForPlayer,
   fetchUserGameMembership,
+  formatCourtShare,
   joinGame as joinGameDb,
   resolveCourtType,
   resolveGameCapacity,
@@ -280,7 +282,7 @@ export function rowToGame(row: GameRow, host: UserRow | null | undefined, counts
     ],
     level: skillLevel,
     address: location,
-    cost: isPaid && payment_amount ? `$${payment_amount} Entry` : 'Free',
+    cost: formatCourtShare(isPaid, payment_amount),
     image: row.image ?? null,
   };
 }
@@ -294,7 +296,6 @@ export async function addGame(
   time: string,
   location_name: string,
   level: string,
-  is_public: boolean,
   game_capacity: number,
   is_booked: boolean,
   payment_amount: number,
@@ -312,7 +313,7 @@ export async function addGame(
       time,
       location_name,
       level,
-      is_public,
+      is_public: true,
       game_capacity: type === '1v1' ? 2 : game_capacity,
       is_booked,
       payment_amount,
@@ -481,10 +482,40 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseConfigured || !authUserId) {
       return [];
     }
-    const rows = await fetchUpcomingGameRowsForPlayer(authUserId);
-    const games = await mapRowsToGames(rows);
+    const [joinedRows, pendingRows] = await Promise.all([
+      fetchUpcomingGameRowsForPlayer(authUserId),
+      fetchPendingRequestedGameRowsForPlayer(authUserId),
+    ]);
+    const pendingIds = new Set(pendingRows.map((row) => row.id));
+    const rowsById = new Map<string, GameRow>();
 
-    return games.filter((g) => isUpcomingGame(g.date));
+    [...joinedRows, ...pendingRows].forEach((row) => {
+      rowsById.set(row.id, row);
+    });
+
+    const games = await mapRowsToGames([...rowsById.values()]);
+
+    return games
+      .filter((g) => isUpcomingGame(g.date))
+      .map((game) => {
+        if (!pendingIds.has(game.id)) {
+          return game;
+        }
+
+        return {
+          ...game,
+          statuses: [
+            {
+              type: 'requested' as const,
+              label: 'Request pending',
+              color: '#92400E',
+              backgroundcolor: 'rgba(245, 158, 11, 0.16)',
+              icon: 'time-outline',
+            },
+            ...(game.statuses ?? []),
+          ],
+        };
+      });
   }, [authUserId]);
 
   const getPastGames = useCallback(async (): Promise<{ hosted: Game[]; played: Game[] }> => {
@@ -654,8 +685,7 @@ export async function getClosestOpenGames() {
     .order('time', { ascending: true });
 
   if (error) {
-    console.log('Error fetching closest games:', error.message);
-    return [];
+    throw error;
   }
 
   if (!data) return [];
@@ -863,6 +893,18 @@ export async function withdrawRequest(gameId: string) {
 
   if (error) {
     console.log('Error withdrawing from game:', error.message);
+    return false;
+  }
+
+  const { error: requestError } = await supabase
+    .from('game_requests')
+    .delete()
+    .eq('game_id', gameId)
+    .eq('user_id', user.id)
+    .eq('status', 'pending');
+
+  if (requestError) {
+    console.log('Error withdrawing request:', requestError.message);
     return false;
   }
 

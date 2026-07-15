@@ -11,6 +11,7 @@ import {
   Share,
   Modal,
   TouchableWithoutFeedback,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,10 +19,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGames, Game, getDistanceKm, gameVerified, deleteGame as deleteGameFromDb, withdrawRequest } from '@/context/GameContext';
 import { supabase, useAuth } from '@/context/AuthContext';
-import { addUserToChat, chatNavigator, getChatId, getplayers, userInChat } from '@/context/ChatContext';
+import { addUserToChat, chatNavigator, getChatId, getplayers, submitModerationReport, userInChat } from '@/context/ChatContext';
+import ReportModal from '@/components/ReportModal';
+import { formatCourtShare } from '@/lib/gamesDb';
 import * as Location from 'expo-location';
 import { type GeoCoords } from '@/lib/courtSuggestions';
-import { Linking } from 'react-native';
 import * as Calendar from 'expo-calendar';
 import moment from 'moment';
 
@@ -45,6 +47,7 @@ type GameStatus = {
 
 type GameCard = {
   id: string;
+  hostId: string;
   title: string;
   level?: string;
   type?: string;
@@ -99,10 +102,10 @@ export default function Games() {
     (async () => {
 
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const { status } = await Location.getForegroundPermissionsAsync();
 
         if (status !== 'granted') {
-          console.log('No location permission');
+          console.log('Location permission not granted; showing games without distance sorting');
           return;
         }
 
@@ -149,6 +152,8 @@ export default function Games() {
   const [pastHostingScrollIndex, setPastHostingScrollIndex] = useState(0);
   const [pastPlayingScrollIndex, setPastPlayingScrollIndex] = useState(0);
   const [selectedGame, setSelectedGame] = useState<GameCard | null>(null);
+  const [reportTarget, setReportTarget] = useState<GameCard | null>(null);
+  const [submittingReport, setSubmittingReport] = useState(false);
   const [showPlayers, setShowPlayers] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -171,7 +176,7 @@ export default function Games() {
         setShowFeedbackModal(false);
       }, 2500);
     }
-  }, [feedbackSubmitted]);
+  }, [feedbackSubmitted, router]);
 
   useFocusEffect(
     useCallback(() => {
@@ -214,7 +219,7 @@ export default function Games() {
       };
 
       loadData();
-    }, [refreshGames, user?.id, getMyGames, getMyPlayingGames, getPastGames, getIncomingRequests])
+    }, [refreshGames, user?.id, getMyGames, getMyPlayingGames, getPastGames, getIncomingRequests, isSupabaseConfigured])
   );
 
   useEffect(() => {
@@ -279,7 +284,7 @@ export default function Games() {
   };
 
 
-  const gameToCard = (game: Game): GameCard => {
+  const gameToCard = useCallback((game: Game): GameCard => {
     const formatDate = (dateString: string) => {
       const date = new Date(dateString);
       const today = new Date();
@@ -308,6 +313,7 @@ export default function Games() {
 
     return {
       id: game.id,
+      hostId: game.hostId,
       title: game.title,
       level: game.skillLevel,
       type: game.gameType,
@@ -325,13 +331,13 @@ export default function Games() {
             ).toFixed(1)} km`
           : '',
       address: game.location_name,
-      cost: game.isPaid ? `$${game.payment_amount} Entry` : 'Free',
+      cost: formatCourtShare(game.isPaid, game.payment_amount),
       time: `${formatDate(game.date)} • ${formatTime(game.time)}`,
       avatar: game.host.avatar,
       statuses: game.statuses || [],
       players: game.players || [],
     };
-  };
+  }, [nearbyOrigin]);
 
   const availableGamesList: GameCard[] = useMemo(
     () =>
@@ -343,7 +349,7 @@ export default function Games() {
           !pendingGameIds.includes(g.id)
         )
         .map(gameToCard),
-    [games, user?.id, joinedGameIds, pendingGameIds, nearbyOrigin]
+    [games, user?.id, joinedGameIds, pendingGameIds, gameToCard]
   );
 
   const hostedGamesList: GameCard[] = useMemo(
@@ -369,7 +375,7 @@ export default function Games() {
         },
       };
     }),
-    [myHostedGames, verifiedGames]
+    [myHostedGames, verifiedGames, gameToCard]
   );
 
   const playedGamesList: GameCard[] = useMemo(
@@ -395,7 +401,7 @@ export default function Games() {
         },
       };
     }),
-    [myPlayedGames, verifiedGames]
+    [myPlayedGames, verifiedGames, gameToCard]
   );
   
   const hostingGamesList: GameCard[] = useMemo(
@@ -404,7 +410,7 @@ export default function Games() {
         ...gameToCard(game),
         section: 'hosting',
       })),
-    [myGames]
+    [myGames, gameToCard]
   );
 
   const playingGamesList: GameCard[] = useMemo(
@@ -413,7 +419,7 @@ export default function Games() {
         ...gameToCard(game),
         section: 'playing',
       })),
-    [myPlayingGames]
+    [myPlayingGames, gameToCard]
   );
 
   const pendingRequestCount = useMemo(
@@ -469,6 +475,39 @@ export default function Games() {
   const handleMenuPress = (game: GameCard) => {
     setSelectedGame(game);
     setShowMenu(true);
+  };
+
+  const openReportGame = () => {
+    if (!selectedGame || !selectedGame.hostId || selectedGame.hostId === user?.id) {
+      setShowMenu(false);
+      return;
+    }
+
+    setReportTarget(selectedGame);
+    setShowMenu(false);
+  };
+
+  const handleSubmitGameReport = async (reason: string, details: string) => {
+    if (!reportTarget) return;
+
+    setSubmittingReport(true);
+    const success = await submitModerationReport({
+      reportedUserId: reportTarget.hostId,
+      reportedPostId: reportTarget.id,
+      reason,
+    });
+    setSubmittingReport(false);
+
+    if (!success) {
+      Alert.alert('Error', 'Failed to submit report');
+      return;
+    }
+
+    setReportTarget(null);
+    Alert.alert(
+      'Report submitted',
+      'Our moderation team will review this game and take action if it violates our Community Guidelines.'
+    );
   };
 
   const handleLeaveGame = () => {
@@ -631,12 +670,12 @@ export default function Games() {
   const handleShareGame = async () => {
     try {
       const gameDetails = selectedGame 
-        ? `Join ${selectedGame.title} on Sportiner! 🎾\n\n📅 ${selectedGame.time}\n📍 ${selectedGame.address}\n⚡ ${selectedGame.level}\n💰 ${selectedGame.cost}\n\nDownload Sportiner to join the game!`
-        : 'Join my game on Sportiner! 🎾';
+        ? `Check out ${selectedGame.title} on Sportiner. 🎾\n\n📅 ${selectedGame.time}\n📍 ${selectedGame.address}\n⚡ ${selectedGame.level}\n💰 ${selectedGame.cost}\n\nSportiner helps tennis players find, create, and join local games.`
+        : 'Find, create, and join local tennis games on Sportiner. 🎾';
       
       const result = await Share.share({
         message: gameDetails,
-        url: `https://sportiner.app/game/${selectedGame?.id || '123'}`,
+        url: 'https://sportiner.com/app',
         title: `${selectedGame?.title || 'Tennis Game'} - Sportiner`
       });
       
@@ -653,9 +692,9 @@ export default function Games() {
     setSelectedGame(null);
   };
 
-  const openChatForGame = (game: GameCard, peerName?: string) => {
+  const openChatForGame = async (game: GameCard) => {
     closeAllPopups();
-    chatNavigator(game.id, game.type);
+    await handleOnMessage(game.id, game.type);
   };
 
   async function handleOnMessage(
@@ -668,26 +707,26 @@ export default function Games() {
     }
 
     try {
-      const chatTitle = gameType?.trim() || 'Tennis Game';
       const inChat = await userInChat(gameId);
+      let joinedChatId: string | null = null;
 
       if (!inChat) {
-        const addedToChat = await addUserToChat(gameId);
+        joinedChatId = await addUserToChat(gameId, gameType);
 
-        if (!addedToChat) {
-          Alert.alert('Error', 'Unable to join the game chat. Please try again.');
+        if (!joinedChatId) {
+          Alert.alert('Error', 'Unable to open this game chat. Please try again.');
           return;
         }
       }
 
-      const chatId = await getChatId(gameId);
+      const chatId = joinedChatId ?? await getChatId(gameId);
 
       if (!chatId) {
         Alert.alert('Error', 'Unable to open this game chat. Please try again.');
         return;
       }
 
-      await chatNavigator(chatId, chatTitle);
+      await chatNavigator(chatId, gameType);
     } catch (error) {
       console.log('Failed opening game chat:', error);
       Alert.alert('Error', 'Unable to open this game chat. Please try again.');
@@ -754,14 +793,6 @@ export default function Games() {
             </TouchableOpacity>
           </View>
         </View>
-        <TouchableOpacity style={styles.notificationButton} onPress={ () => router.push('/(tabs)/requests')}>
-          <Ionicons name="file-tray-outline" size={30} color="#000"/>
-          {pendingRequestCount > 0 && (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationText}>{pendingRequestCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -829,16 +860,10 @@ export default function Games() {
                       {(game.time !== undefined) && (
                       <Text style={styles.cardDate}>Played {game.time.split('•')[0].trim()}</Text>
                       )}
-                      {game.status &&  !game.verified && (
-                        <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
-                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
-                          <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {game.status && game.verified == true && (
+                      {game.status && (
                         <View style={[styles.verifiedStatus, { backgroundColor: game.status.backgroundcolor }]}>
                           <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
-                          <Text style={styles.verifyButtonText}>{game.status.label}</Text>
+                          <Text style={styles.verifyButtonText}>Game Completed</Text>
                         </View>
                       )}
                       <Text style={styles.playersHead}>Players</Text>
@@ -927,16 +952,10 @@ export default function Games() {
                       {(game.time !== undefined) && (
                       <Text style={styles.cardDate}>Hosted {game.time.split('•')[0].trim()}</Text>
                       )}
-                      {game.status &&  game.verified == false && (
-                        <TouchableOpacity onPress={() => router.push('/(tabs)/matchVerif')} style={[styles.verifyButton, { backgroundColor: game.status.backgroundcolor }]}>
-                          <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
-                          <Text style={styles.verifyButtonTextHosting}>{game.status.label}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {game.status && game.verified == true && (
+                      {game.status && (
                         <View style={[styles.verifiedStatus, { backgroundColor: game.status.backgroundcolor }]}>
                           <Ionicons name={game.status.icon as any} size={16} color={game.status.color} />
-                          <Text style={styles.verifyButtonText}>{game.status.label}</Text>
+                          <Text style={styles.verifyButtonText}>Game Completed</Text>
                         </View>
                       )}
                       <Text style={styles.playersHead}>Players</Text>
@@ -1019,6 +1038,35 @@ export default function Games() {
                               {game.address} • {game.cost}
                             </Text>
                             <Text style={styles.detailText}>{game.time}</Text>
+                          </View>
+                          <View style={styles.statusContainer}>
+                            {game.statuses?.map((status: any, index: any) => (
+                              <View
+                                key={index}
+                                style={[
+                                  styles.statusPill,
+                                  {
+                                    backgroundColor: status.backgroundcolor,
+                                  },
+                                ]}
+                              >
+                                <Ionicons
+                                  name={status.icon as any}
+                                  size={14}
+                                  color={status.type === 'requested' ? status.color : '#F59E0B'}
+                                />
+                                <Text
+                                  style={[
+                                    styles.statusText,
+                                    {
+                                      color: status.type === 'requested' ? status.color : '#92400E',
+                                    },
+                                  ]}
+                                >
+                                  {status.label}
+                                </Text>
+                              </View>
+                            ))}
                           </View>
                           <View style={styles.actionBar}>
                             <TouchableOpacity
@@ -1204,6 +1252,12 @@ export default function Games() {
                   <Ionicons name="people-outline" size={20} color="#000" />
                   <Text style={styles.menuText}>View Players</Text>
                 </TouchableOpacity>
+                {selectedGame?.hostId && selectedGame.hostId !== user?.id && (
+                  <TouchableOpacity style={styles.menuItem} onPress={openReportGame}>
+                    <Ionicons name="flag-outline" size={20} color="#FF0000" />
+                    <Text style={[styles.menuText, { color: '#FF0000' }]}>Report Game</Text>
+                  </TouchableOpacity>
+                )}
                 {selectedGame?.section === 'playing' && (
                   <TouchableOpacity style={styles.menuItem} onPress={handleLeavePlayingGame}>
                     <Ionicons name="log-out-outline" size={20} color="#FF0000" />
@@ -1221,6 +1275,14 @@ export default function Games() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      <ReportModal
+        visible={!!reportTarget}
+        title="Report Game"
+        submitting={submittingReport}
+        onClose={() => setReportTarget(null)}
+        onSubmit={handleSubmitGameReport}
+      />
 
       {/* Players Modal */}
       <Modal
@@ -1243,7 +1305,7 @@ export default function Games() {
                       key={index}
                       onPress={() => {
                         if (selectedGame) {
-                          openChatForGame(selectedGame, player.name);
+                          openChatForGame(selectedGame);
                         }
                       }}
                     >

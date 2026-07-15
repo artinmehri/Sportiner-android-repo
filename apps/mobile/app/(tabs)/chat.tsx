@@ -20,13 +20,13 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as ImagePicker from 'expo-image-picker'
 import * as Clipboard from 'expo-clipboard';
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming, useDerivedValue } from 'react-native-reanimated';
-import { deleteMessage, editMessage, findOtherPlayer, getGameInfo, getMessages, replyMessage, sendMessage } from '@/context/ChatContext';
-import { getCurrentUserId, getUser, } from '@/context/AuthContext';
+import { blockUser, deleteMessage, editMessage, findOtherPlayer, getGameInfo, getMessages, markAsRead, replyMessage, sendMessage, submitModerationReport } from '@/context/ChatContext';
+import { getCurrentUserId, getUser, supabase } from '@/context/AuthContext';
 import { formatGameSubtitle, type GameRow } from '@/context/GameContext';
 import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
+import ReportModal from '@/components/ReportModal';
 const { width, height } = Dimensions.get('window');
 
 const DEFAULT_AVATAR =
@@ -44,6 +44,12 @@ type Message = {
   updated_at?: Timestamp;
   is_edited?: boolean;
   status?: string
+};
+
+type ReportTarget = {
+  reportedUserId: string;
+  reportedMessageId?: string | null;
+  title: string;
 };
 
 const SWIPE_THRESHOLD = 80;
@@ -96,10 +102,13 @@ const ChatScreen = () => {
   const [otherUserId, setOtherUserId] = useState('');
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('');
-  const [currentUserId, setCurrentUserId] = useState()
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>()
   const [userNames, setUserNames] = useState<Record<string, string>>({});
   const [gameTitle, setGameTitle] = useState('');
   const [gameId, setGameId] = useState('');
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const [submittingReport, setSubmittingReport] = useState(false);
 
 
   useEffect(() => {
@@ -188,16 +197,50 @@ const ChatScreen = () => {
           })
         );
       }
+
+      // Mark conversation as read (fire-and-forget, error handling in markAsRead)
+      if (id) {
+        markAsRead(id);
+      }
     })();
+
+    // Subscribe to new messages in this chat
+    const subscription = supabase
+      .channel(`messages:${id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${id}`
+      }, (payload) => {
+        if (cancelled) return;
+        const newMessage = payload.new as any;
+        setMessages(prev => [...prev, {
+          id: newMessage.id,
+          sender_id: newMessage.sender_id,
+          message: newMessage.message,
+          type: newMessage.type,
+          image: newMessage.image,
+          reply_to: newMessage.reply_to,
+          is_reply: newMessage.is_reply,
+          created_at: newMessage.created_at,
+          updated_at: newMessage.updated_at,
+          is_edited: newMessage.is_edited,
+          status: newMessage.status
+        }]);
+      })
+      .subscribe();
 
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
     };
   }, [id]);
 
 
   const navigateToProfile = () => {
     if (!otherUserId) return;
+    setShowHeaderMenu(false);
     router.push({ pathname: "/(tabs)/profileDetails", params: { id: otherUserId } });
   };
 
@@ -211,7 +254,6 @@ const ChatScreen = () => {
     message: null as Message | null,
     position: { x: 0, y: 0 },
   });
-  const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showImage, setShowImage] = useState<string | null>(null);
 
@@ -220,24 +262,8 @@ const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const pickImgae = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 1
-    });
-
-    if (!result.canceled) {
-      setSelectedMedia(result.assets[0].uri)
-      console.log(result)
-    } else {
-      alert("You did not select any image or gave any permission, nope, thats what bad boys do, don't be a bad boy")
-    }
-  }
-
-
   const handleSend = async () => {
-    if ((!inputText.trim() && !selectedMedia && !isReplying && !editingMessage) || (isReplying && !inputText.trim() && !selectedMedia)) {
+    if ((!inputText.trim() && !isReplying && !editingMessage) || (isReplying && !inputText.trim())) {
       return;
     }
 
@@ -274,7 +300,6 @@ const ChatScreen = () => {
 
       setMessages(prev => [...prev, savedReply]);
       setInputText('');
-      setSelectedMedia(null);
       setReplyInfo(null);
       setIsReplying(false);
       inputRef.current?.focus();
@@ -298,7 +323,6 @@ const ChatScreen = () => {
 
         // Reseting both text and media after sending
         setInputText('');
-        setSelectedMedia(null);
         setReplyInfo(null);
         setIsReplying(false);
       
@@ -334,6 +358,79 @@ const ChatScreen = () => {
       message,
       position: { x: pageX, y: pageY },
     });
+  };
+
+  const openReportUser = (reportedUserId: string) => {
+    if (!reportedUserId || reportedUserId === currentUserId) return;
+    setShowHeaderMenu(false);
+    setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+    setReportTarget({
+      reportedUserId,
+      reportedMessageId: null,
+      title: 'Report User',
+    });
+  };
+
+  const openReportMessage = (message: Message) => {
+    if (!message.id || message.sender_id === currentUserId) return;
+    setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+    setReportTarget({
+      reportedUserId: message.sender_id,
+      reportedMessageId: message.id,
+      title: 'Report Message',
+    });
+  };
+
+  const handleSubmitReport = async (reason: string, details: string) => {
+    if (!reportTarget) return;
+
+    setSubmittingReport(true);
+    const success = await submitModerationReport({
+      reportedUserId: reportTarget.reportedUserId,
+      reportedPostId: reportTarget.reportedMessageId,
+      reason,
+    });
+    setSubmittingReport(false);
+
+    if (!success) {
+      Alert.alert('Error', 'Failed to submit report');
+      return;
+    }
+
+    setReportTarget(null);
+    Alert.alert(
+      'Report submitted',
+      'Our moderation team will review it and take action if it violates our Community Guidelines.'
+    );
+  };
+
+  const handleBlockUser = (blockedUserId: string) => {
+    if (!blockedUserId || blockedUserId === currentUserId) return;
+    setShowHeaderMenu(false);
+    setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+
+    Alert.alert(
+      'Block User',
+      'This user will no longer be able to message you.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await blockUser(blockedUserId);
+
+            if (!success) {
+              Alert.alert('Error', 'Failed to block user');
+              return;
+            }
+
+            setMessages((current) => current.filter((message) => message.sender_id !== blockedUserId));
+            Alert.alert('User Blocked', 'You have successfully blocked this user.');
+          },
+        },
+      ]
+    );
   };
 
   const closeContextMenu = () => {
@@ -379,7 +476,43 @@ const ChatScreen = () => {
           <Text style={styles.contactSubtitle}>{formatGameSubtitle(game)}</Text>
         </TouchableOpacity>
       </View>
+      <TouchableOpacity
+        style={styles.headerMenuButton}
+        onPress={() => setShowHeaderMenu(true)}
+      >
+        <Ionicons name="ellipsis-vertical" size={22} color="#111" />
+      </TouchableOpacity>
     </View>
+  );
+
+  const renderHeaderMenu = () => (
+    <Modal
+      visible={showHeaderMenu}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowHeaderMenu(false)}
+    >
+      <TouchableWithoutFeedback onPress={() => setShowHeaderMenu(false)}>
+        <View style={styles.headerMenuOverlay}>
+          <TouchableWithoutFeedback>
+            <View style={styles.headerMenu}>
+              <TouchableOpacity style={styles.headerMenuItem} onPress={navigateToProfile}>
+                <Ionicons name="person-circle-outline" size={20} color="#111" />
+                <Text style={styles.headerMenuText}>View Profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerMenuItem} onPress={() => openReportUser(otherUserId)}>
+                <Ionicons name="flag-outline" size={20} color="#EF4444" />
+                <Text style={styles.headerMenuText}>Report User</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerMenuItem} onPress={() => handleBlockUser(otherUserId)}>
+                <Ionicons name="ban-outline" size={20} color="#EF4444" />
+                <Text style={styles.headerMenuText}>Block User</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 
 
@@ -442,8 +575,6 @@ const ChatScreen = () => {
   let inputStyling;
   if (inputText) {
     inputStyling = styles.inputPill;
-  } else if (selectedMedia) {
-    inputStyling = styles.inputNMedia;
   } else {
     inputStyling = styles.simpleInputPill
   }
@@ -507,30 +638,7 @@ const ChatScreen = () => {
       {renderReplyPreview()}
 
     
-      <View style={selectedMedia ? styles.composerPill: styles.simpleComposerPill}>
-
-        {selectedMedia && (
-          <View style={styles.mediaPreview}>
-            {selectedMedia.includes('video') ? (
-              <View style={styles.videoPreview}>
-                <Image source={{ uri: 'https://picsum.photos/seed/video-thumb/100/100.jpg' }} style={styles.mediaThumbnail} />
-                <Ionicons name="videocam" size={16} color="#666" style={styles.mediaIcon} />
-              </View>
-            ) : (
-              <View style={styles.imagePreview}>
-                <Image source={{ uri: selectedMedia }} style={styles.mediaThumbnail} />
-                <TouchableOpacity 
-                  style={styles.removeMediaButton}
-                  onPress={() => setSelectedMedia(null)}
-                >
-                  <Ionicons name="close" size={16} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-
+      <View style={styles.simpleComposerPill}>
         <View style={inputStyling}>
 
             <TextInput
@@ -542,11 +650,11 @@ const ChatScreen = () => {
               placeholderTextColor="#6B7280"
               multiline={false}
             />
-            {(inputText.trim() || selectedMedia) &&
+            {inputText.trim() &&
                       <TouchableOpacity
                         style={styles.sendButton}
                         onPress={handleSend}
-                        disabled={!inputText.trim() && !selectedMedia && !editingMessage && !isReplying}
+                        disabled={!inputText.trim() && !editingMessage && !isReplying}
                       >
                         <Ionicons name="send" size={22} color="#22C55E" />
                       </TouchableOpacity>
@@ -567,11 +675,14 @@ const ChatScreen = () => {
     }).start();
     
     const message = showContextMenu.message;
+    const isOwnMessage = message.sender_id === currentUserId;
     const menuItems = [
       { id: 'copy', icon: 'copy-outline', iconSet: 'Ionicons', label: 'Copy', color: '#6B7280' },
-      ...(message.sender_id === currentUserId ? [{ id: 'edit', icon: 'create-outline', iconSet: 'Ionicons', label: 'Edit', color: '#3B82F6' }] : []),
-      { id: 'delete', icon: 'trash-outline', iconSet: 'Ionicons', label: 'Delete', color: '#EF4444' },
-      { id: 'pin', icon: 'pin-outline', iconSet: 'Ionicons', label: 'Pin', color: '#F59E0B' },
+      ...(isOwnMessage ? [{ id: 'edit', icon: 'create-outline', iconSet: 'Ionicons', label: 'Edit', color: '#3B82F6' }] : []),
+      ...(isOwnMessage ? [{ id: 'delete', icon: 'trash-outline', iconSet: 'Ionicons', label: 'Delete', color: '#EF4444' }] : []),
+      ...(!isOwnMessage ? [{ id: 'report-message', icon: 'flag-outline', iconSet: 'Ionicons', label: 'Report Message', color: '#EF4444' }] : []),
+      ...(!isOwnMessage ? [{ id: 'report-user', icon: 'person-remove-outline', iconSet: 'Ionicons', label: 'Report User', color: '#EF4444' }] : []),
+      ...(!isOwnMessage ? [{ id: 'block-user', icon: 'ban-outline', iconSet: 'Ionicons', label: 'Block User', color: '#EF4444' }] : []),
     ];
     
     const menuWidth = 250;
@@ -615,17 +726,27 @@ const ChatScreen = () => {
                               style: 'destructive',
                               onPress: async () => {
                                 if (message.id) {
-                                await deleteMessage(message.id)
-                                setMessages(prev => prev.filter(m => m.id !== message.id));
+                                  const deleted = await deleteMessage(message.id);
+                                  if (deleted) {
+                                    setMessages(prev => prev.filter(m => m.id !== message.id));
+                                  } else {
+                                    Alert.alert('Could not delete message', 'Please try again.');
+                                  }
                                 }
                               },
                             },
                           ]
                         );
-                      } else if (item.id === 'pin') {
-                        Alert.alert('Message pinned');
+                      } else if (item.id === 'report-message') {
+                        openReportMessage(message);
+                      } else if (item.id === 'report-user') {
+                        openReportUser(message.sender_id);
+                      } else if (item.id === 'block-user') {
+                        handleBlockUser(message.sender_id);
                       }
-                      setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+                      if (!['report-message', 'report-user', 'block-user'].includes(item.id)) {
+                        setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
+                      }
                     }}
                   >
                     <View style={[styles.contextMenuIconContainer, { backgroundColor: item.color + '20' }]}>
@@ -646,6 +767,7 @@ const ChatScreen = () => {
     <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       {renderHeader()}
+      {renderHeaderMenu()}
       
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
@@ -679,6 +801,13 @@ const ChatScreen = () => {
         
         {renderInput()}
         {renderContextMenu()}
+        <ReportModal
+          visible={!!reportTarget}
+          title={reportTarget?.title}
+          submitting={submittingReport}
+          onClose={() => setReportTarget(null)}
+          onSubmit={handleSubmitReport}
+        />
 
         <Modal
         visible={showFullScreenImage}
@@ -734,6 +863,44 @@ const styles = StyleSheet.create({
   backButton: {
     paddingVertical: 8,
     paddingRight: 10,
+  },
+  headerMenuButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.16)',
+  },
+  headerMenu: {
+    position: 'absolute',
+    top: 92,
+    right: 14,
+    width: 220,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 9,
+  },
+  headerMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 10,
+  },
+  headerMenuText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111',
   },
   avatar: {
     width: 34,

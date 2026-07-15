@@ -21,7 +21,12 @@
         "device": "iPhone 17 Pro"
       },
       "supportsTablet": false,
-      "appleTeamId": "6YMBF7XTQC"
+      "requireFullScreen": true,
+      "appleTeamId": "6YMBF7XTQC",
+      "infoPlist": {
+        "UIRequiresFullScreen": true,
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sportiner uses your location only when you choose nearby discovery to show nearby tennis games and courts. Sportiner does not track your location in the background."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -68,20 +73,40 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Sportiner uses your location to suggest nearby tennis courts."
+          "locationAlwaysAndWhenInUsePermission": "Sportiner uses your location only when you choose nearby discovery to show nearby tennis games and courts. Sportiner does not track your location in the background.",
+          "locationAlwaysPermission": false,
+          "locationWhenInUsePermission": "Sportiner uses your location to show nearby tennis games and courts when you choose to use nearby discovery."
         }
       ],
       [
         "expo-calendar",
         {
-          "calendarPermission": "Allow Sportiner to read your calendar so it can display your upcoming sports games, practices, and scheduled events inside the app.",
-  "calendarFullAccessPermission": "Allow Sportiner to create, update, and delete calendar events so it can automatically schedule, adjust, and manage your games, training sessions, and match times.",
-  "remindersPermission": "Allow Sportiner to read your reminders so it can show your existing sports-related tasks and upcoming alerts within the app.",
-  "remindersFullAccessPermission": "Allow Sportiner to create, modify, and remove reminders so it can automatically set alerts for games, practices, and event notifications."
+          "calendarPermission": "Sportiner uses calendar access only when you choose to add a tennis game to your calendar.",
+          "remindersPermission": "Sportiner uses reminders access only when you choose to save a reminder for a tennis game."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sportiner uses your photo library when you choose a profile photo.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Sportiner uses your photo library when you choose a profile photo.",
+          "savePhotosPermission": false
         }
       ],
       [
@@ -89,7 +114,9 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -99,7 +126,9 @@
       "router": {},
       "eas": {
         "projectId": "3fc54ed7-2c43-46b8-b461-2d9d5c2804e6"
-      }
+      },
+      "supportUrl": "https://sportiner.com/support",
+      "supportEmail": "support@sportiner.com"
     }
   }
 }

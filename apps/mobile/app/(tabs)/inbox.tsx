@@ -9,7 +9,7 @@ import {
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { getConversations } from "@/context/ChatContext";
 import { getCurrentUserId } from "@/context/AuthContext";
@@ -90,8 +90,10 @@ function toInboxChat(
 export default function Inbox() {
   const [currentUserId, setCurrentUserId] = useState<any | null>('');
   const [selectedFilter, setSelectedFilter] = useState("All");
+  const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [chats, setChats] = useState<InboxChat[]>([]);
+  const searchInputRef = useRef<TextInput>(null);
   const router = useRouter();
 
   useFocusEffect(
@@ -117,6 +119,44 @@ export default function Inbox() {
     }, [])
   );
 
+  const filteredChats = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+
+    return chats.filter((chat) => {
+      const matchesFilter =
+        selectedFilter === "All" ||
+        (selectedFilter === "Group" && chat.type === "group") ||
+        (selectedFilter === "1-1" && chat.type === "private");
+
+      if (!matchesFilter) return false;
+      if (!normalizedQuery) return true;
+
+      const searchableText = [
+        chat.name,
+        chat.lastMessage,
+        chat.type,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(normalizedQuery);
+    });
+  }, [chats, searchQuery, selectedFilter]);
+
+  const openSearch = () => {
+    setIsSearching(true);
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+
+  const clearSearch = () => {
+    setSearchQuery("");
+
+    if (isSearching) {
+      searchInputRef.current?.focus();
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.header}>
@@ -124,14 +164,47 @@ export default function Inbox() {
       </View>
 
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#555555" />
-        <TextInput
-          placeholder="Look Up People"
-          placeholderTextColor="#555555"
-          style={[styles.searchInput, { fontWeight: 'bold' }]} // Add bold weight
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Search conversations"
+          onPress={openSearch}
+          style={styles.searchIconButton}
+        >
+          <Ionicons name="search" size={20} color="#555555" />
+        </TouchableOpacity>
+        {isSearching ? (
+          <>
+            <TextInput
+              ref={searchInputRef}
+              placeholder="Search conversations"
+              placeholderTextColor="#555555"
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                onPress={clearSearch}
+                style={styles.searchIconButton}
+              >
+                <Ionicons name="close-circle" size={20} color="#555555" />
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Open conversation search"
+            onPress={openSearch}
+            style={styles.searchPlaceholderButton}
+          >
+            <Text style={styles.searchPlaceholder}>Search conversations</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.filterContainer}>
@@ -166,37 +239,18 @@ export default function Inbox() {
         style={styles.ticketsScrollView}
         key={selectedFilter}
       >
-        {selectedFilter === "Group"
-          ? chats
-              .filter((chat) => chat.type === "group")
-              .filter(
-                (chat) =>
-                  searchQuery === "" ||
-                  chat.name.toLowerCase().includes(searchQuery.toLowerCase())
-              )
-              .map((chat) => (
-                <ChatItem key={chat.id} chat={chat} router={router} />
-              ))
-          : selectedFilter === "1-1"
-            ? chats
-                .filter((chat) => chat.type === "private")
-                .filter(
-                  (chat) =>
-                    searchQuery === "" ||
-                    chat.name.toLowerCase().includes(searchQuery.toLowerCase())
-                )
-                .map((chat) => (
-                  <ChatItem key={chat.id} chat={chat} router={router} />
-                ))
-            : chats
-                .filter(
-                  (chat) =>
-                    searchQuery === "" ||
-                    chat.name.toLowerCase().includes(searchQuery.toLowerCase())
-                )
-                .map((chat) => (
-                  <ChatItem key={chat.id} chat={chat} router={router} />
-                ))}
+        {filteredChats.length > 0 ? (
+          filteredChats.map((chat) => (
+            <ChatItem key={chat.id} chat={chat} router={router} />
+          ))
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateTitle}>No conversations found.</Text>
+            <Text style={styles.emptyStateText}>
+              Try searching by chat name, player name, game title, or message.
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -258,15 +312,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#EFEFEF",
     borderRadius: 28,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 10,
     marginHorizontal: 16,
     marginBottom: 16,
+  },
+  searchIconButton: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchPlaceholderButton: {
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 32,
+  },
+  searchPlaceholder: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#555555",
   },
   searchInput: {
     flex: 1,
     marginLeft: 8,
     fontSize: 16,
+    fontWeight: "700",
     color: "#1F2937",
   },
   filterContainer: {
@@ -308,6 +380,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 20,
+    flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 48,
+  },
+  emptyStateTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#000000",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  emptyStateText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 20,
   },
   chatItem: {
     flexDirection: "row",

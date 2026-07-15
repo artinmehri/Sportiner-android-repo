@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,67 +8,39 @@ import {
   StatusBar,
   SafeAreaView,
   ScrollView,
-  Modal,
   Vibration,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SignupInterface } from '@/context/SignupInterface.type';
-import { getClosestOpenGames, rowToGame, getDistanceKm, type GameRow, type Game } from '@/context/GameContext';
-import { fetchHostProfiles, fetchPlayerCounts, type PlayerCounts } from '@/lib/gamesDb';
-
-import * as Location from 'expo-location';
+import { getClosestOpenGames, rowToGame, getDistanceKm, type Game } from '@/context/GameContext';
+import { fetchHostProfiles, fetchPlayerCounts } from '@/lib/gamesDb';
 import { type GeoCoords } from '@/lib/courtSuggestions';
+import {
+  logOnboardingError,
+  onboardingErrorCopy,
+  providerFromMethod,
+  toOnboardingError,
+} from '@/lib/onboardingErrors';
 
-const JOIN_REDIRECT_DELAY_MS = 700;
 
-
-export default function FifthOnbPage ({onNext}: SignupInterface) {
-  const [showPopup, setShowPopup] = useState(false);
-  const [joinedGameIds, setJoinedGameIds] = useState<Set<string>>(new Set());
+export default function FifthOnbPage ({onNext, data}: SignupInterface) {
   const [games, setGames] = useState<Game[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
+  const [submittingGameId, setSubmittingGameId] = useState<string | null>(null);
+  const [gamesLoadError, setGamesLoadError] = useState<string | null>(null);
 
   const buzzPhone = () => {
     Vibration.vibrate()
   }
 
   useEffect(() => {
-    loadGames();
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-
-        if (status !== 'granted') {
-          console.log('No location permission for onboarding distance');
-          return;
-        }
-
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Highest,
-        });
-
-        if (!active) return;
-
-        setSafeOrigin({
-          lat: Number(position.coords.latitude),
-          lng: Number(position.coords.longitude),
-        });
-      } catch (error) {
-        console.log('Onboarding location error:', error);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+    if (data?.location) {
+      setSafeOrigin(data.location);
+    }
+  }, [data?.location]);
 
   const setSafeOrigin = (coords: GeoCoords) => {
     if (
@@ -90,44 +62,95 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
     setNearbyOrigin(coords);
   };
 
-  const loadGames = async () => {
+  const loadGames = useCallback(async () => {
     try {
       setIsLoading(true);
+      setGamesLoadError(null);
       const gameRows = await getClosestOpenGames();
-      
+
       const hostIds = [...new Set(gameRows.map((r) => r.host_id).filter(Boolean))] as string[];
       const gameIds = gameRows.map((r) => r.id);
       const [profileMap, counts] = await Promise.all([
         fetchHostProfiles(hostIds),
         fetchPlayerCounts(gameIds),
       ]);
-      
-      const mappedGames = gameRows.map((r) => 
+
+      const mappedGames = gameRows.map((r) =>
         rowToGame(r, r.host_id ? profileMap[r.host_id] : undefined, counts)
       );
-      
+
       setGames(mappedGames);
     } catch (error) {
-      console.error('Error loading games:', error);
+      const gamesError = toOnboardingError(
+        {
+          failure: 'nearby_games',
+          provider: providerFromMethod(data?.method),
+          source: 'games.nearby.load',
+        },
+        error
+      );
+      const copy = onboardingErrorCopy(gamesError);
+      logOnboardingError(gamesError);
+      setGamesLoadError(copy.message);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [data?.method]);
 
-  const handleJoinGame = (gameId: string) => {
-    if (joinedGameIds.has(gameId)) {
-      onNext();
+  useEffect(() => {
+    void loadGames();
+  }, [loadGames]);
+
+  const handleJoinGame = async (gameId: string) => {
+    if (submittingGameId) {
       return;
     }
 
-    setShowPopup(true);
-    setJoinedGameIds(prev => new Set(prev).add(gameId));
+    setSubmittingGameId(gameId);
     buzzPhone();
 
-    setTimeout(() => {
-      setShowPopup(false);
-      onNext();
-    }, JOIN_REDIRECT_DELAY_MS);
+    try {
+      await onNext(gameId);
+    } catch (error) {
+      const joinError = toOnboardingError(
+        {
+          failure: 'game_join',
+          provider: providerFromMethod(data?.method),
+          source: 'games.join.ui',
+        },
+        error
+      );
+      const copy = onboardingErrorCopy(joinError);
+      if (joinError.source === 'games.join.ui') {
+        logOnboardingError(joinError, { gameId });
+      }
+      Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
+    } finally {
+      setSubmittingGameId(null);
+    }
+  };
+
+  const handleBrowseAllGames = async () => {
+    if (submittingGameId) return;
+
+    setSubmittingGameId('browse');
+    try {
+      await onNext();
+    } catch (error) {
+      const finishError = toOnboardingError(
+        {
+          failure: 'session',
+          provider: providerFromMethod(data?.method),
+          source: 'onboarding.finish_without_game',
+        },
+        error
+      );
+      const copy = onboardingErrorCopy(finishError);
+      logOnboardingError(finishError);
+      Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
+    } finally {
+      setSubmittingGameId(null);
+    }
   };
 
   const formatGameTime = (dateIso: string) => {
@@ -174,7 +197,7 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Title Section */}
         <View style={styles.titleSection}>
-          <Text style={styles.mainTitle}>We found 2 games</Text>
+          <Text style={styles.mainTitle}>We found {games.length} game{games.length === 1 ? '' : 's'}</Text>
           <Text style={styles.subTitle}>Want in?</Text>
         </View>
 
@@ -183,6 +206,13 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#19E675" />
+            </View>
+          ) : gamesLoadError ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.noGamesText}>{gamesLoadError}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={loadGames}>
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
             </View>
           ) : games.length === 0 ? (
             <View style={styles.loadingContainer}>
@@ -207,7 +237,7 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
                       </>
                     ) : null}
                   </View>
-                  
+
                   <View style={styles.gameDetails}>
                     <View style={styles.detailRow}>
                       <View style={styles.icon}>
@@ -221,13 +251,14 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
                       </View>
                     </View>
                   </View>
-                  
-                  <TouchableOpacity 
-                    style={joinedGameIds.has(game.id) ? styles.joinedButton : styles.joinButton} 
+
+                  <TouchableOpacity
+                    style={submittingGameId === game.id ? styles.joinedButton : styles.joinButton}
                     onPress={() => handleJoinGame(game.id)}
+                    disabled={Boolean(submittingGameId)}
                   >
-                    <Text style={joinedGameIds.has(game.id) ? styles.joinedButtonText : styles.joinButtonText}>
-                      {joinedGameIds.has(game.id) ? "Joined" : "Join Game"}
+                    <Text style={submittingGameId === game.id ? styles.joinedButtonText : styles.joinButtonText}>
+                      {submittingGameId === game.id ? "Joining..." : game.joinSetting === '✋ Request Approval' ? "Request Spot" : "Join Game"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -237,7 +268,11 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
         </View>
 
         {/* Footer */}
-        <TouchableOpacity onPress={() => onNext()} style={styles.footer}>
+        <TouchableOpacity
+          onPress={handleBrowseAllGames}
+          style={styles.footer}
+          disabled={Boolean(submittingGameId)}
+        >
           <View style={{ padding: 10 }}>
             <Text style={styles.footerText}>
               Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
@@ -246,28 +281,6 @@ export default function FifthOnbPage ({onNext}: SignupInterface) {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Joined Game Modal */}
-      <Modal
-        visible={showPopup}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowPopup(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowPopup(false)}
-        >
-          <View style={styles.feedbackModal}>
-            <View style={styles.feedbackContent}>
-              <View style={styles.feedbackIconContainer}>
-                <Ionicons name="checkmark-circle-outline" size={23} color="#19E675" />
-              </View>
-              <Text style={styles.feedbackTitle}>Joined Game</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -547,5 +560,20 @@ const styles = StyleSheet.create({
   noGamesText: {
     fontSize: 16,
     color: '#6B7280',
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 14,
+    minHeight: 44,
+    paddingHorizontal: 24,
+    borderRadius: 22,
+    backgroundColor: '#19E675',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryButtonText: {
+    color: '#002000',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

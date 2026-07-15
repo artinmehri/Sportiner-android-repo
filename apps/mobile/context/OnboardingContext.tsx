@@ -81,7 +81,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [ageGroup, setAgeGroup] = useState('15-18');
+  const [ageGroup, setAgeGroup] = useState('16-17');
   const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
   const [tennisLevel, setTennisLevel] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
@@ -91,7 +91,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setDisplayName('');
     setEmail('');
     setPassword('');
-    setAgeGroup('15-18');
+    setAgeGroup('16-17');
     setProfileImageUri(null);
     setTennisLevel(null);
     setSchedule(null);
@@ -195,6 +195,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           id: uid,
           name: displayName.trim(),
           email: email.trim(),
+          age_group: ageGroup,
           level: tennisLevel ?? 'Beginner',
           availability: schedule ?? {},
         },

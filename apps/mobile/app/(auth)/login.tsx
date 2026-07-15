@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, TextInput, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, TextInput, Alert, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +8,14 @@ import { isOnboarding, supabase, userExists } from '@/context/AuthContext';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto'
+import {
+  bindLocalTermsAcceptanceToUser,
+  persistTermsAcceptanceForUser,
+  userHasAcceptedCurrentTerms,
+} from '@/lib/termsAcceptance';
 
+const PASSWORD_RESET_REDIRECT_URL = 'sportiner://reset-password';
+const PASSWORD_RESET_CONFIRMATION_COPY = 'If an account exists for this email, we sent password reset instructions.';
 
 GoogleSignin.configure({
   webClientId: '939148334598-u3nj7v0p1fvrgak8hg14rssm0incde6s.apps.googleusercontent.com',
@@ -25,18 +32,15 @@ async function hasAcceptedTermsForCurrentUser(): Promise<boolean> {
     return false;
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('accepted_terms')
-    .eq('id', userId)
-    .maybeSingle();
+  if (await userHasAcceptedCurrentTerms(userId)) {
+    return true;
+  }
 
-  if (error) {
-    console.log('Unable to check accepted terms:', error.message);
+  if (!(await bindLocalTermsAcceptanceToUser(userId))) {
     return false;
   }
 
-  return data?.accepted_terms === true;
+  return persistTermsAcceptanceForUser(userId);
 }
 
 export default function Login () {
@@ -45,6 +49,10 @@ export default function Login () {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetPending, setResetPending] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState('');
   
 
   const handleGoogleLogin = async () => {
@@ -59,14 +67,20 @@ export default function Login () {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithIdToken({
+      const { data: authData, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
         token: idToken,
     });
+
+      if (error || !authData.user) {
+        Alert.alert('Google login failed');
+        console.log('Google login error:', error?.message ?? 'No user returned');
+        return;
+      }
   
       const response = await userExists()
    
-    if (response == true) {
+    if (response === true) {
       console.log("user exists from google login in login.tsx!");
       const acceptedTerms = await hasAcceptedTermsForCurrentUser();
 
@@ -74,7 +88,7 @@ export default function Login () {
         isOnboarding.current = true;
         router.replace({
           pathname: '/(auth)/user-agreement' as never,
-          params: { method: 'google' },
+          params: { next: 'tabs' },
         });
         return;
       }
@@ -84,10 +98,17 @@ export default function Login () {
     } else {
       console.log("user doesn't exist from google login in login.tsx!");
       isOnboarding.current = true;
-      router.replace({
-        pathname: '/(auth)/user-agreement' as never,
-        params: { method: 'google' },
-      });
+      if (await bindLocalTermsAcceptanceToUser(authData.user.id)) {
+        router.replace({
+          pathname: '/(auth)/SignupFlow' as never,
+          params: { method: 'google' },
+        });
+      } else {
+        router.replace({
+          pathname: '/(auth)/user-agreement' as never,
+          params: { method: 'google' },
+        });
+      }
     }     
     
     } catch {
@@ -143,7 +164,7 @@ export default function Login () {
 
       const response = await userExists()
 
-      if (response == true) {
+      if (response === true) {
         console.log("user exists from apple login in login.tsx!");
         const acceptedTerms = await hasAcceptedTermsForCurrentUser();
 
@@ -151,7 +172,7 @@ export default function Login () {
           isOnboarding.current = true;
           router.replace({
             pathname: '/(auth)/user-agreement' as never,
-            params: { method: 'apple' },
+            params: { next: 'tabs' },
           });
           return;
         }
@@ -166,14 +187,25 @@ export default function Login () {
           .filter(Boolean)
           .join(' ')
           .trim();
+        const appleEmail = credential.email?.trim() ?? '';
 
-        router.replace({
-          pathname: '/(auth)/user-agreement' as never,
-          params: {
-            method: 'apple',
-            providerName: appleDisplayName,
-          },
-        });
+        const params = {
+          method: 'apple',
+          providerName: appleDisplayName,
+          providerEmail: appleEmail,
+        };
+
+        if (await bindLocalTermsAcceptanceToUser(user.id)) {
+          router.replace({
+            pathname: '/(auth)/SignupFlow' as never,
+            params,
+          });
+        } else {
+          router.replace({
+            pathname: '/(auth)/user-agreement' as never,
+            params,
+          });
+        }
       }
     } catch (error: any) {
         console.log('Apple error:', error);
@@ -205,7 +237,7 @@ export default function Login () {
         isOnboarding.current = true;
         router.replace({
           pathname: '/(auth)/user-agreement' as never,
-          params: { method: 'email' },
+          params: { next: 'tabs' },
         });
         return;
       }
@@ -213,6 +245,41 @@ export default function Login () {
       isOnboarding.current = false;
       router.replace('/(tabs)');
     }
+  };
+
+  const openResetModal = () => {
+    setResetEmail(email);
+    setResetConfirmation('');
+    setResetModalVisible(true);
+  };
+
+  const closeResetModal = () => {
+    if (resetPending) return;
+
+    setResetModalVisible(false);
+    setResetConfirmation('');
+  };
+
+  const handlePasswordResetRequest = async () => {
+    const normalizedEmail = resetEmail.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      Alert.alert('Email required', 'Enter your email address to request password reset instructions.');
+      return;
+    }
+
+    setResetPending(true);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: PASSWORD_RESET_REDIRECT_URL,
+    });
+
+    if (error) {
+      console.log('Password reset request failed:', error.message);
+    }
+
+    setResetPending(false);
+    setResetConfirmation(PASSWORD_RESET_CONFIRMATION_COPY);
   };
 
   return (
@@ -276,10 +343,13 @@ export default function Login () {
                       name={showPassword ? 'eye-off' : 'eye'} 
                       size={20} 
                       color="#666" 
-                    />
+	                    />
+	                  </TouchableOpacity>
+	                </View>
+                  <TouchableOpacity style={styles.forgotPasswordButton} onPress={openResetModal}>
+                    <Text style={styles.forgotPasswordText}>Forgot password?</Text>
                   </TouchableOpacity>
-                </View>
-              </View>
+	              </View>
 
             <TouchableOpacity 
               style={[styles.loginBtn]} 
@@ -288,10 +358,55 @@ export default function Login () {
             <Text style={styles.loginBtnText}>Log In</Text>
             </TouchableOpacity>
             <View style={styles.loginTxtContainer}>
-              <Text style={styles.loginTxt}>Don't have an account? <Text onPress={() => router.replace('/(auth)/SignUp')} style={styles.login}>Sign up</Text></Text>
+              <Text style={styles.loginTxt}>Do not have an account? <Text onPress={() => router.replace('/(auth)/SignUp')} style={styles.login}>Sign up</Text></Text>
             </View>
 
         </View>
+        <Modal
+          animationType="fade"
+          transparent
+          visible={resetModalVisible}
+          onRequestClose={closeResetModal}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.resetCard}>
+              <Text style={styles.resetTitle}>Reset password</Text>
+              <Text style={styles.resetBody}>
+                Enter the email for your Sportiner account and we will send password reset instructions.
+              </Text>
+              <TextInput
+                style={styles.resetInput}
+                value={resetEmail}
+                onChangeText={(value) => {
+                  setResetEmail(value);
+                  setResetConfirmation('');
+                }}
+                placeholder="you@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!resetPending}
+              />
+              {resetConfirmation ? (
+                <Text style={styles.resetConfirmation}>{resetConfirmation}</Text>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.resetSubmitButton, resetPending && styles.loginBtnDisabled]}
+                onPress={handlePasswordResetRequest}
+                disabled={resetPending}
+              >
+                {resetPending ? (
+                  <ActivityIndicator color="#002000" />
+                ) : (
+                  <Text style={styles.resetSubmitText}>Send reset instructions</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.resetCancelButton} onPress={closeResetModal} disabled={resetPending}>
+                <Text style={styles.resetCancelText}>{resetConfirmation ? 'Done' : 'Cancel'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
     </SafeAreaView>
 
 
@@ -429,6 +544,15 @@ const styles = StyleSheet.create({
     right: 16,
     padding: 4,
   },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+    marginTop: 10,
+  },
+  forgotPasswordText: {
+    color: '#19E675',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   socialBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -463,5 +587,74 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '500',
     color: '#002000',
+  },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    paddingHorizontal: 24,
+  },
+  resetCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    backgroundColor: '#fff',
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  resetTitle: {
+    color: '#222',
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  resetBody: {
+    color: '#555',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+  resetInput: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    marginBottom: 14,
+  },
+  resetConfirmation: {
+    color: '#333',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  resetSubmitButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    borderRadius: 9999,
+    backgroundColor: '#19E675',
+    marginBottom: 12,
+  },
+  resetSubmitText: {
+    color: '#002000',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  resetCancelButton: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  resetCancelText: {
+    color: '#555',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

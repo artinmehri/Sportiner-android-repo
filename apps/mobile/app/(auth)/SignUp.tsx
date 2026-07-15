@@ -10,6 +10,19 @@ import GoogleIcon from '@/scripts/GoogleIcon'
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { isOnboarding, supabase, userExists } from '@/context/AuthContext';
 import * as Crypto from 'expo-crypto'
+import {
+  bindLocalTermsAcceptanceToUser,
+  hasUnboundLocalTermsAcceptance,
+  persistTermsAcceptanceForUser,
+  userHasAcceptedCurrentTerms,
+} from '@/lib/termsAcceptance';
+import {
+  logOnboardingError,
+  onboardingErrorCopy,
+  OnboardingFlowError,
+  toOnboardingError,
+  type OnboardingProvider,
+} from '@/lib/onboardingErrors';
 
 GoogleSignin.configure({
   webClientId: '939148334598-u3nj7v0p1fvrgak8hg14rssm0incde6s.apps.googleusercontent.com',
@@ -23,7 +36,76 @@ export default function SignUp() {
   // ref
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['40%', '48%'], []);
-  
+
+  const showSocialAuthError = (
+    provider: OnboardingProvider,
+    source: string,
+    error: unknown
+  ) => {
+    const onboardingError = toOnboardingError(
+      { failure: 'account_creation', provider, source },
+      error
+    );
+    const copy = onboardingErrorCopy(onboardingError);
+    logOnboardingError(onboardingError);
+    Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
+  };
+
+  const routeToAgreement = (params: Record<string, string>) => {
+    router.replace({
+      pathname: '/(auth)/user-agreement' as never,
+      params,
+    });
+  };
+
+  const routeToSignupFlow = (params: Record<string, string>) => {
+    router.replace({
+      pathname: '/(auth)/SignupFlow' as never,
+      params,
+    });
+  };
+
+  const bindTermsForUser = async (userId: string, provider: OnboardingProvider) => {
+    try {
+      return await bindLocalTermsAcceptanceToUser(userId);
+    } catch (error) {
+      throw toOnboardingError(
+        { failure: 'terms_save', provider, source: 'terms.local.bind_user' },
+        error
+      );
+    }
+  };
+
+  const finishAuthenticatedTermsCheck = async (
+    userId: string,
+    provider: OnboardingProvider
+  ) => {
+    try {
+      if (await userHasAcceptedCurrentTerms(userId)) {
+        return true;
+      }
+
+      if (!(await bindTermsForUser(userId, provider))) {
+        return false;
+      }
+
+      if (!(await persistTermsAcceptanceForUser(userId))) {
+        throw new OnboardingFlowError({
+          failure: 'terms_save',
+          provider,
+          source: 'terms.users.persist',
+        });
+      }
+
+      return true;
+    } catch (error) {
+      throw toOnboardingError(
+        { failure: 'terms_save', provider, source: 'terms.acceptance.check' },
+        error
+      );
+    }
+  };
+
 
   const handleGoogleSignUp = async () => {
     try {
@@ -31,49 +113,61 @@ export default function SignUp() {
         await GoogleSignin.hasPlayServices();
         const userInfo = await GoogleSignin.signIn();
         const idToken = userInfo.data?.idToken;
-        
+
         if (!idToken) {
           console.log('user rejected');
           isOnboarding.current = false;
           return;
         }
 
-        const { error } = await supabase.auth.signInWithIdToken({
+        const { data: authData, error } = await supabase.auth.signInWithIdToken({
           provider: 'google',
           token: idToken,
-      });
+        });
+
+        if (error || !authData.user) {
+          isOnboarding.current = false;
+          showSocialAuthError(
+            'google',
+            'auth.google.sign_in_with_id_token',
+            error ?? new Error('No authenticated Google user returned')
+          );
+          return;
+        }
 
         const response = await userExists()
 
         // Checking if user exists
-        if (response == true) {
+        if (response === true) {
           console.log('user already exists from signup.tsx!')
+          const acceptedTerms = await finishAuthenticatedTermsCheck(authData.user.id, 'google');
           isOnboarding.current = false
 
-          console.log('redirecting the user to homepage!')
+          console.log('redirecting existing user!')
 
-          router.replace('/(tabs)');
+          if (acceptedTerms) {
+            router.replace('/(tabs)');
+          } else {
+            routeToAgreement({ next: 'tabs' });
+          }
+
+          return;
 
         } else {
           console.log("user doesn't exist!")
           isOnboarding.current = true
 
-          if (error) {
-            isOnboarding.current = false;
-            Alert.alert('Google sign up failed');
-            return;
-          }
-  
           console.log("redirecting the user to signup process!")
-          router.push({
-            pathname: '/(auth)/user-agreement' as never,
-            params: { method: 'google' },
-          });
-  
+          if (await bindTermsForUser(authData.user.id, 'google')) {
+            routeToSignupFlow({ method: 'google' });
+          } else {
+            routeToAgreement({ method: 'google' });
+          }
+
         }
     } catch (error) {
       isOnboarding.current = false;
-      console.log(error);
+      showSocialAuthError('google', 'auth.google.sign_up', error);
     }
 };
 
@@ -86,7 +180,7 @@ export default function SignUp() {
         Crypto.CryptoDigestAlgorithm.SHA256,
         rawNonce
       );
-      
+
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -95,60 +189,94 @@ export default function SignUp() {
         nonce: hashedNonce,
       });
 
-      const appleDisplayName = [credential.fullName?.givenName, credential.fullName?.familyName]
+      const appleCredentialName = [credential.fullName?.givenName, credential.fullName?.familyName]
         .filter(Boolean)
         .join(' ')
         .trim();
 
       if (!credential.identityToken) {
         isOnboarding.current = false;
-        Alert.alert('Error', 'Login failed, please try again!');
+        showSocialAuthError(
+          'apple',
+          'auth.apple.missing_identity_token',
+          new Error('Missing identity token')
+        );
         return;
       }
 
-      const { error } = await supabase.auth.signInWithIdToken({
+      const { data: authData, error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
         token: credential.identityToken,
         nonce: rawNonce,
       });
 
-      if (error) {
+      if (error || !authData.user) {
         isOnboarding.current = false;
-        Alert.alert('Apple sign up failed');
+        showSocialAuthError(
+          'apple',
+          'auth.apple.sign_in_with_id_token',
+          error ?? new Error('No authenticated Apple user returned')
+        );
         return;
       }
+
+      const metadata = authData.user?.user_metadata ?? {};
+      const metadataName = [metadata.given_name, metadata.family_name]
+        .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+        .join(' ')
+        .trim();
+      const appleDisplayName =
+        appleCredentialName ||
+        metadataName ||
+        (typeof metadata.full_name === 'string' ? metadata.full_name.trim() : '') ||
+        (typeof metadata.name === 'string' ? metadata.name.trim() : '') ||
+        (typeof metadata.display_name === 'string' ? metadata.display_name.trim() : '');
+      const appleEmail = credential.email?.trim() || authData.user?.email?.trim() || '';
 
       const response = await userExists();
 
       if (response === true) {
         console.log('user already exists!');
+        const acceptedTerms = await finishAuthenticatedTermsCheck(authData.user.id, 'apple');
         isOnboarding.current = false;
-        router.replace('/(tabs)');
+
+        if (acceptedTerms) {
+          router.replace('/(tabs)');
+        } else {
+          routeToAgreement({ next: 'tabs' });
+        }
+
         return;
       }
 
       console.log("user doesn't exist! from apple signup in signup.tsx!");
       isOnboarding.current = true;
 
-      router.replace({
-        pathname: '/(auth)/user-agreement' as never,
-        params: {
-          method: 'apple',
-          providerName: appleDisplayName,
-        },
-      });
+      const appleParams = {
+        method: 'apple',
+        providerName: appleDisplayName,
+        providerEmail: appleEmail,
+      };
+
+      if (await bindTermsForUser(authData.user.id, 'apple')) {
+        routeToSignupFlow(appleParams);
+      } else {
+        routeToAgreement(appleParams);
+      }
     } catch (error: any) {
       isOnboarding.current = false;
-      console.log('Apple error:', error);
+      showSocialAuthError('apple', 'auth.apple.sign_up', error);
     }
   };
 
 
-  const handleEmailSignUp = () => {
-    router.push({
-      pathname: '/(auth)/user-agreement' as never,
-      params: { method: 'email' },
-    });
+  const handleEmailSignUp = async () => {
+    if (await hasUnboundLocalTermsAcceptance()) {
+      routeToSignupFlow({ method: 'email' });
+      return;
+    }
+
+    routeToAgreement({ method: 'email' });
   };
 
   // renders
@@ -173,6 +301,9 @@ export default function SignUp() {
                 <Text style={styles.tennisBadgeText}>Tennis community</Text>
               </View>
               <Text style={styles.signupTitle}>Find tennis games near you</Text>
+              <Text style={styles.signupSubtitle}>
+                You must be at least 16 years old to use Sportiner.
+              </Text>
             </View>
 
             <View style={styles.socialBtnContainer}>
@@ -336,7 +467,7 @@ const styles = StyleSheet.create({
     marginTop: 0,
     paddingVertical: 15,
     paddingHorizontal: 15,
-    borderWidth: 1.3, 
+    borderWidth: 1.3,
     borderColor: '#F3F4F6', 
   },
   socialBtnContainer: {

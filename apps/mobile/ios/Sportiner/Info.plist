@@ -21,7 +21,7 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleURLTypes</key>
@@ -41,7 +41,7 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
@@ -54,25 +54,19 @@
       <true/>
     </dict>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Allow Sportiner to create, update, and delete calendar events so it can automatically schedule, adjust, and manage your games, training sessions, and match times.</string>
+    <string>Sportiner uses calendar access only when you choose to add a tennis game to your calendar.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>Allow Sportiner to read your calendar so it can display your upcoming sports games, practices, and scheduled events inside the app.</string>
-    <key>NSCameraUsageDescription</key>
-    <string>Sportiner uses your camera so you can take photos to use as your profile picture and share images in game posts and chat with other players.</string>
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Sportiner uses your location to suggest nearby tennis courts and help you find games in your area, even when the app is in the background.</string>
-    <key>NSLocationAlwaysUsageDescription</key>
-    <string>Sportiner uses your location to suggest nearby tennis courts and help you find games in your area, even when the app is in the background.</string>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Sportiner uses your location to suggest nearby tennis courts and help you find sports games near you.</string>
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Sportiner needs permission to save photos so you can save images shared in game chats and profile pictures to your photo library.</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>Sportiner uses your photo library so you can upload a profile photo and share photos in game posts and chat.</string>
+    <string>Sportiner uses calendar access only when you choose to add a tennis game to your calendar.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>Allow Sportiner to create, modify, and remove reminders so it can automatically set alerts for games, practices, and event notifications.</string>
+    <string>Sportiner uses reminders access only when you choose to save a reminder for a tennis game.</string>
     <key>NSRemindersUsageDescription</key>
-    <string>Allow Sportiner to read your reminders so it can show your existing sports-related tasks and upcoming alerts within the app.</string>
+    <string>Sportiner uses reminders access only when you choose to save a reminder for a tennis game.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Sportiner uses your location only when you choose nearby discovery to show nearby tennis games and courts. Sportiner does not track your location in the background.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Sportiner uses your location to show nearby tennis games and courts when you choose to use nearby discovery.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Sportiner uses your photo library when you choose a profile photo.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

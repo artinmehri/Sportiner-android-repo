@@ -17,6 +17,7 @@ import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game, isGameInTimeFilter, getDistanceKm } from "@/context/GameContext";
 import { getCurrentUserId } from "@/context/AuthContext";
 import { addUserToChat, chatNavigator, getChatId, userInChat } from "@/context/ChatContext";
+import { formatCourtShare } from '@/lib/gamesDb';
 import {
   type GeoCoords,
 } from '@/lib/courtSuggestions';
@@ -103,16 +104,17 @@ async function handleOnMessage(
 
   try {
     const inChat = await userInChat(gameId);
+    let joinedChatId: string | null = null;
 
     if (!inChat) {
-      const result = await addUserToChat(gameId);
-      if (!result) {
-        Alert.alert('Error', 'Unable to join chat. The chat may not exist yet. Please try again.');
+      joinedChatId = await addUserToChat(gameId, gameType);
+      if (!joinedChatId) {
+        Alert.alert('Error', 'Unable to open this game chat. Please try again.');
         return;
       }
     }
 
-    const chatId = await getChatId(gameId);
+    const chatId = joinedChatId ?? await getChatId(gameId);
 
     console.log('chatId result:', chatId);
 
@@ -182,10 +184,10 @@ export default function Index() {
 
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const { status } = await Location.getForegroundPermissionsAsync();
 
         if (status !== 'granted') {
-          console.log('No location permission');
+          console.log('Location permission not granted; showing games without distance sorting');
           return;
         }
 
@@ -273,7 +275,7 @@ function gameToEvent(g: Game): Event {
     time: formatDiscoverTime(g.date, g.time),
     date: '',
     venue: g.courtType,
-    cost: g.isPaid && g.payment_amount ? `$${g.payment_amount} Entry` : "Free",
+    cost: formatCourtShare(g.isPaid, g.payment_amount, 'compact'),
     avatar: g.host.avatar,
     secondaryCta: needsApproval ? "Request Spot" : "Join Game",
     spotsFilled: g.players_enrolled,
@@ -585,8 +587,8 @@ function EventCard({
         <View style={{flexDirection: 'row'}}>
         <Text style={event.status === 'full' ? styles.cardTitleFull : styles.cardTitle}>{event.title}</Text>
         {event.status === 'full' && 
-          <View style={{backgroundColor: "#E5E7EB", borderColor: "#D1D5DB", borderRadius: 20, paddingHorizontal: 15, paddingVertical: 3 }}>
-            <Text style={{color: "#6B7280", fontWeight: "600"}}>Full</Text>
+          <View style={styles.fullBadge}>
+            <Text style={styles.fullBadgeText}>Full</Text>
           </View>}
         </View>
           <View style={styles.cardMetaRow}>
@@ -850,6 +852,18 @@ const styles = StyleSheet.create({
    fontSize: 20,
    fontWeight: "800",
    color: "#121212",
+ },
+ fullBadge: {
+  alignSelf: 'flex-start',
+  backgroundColor: "#E5E7EB",
+  borderColor: "#D1D5DB",
+  borderRadius: 20,
+  paddingHorizontal: 15,
+  paddingVertical: 5,
+ },
+ fullBadgeText: {
+  color: "#6B7280",
+  fontWeight: "600",
  },
   cardInfo: {
     flex: 1,

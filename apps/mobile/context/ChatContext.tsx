@@ -1,9 +1,122 @@
 import { getCurrentUser, getCurrentUserId, supabase } from "./AuthContext";
-import { Alert } from "react-native";
 import { router } from 'expo-router';
 
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type ModerationReportInput = {
+    reportedUserId: string;
+    reportedMessageId?: string | null;
+    reportedPostId?: string | null;
+    reason: string;
+    details?: string;
+};
+
+type GameChatMetadata = {
+    title: string | null;
+    type: string | null;
+    image: string | null;
+    chat_id: string | null;
+};
+
+type ExistingChat = {
+    id: string;
+};
+
+function normalizeGameChatType(type: string | null | undefined) {
+    const normalized = String(type || '').toLowerCase();
+    return normalized.includes('1v1') || normalized.includes('1-1') || normalized.includes('1 vs 1')
+        ? 'private'
+        : 'group';
+}
+
+async function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getChatMemberIds(chatId: string): Promise<string[]> {
+    const { data, error } = await supabase
+        .from('conversation_members')
+        .select('id')
+        .eq('chat_id', chatId);
+
+    if (error) {
+        console.log('Error fetching chat members:', error.message);
+        return [];
+    }
+
+    return (data ?? [])
+        .map((member: { id: string | null }) => member.id)
+        .filter(Boolean) as string[];
+}
+
+async function hasBlockedRelationshipInChat(chatId: string, senderId: string): Promise<boolean> {
+    const memberIds = await getChatMemberIds(chatId);
+    const otherMemberIds = memberIds.filter((memberId) => memberId !== senderId);
+
+    if (otherMemberIds.length === 0) {
+        return false;
+    }
+
+    const { data, error } = await supabase
+        .from('blocked_users')
+        .select('blocker_id, blocked_id')
+        .in('blocker_id', [senderId, ...otherMemberIds])
+        .in('blocked_id', [senderId, ...otherMemberIds]);
+
+    if (error) {
+        console.log('Error checking blocked chat relationship:', error.message);
+        return false;
+    }
+
+    return (data ?? []).some((row: { blocker_id: string; blocked_id: string }) => (
+        row.blocker_id === senderId || row.blocked_id === senderId
+    ));
+}
+
+export async function submitModerationReport({
+    reportedUserId,
+    reportedPostId = null,
+    reason,
+}: ModerationReportInput) {
+    const userId = await getCurrentUserId();
+    if (!userId?.id || !reportedUserId || userId.id === reportedUserId) return false;
+
+    const { error } = await supabase
+        .from('reports')
+        .insert({
+            reporter_id: userId.id,
+            reported_user_id: reportedUserId,
+            reported_post_id: reportedPostId,
+            reason,
+        });
+
+    if (error) {
+        console.log('Error submitting report:', error.message);
+        return false;
+    }
+
+    return true;
+}
+
+export async function blockUser(blockedUserId: string) {
+    const userId = await getCurrentUserId();
+    if (!userId?.id || !blockedUserId || userId.id === blockedUserId) return false;
+
+    const { error } = await supabase
+        .from('blocked_users')
+        .insert({
+            blocker_id: userId.id,
+            blocked_id: blockedUserId,
+        });
+
+    if (error && error.code !== '23505') {
+        console.log('Error blocking user:', error.message);
+        return false;
+    }
+
+    return true;
+}
 
 // Checking if the user is already in chat
 export async function userInChat(gameId: string) {
@@ -46,75 +159,188 @@ export async function getChatId(gameId: string) {
         .eq('id', userId.id)
         .maybeSingle();
 
-        if (error) {
-            console.log(error.message)
-            return null
-        }
+    if (error) {
+        console.log('Error fetching chat id from membership:', error.message)
+        return null
+    }
 
-        if (member === null) {
-            console.log('returned null!')
-            return null
-        }
-
-        if (member !== null) {
-            return member.chat_id
-        }
-}
-
-// Adding user to chat
-export async function addUserToChat(gameId: string) {
-    if (!gameId || !UUID_RE.test(gameId)) return null;
-
-    const user = await getCurrentUser();
-    const userId = await getCurrentUserId();
-    if (!user || !userId?.id) return null;
-
-    const alreadyInChat = await userInChat(gameId);
-    if (alreadyInChat) {
-        // User is already in chat, get the chat ID
-        const chatId = await getChatId(gameId);
-        return chatId;
+    if (member?.chat_id) {
+        return member.chat_id;
     }
 
     const { data: chat, error: chatError } = await supabase
-            .from('chat')
-            .select('id')
-            .eq('game_id', gameId)
-            .maybeSingle();
+        .from('chat')
+        .select('id')
+        .eq('game_id', gameId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
     if (chatError) {
-        console.log('Error fetching chat:', chatError.message);
+        console.log('Error fetching chat id from game:', chatError.message);
         return null;
     }
 
-    if (chat === null) {
-        console.log('Chat does not exist for game:', gameId);
+    return chat?.id ?? null;
+}
+
+async function getGameChatMetadata(gameId: string): Promise<GameChatMetadata | null> {
+    const { data, error } = await supabase
+        .from('games')
+        .select('title, type, image, chat_id')
+        .eq('id', gameId)
+        .maybeSingle();
+
+    if (error) {
+        console.log('Error fetching game metadata for chat:', error.message, error.code);
         return null;
+    }
+
+    return data as GameChatMetadata | null;
+}
+
+async function findExistingGameChat(gameId: string, chatId?: string | null): Promise<ExistingChat | null> {
+    if (chatId) {
+        const { data, error } = await supabase
+            .from('chat')
+            .select('id')
+            .eq('id', chatId)
+            .maybeSingle();
+
+        if (error) {
+            console.log('Error fetching game chat by id:', error.message, error.code);
+        }
+
+        if (data?.id) {
+            return data as ExistingChat;
+        }
     }
 
     const { data, error } = await supabase
-        .from('conversation_members')
+        .from('chat')
+        .select('id')
+        .eq('game_id', gameId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        console.log('Error fetching game chat by game id:', error.message, error.code);
+        return null;
+    }
+
+    return data as ExistingChat | null;
+}
+
+async function getOrCreateGameChat(gameId: string, gameType?: string | null): Promise<string | null> {
+    const game = await getGameChatMetadata(gameId);
+
+    if (!game) {
+        return null;
+    }
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        const existing = await findExistingGameChat(gameId, game.chat_id);
+
+        if (existing?.id) {
+            return existing.id;
+        }
+
+        await sleep(200);
+    }
+
+    const now = new Date().toISOString();
+    const chatType = normalizeGameChatType(gameType ?? game.type);
+
+    const { data: createdChat, error: createError } = await supabase
+        .from('chat')
         .insert({
+            type: chatType,
+            name: game.title || 'Tennis Game',
+            photo: game.image || null,
+            last_message: null,
+            last_message_at: null,
+            created_at: now,
+            updated_at: now,
+            game_id: gameId,
+        })
+        .select('id')
+        .single();
+
+    if (createError || !createdChat?.id) {
+        if (createError?.code === '23505') {
+            const existing = await findExistingGameChat(gameId, game.chat_id);
+            return existing?.id ?? null;
+        }
+
+        console.log('Error creating game chat:', createError?.message, createError?.code);
+        return null;
+    }
+
+    const { error: updateGameError } = await supabase
+        .from('games')
+        .update({ chat_id: createdChat.id })
+        .eq('id', gameId);
+
+    if (updateGameError) {
+        console.log('Error attaching chat to game:', updateGameError.message, updateGameError.code);
+    }
+
+    return createdChat.id;
+}
+
+async function ensureCurrentUserChatMembership(gameId: string, chatId: string) {
+    const user = await getCurrentUser();
+    const userId = await getCurrentUserId();
+
+    if (!user || !userId?.id) {
+        console.log('Error adding user to chat: missing current user');
+        return false;
+    }
+
+    const { error } = await supabase
+        .from('conversation_members')
+        .upsert({
             id: userId.id,
-            chat_id: chat.id,
+            chat_id: chatId,
             joined_at: new Date().toISOString(),
             last_read_message_id: null,
             level: user.level,
             game_id: gameId,
-        });
+        }, { onConflict: 'id,chat_id', ignoreDuplicates: true });
 
     if (error) {
-        console.log('Error adding user to chat:', error.message);
+        console.log('Error adding user to chat:', error.message, error.code);
+        return false;
+    }
+
+    return true;
+}
+
+// Adding user to chat
+export async function addUserToChat(gameId: string, gameType?: string | null) {
+    if (!gameId || !UUID_RE.test(gameId)) return null;
+
+    const alreadyInChat = await userInChat(gameId);
+    if (alreadyInChat) {
+        return getChatId(gameId);
+    }
+
+    const chatId = await getOrCreateGameChat(gameId, gameType);
+
+    if (!chatId) {
+        console.log('Unable to find or create chat for game:', gameId);
         return null;
     }
 
-    if (data) {
-        console.log('user successfully added to chat')
-        // returning chat's id
-        return chat.id;
+    const addedToChat = await ensureCurrentUserChatMembership(gameId, chatId);
+
+    if (!addedToChat) {
+        return null;
     }
 
-    return null;
+    console.log('user successfully added to chat');
+    return chatId;
 }
 
 export async function replyMessage(reply_to: string, type: string, reply_message: string, chatId: string, image?: string) {
@@ -122,6 +348,12 @@ export async function replyMessage(reply_to: string, type: string, reply_message
     if (!userId) return null;
 
     const now = new Date().toISOString();
+
+    const blocked = await hasBlockedRelationshipInChat(chatId, userId.id);
+    if (blocked) {
+        console.log('Blocked relationship prevents reply in chat:', chatId);
+        return null;
+    }
 
     const { data, error } = await supabase
     .from('messages').insert({
@@ -155,6 +387,16 @@ export async function replyMessage(reply_to: string, type: string, reply_message
     })
     .eq('id', chatId);
 
+    // Update sender's own read state to the message just sent
+    await supabase
+        .from('conversation_members')
+        .update({
+            last_read_message_id: data.id,
+            last_read_at: now
+        })
+        .eq('chat_id', chatId)
+        .eq('id', userId.id);
+
     return data;
 }
 
@@ -164,6 +406,12 @@ export async function sendMessage(message: string, type: string, chatId: string,
     if (!userId) return null;
 
     const now = new Date().toISOString();
+
+    const blocked = await hasBlockedRelationshipInChat(chatId, userId.id);
+    if (blocked) {
+        console.log('Blocked relationship prevents message in chat:', chatId);
+        return null;
+    }
 
     const { data, error } = await supabase
     .from('messages')
@@ -194,6 +442,16 @@ export async function sendMessage(message: string, type: string, chatId: string,
     })
     .eq('id', chatId);
 
+    // Update sender's own read state to the message just sent
+    await supabase
+        .from('conversation_members')
+        .update({
+            last_read_message_id: data.id,
+            last_read_at: now
+        })
+        .eq('chat_id', chatId)
+        .eq('id', userId.id);
+
     return data;
 }
 
@@ -214,19 +472,41 @@ export async function getGameInfo(chatId: string) {
 
 
 export async function getMessages(chatId: string) {
+    const userId = await getCurrentUserId();
+    if (!userId?.id) return [];
+
     const { data, error } = await supabase
     .from('messages')
     .select('*')
     .eq('chat_id', chatId)
     .order('created_at', { ascending: true })
 
-    if (data) {
-        return data
-    }
-
     if (error) {
         console.log(error.message)
+        return [];
     }
+
+    if (data) {
+        const { data: blockedRows, error: blockedError } = await supabase
+            .from('blocked_users')
+            .select('blocker_id, blocked_id')
+            .or(`blocker_id.eq.${userId.id},blocked_id.eq.${userId.id}`);
+
+        if (blockedError) {
+            console.log('Error filtering blocked chat messages:', blockedError.message);
+            return data;
+        }
+
+        const blockedPeerIds = new Set(
+            (blockedRows ?? []).map((row: { blocker_id: string; blocked_id: string }) => (
+                row.blocker_id === userId.id ? row.blocked_id : row.blocker_id
+            ))
+        );
+
+        return data.filter((message: { sender_id?: string }) => !blockedPeerIds.has(message.sender_id ?? ''));
+    }
+
+    return [];
 }
  
 
@@ -274,53 +554,57 @@ export async function editMessage(messageId: string, message: string) {
 
 
 export async function deleteMessage(messageId: string) {
+    const userId = await getCurrentUserId();
+    if (!userId?.id) return false;
 
-    const { data, error } = await supabase
+    const { error } = await supabase
     .from('messages')
     .delete()
-    .eq('id', messageId);
-
-    if (data) {
-        console.log('message deleted successfully!')
-    }
+    .eq('id', messageId)
+    .eq('sender_id', userId.id);
 
     if (error) {
-        console.log(error.message)
+        console.log(error.message);
+        return false;
     }
+
+    console.log('message deleted successfully!');
+    return true;
 }
 
 export async function markAsRead(chatId: string) {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    // Step 1 — get latest message
-    const { data: latestMessage } = await supabase
-        .from('messages')
-        .select('id')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    try {
+        // Step 1 — get latest message with created_at
+        const { data: latestMessage } = await supabase
+            .from('messages')
+            .select('id, created_at')
+            .eq('chat_id', chatId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-    if (!latestMessage) return;
+        if (!latestMessage) return;
 
-    // Step 2 — update user read state
-    await supabase
-        .from('conversation_members')
-        .update({
-            last_read_message_id: latestMessage.id,
-            last_read_at: new Date().toISOString()
-        })
-        .eq('chat_id', chatId)
-        .eq('id', userId.id);
-}
+        // Step 2 — update user read state with regression guard
+        const { error } = await supabase
+            .from('conversation_members')
+            .update({
+                last_read_message_id: latestMessage.id,
+                last_read_at: latestMessage.created_at
+            })
+            .eq('chat_id', chatId)
+            .eq('id', userId.id)
+            .lt('last_read_at', latestMessage.created_at); // Regression guard: only update if moving forward
 
-export async function uploadImage() {   
-
-}
-
-export async function sendImageMessage() {
-
+        if (error) {
+            console.log('Error marking conversation as read:', error.message, 'chatId:', chatId, 'userId:', userId.id);
+        }
+    } catch (error) {
+        console.log('Exception in markAsRead:', error, 'chatId:', chatId);
+    }
 }
 
 export async function getConversations() {
@@ -359,7 +643,29 @@ export async function getConversations() {
     }
 
     if (data) {
-        return data
+        const { data: blockedRows, error: blockedError } = await supabase
+            .from('blocked_users')
+            .select('blocker_id, blocked_id')
+            .or(`blocker_id.eq.${userId.id},blocked_id.eq.${userId.id}`);
+
+        if (blockedError) {
+            console.log('Error fetching blocked conversations:', blockedError.message);
+            return data;
+        }
+
+        const blockedPeerIds = new Set(
+            (blockedRows ?? []).map((row: { blocker_id: string; blocked_id: string }) => (
+                row.blocker_id === userId.id ? row.blocked_id : row.blocker_id
+            ))
+        );
+
+        return data.filter((chat: { members?: { user?: { id?: string } | { id?: string }[] | null }[] }) => {
+            const memberIds = (chat.members ?? [])
+                .map((member) => Array.isArray(member.user) ? member.user[0]?.id : member.user?.id)
+                .filter(Boolean) as string[];
+
+            return !memberIds.some((memberId) => blockedPeerIds.has(memberId));
+        });
     }
 
     return [];
@@ -388,6 +694,34 @@ const { count } = await supabase
 .gt('created_at', member.last_read_at);
 
 return count ?? 0;
+}
+
+export async function getTotalUnreadCount() {
+    const userId = await getCurrentUserId();
+    if (!userId) return 0;
+
+    // Get all conversations with their last_read_at
+    const { data: conversations } = await supabase
+        .from('conversation_members')
+        .select('chat_id, last_read_at')
+        .eq('id', userId.id);
+
+    if (!conversations || conversations.length === 0) return 0;
+
+    let totalUnread = 0;
+
+    for (const conversation of conversations) {
+        const { count } = await supabase
+            .from('messages')
+            .select('id', { count: 'exact' })
+            .eq('chat_id', conversation.chat_id)
+            .neq('sender_id', userId.id)
+            .gt('created_at', conversation.last_read_at);
+
+        totalUnread += count ?? 0;
+    }
+
+    return totalUnread;
 }
 
 export async function chatNavigator(chatId: string, type: any) {

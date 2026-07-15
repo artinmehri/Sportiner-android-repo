@@ -14,24 +14,27 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { SignupInterface } from '../../context/SignupInterface.type';
+import { useRouter } from 'expo-router';
 
 
-export default function FirstOnbPage({onNext, changeData, onBack, method, providerName} : SignupInterface) {
+export default function FirstOnbPage({onNext, changeData, onBack, method, providerName, data}: SignupInterface) {
 
-
-  const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [selectedAgeGroup, setSelectedAgeGroup] = useState('15-18');
+  const [displayName, setDisplayName] = useState(data?.name ?? providerName ?? '');
+  const [email, setEmail] = useState(data?.email ?? '');
+  const [password, setPassword] = useState(data?.password ?? '');
+  const [selectedAgeGroup, setSelectedAgeGroup] = useState(data?.age_group ?? '16-17');
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [profileImageRead, setProfileImageRead] = useState<any | null>(null)
-  const [profileImage, setProfileImage] = useState<any | null>(null);
+  const [profileImageRead, setProfileImageRead] = useState<any | null>(
+    data?.profile_picture_preview ?? null
+  )
+  const [profileImage, setProfileImage] = useState<any | null>(data?.profile_picture ?? null);
   const [showPassword, setShowPassword] = useState(false);
 
   const isAppleSignup = method === 'apple';
   const isSocialSignup = method === 'apple' || method === 'google';
-
-  const ageGroups = ['15-18', '19-25', '26-35', '36-50', '50+'];
+  const hasAppleProviderName = isAppleSignup && Boolean(providerName?.trim());
+  const router = useRouter()
+  const ageGroups = ['16-17', '18-25', '26-35', '36-50', '50+'];
 
   const defaultTennisImages = [
     'https://images.unsplash.com/photo-1519611103964-90f61a50d3e6?w=700&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MzZ8fHRlbm5pc3xlbnwwfHwwfHx8MA%3D%3D',
@@ -49,12 +52,19 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
     return defaultTennisImages[randomIndex];
   };
 
+  const profileImagePreview =
+    profileImageRead ||
+    (typeof profileImage === 'string' &&
+    (profileImage.startsWith('http') || profileImage.startsWith('data:'))
+      ? profileImage
+      : null);
+
   const handleContinue = async () => {
     const resolvedDisplayName = isAppleSignup
-      ? providerName?.trim() || 'Apple User'
+      ? providerName?.trim() || displayName.trim()
       : displayName.trim();
 
-    if (!isAppleSignup && !resolvedDisplayName) {
+    if (!resolvedDisplayName) {
       Alert.alert('Error', 'Please enter your display name');
       return;
     }
@@ -85,6 +95,7 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
       ...prev,
       name: resolvedDisplayName,
       profile_picture: profileImage || getRandomDefaultImage(),
+      profile_picture_preview: profileImagePreview,
       email: email,
       password: password,
       age_group: selectedAgeGroup,
@@ -105,7 +116,7 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], 
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 1,
@@ -113,28 +124,33 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
     });
 
 
-    const uri = result.assets?.[0]?.uri
-    setProfileImageRead(uri);
-    
     if (!result.canceled) {
       // The image data is inside the 'assets' array
       const image = result.assets[0];
       const base64 = image.base64; // This is what we need!
-      
-      setProfileImage(base64)
+      const imageValue = base64 ? `data:image/jpeg;base64,${base64}` : image.uri;
+
+      setProfileImageRead(image.uri);
+      setProfileImage(imageValue)
+      changeData((current: any) => ({
+        ...current,
+        profile_picture: imageValue,
+        profile_picture_preview: image.uri,
+      }));
     }
   }
 
-    
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity onPress={() => router.replace('/SignUp')} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color="#000" />
         </TouchableOpacity>
         <View style={styles.progressDots}>
           <View style={[styles.dot, styles.activeDot]} />
+          <View style={styles.dot} />
           <View style={styles.dot} />
           <View style={styles.dot} />
         </View>
@@ -145,8 +161,8 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
         <View style={styles.profileSection}>
           <TouchableOpacity style={styles.photoContainer} onPress={handleImagePick}>
             <View style={styles.photoCircle}>
-              {profileImage ? (
-                <Image source={{ uri: profileImageRead }} style={styles.profileImage} />
+              {profileImagePreview ? (
+                <Image source={{ uri: profileImagePreview }} style={styles.profileImage} />
               ) : (
                 <>
                   <Ionicons name="camera" size={32} color="#19E675" />
@@ -161,13 +177,19 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
         </View>
 
         <View style={styles.formSection}>
-          {!isAppleSignup && (
+          {(!isAppleSignup || !hasAppleProviderName) && (
             <View style={styles.inputGroup}>
               <Text style={[styles.label, focusedField === 'displayName' && styles.labelFocused]}>Display Name</Text>
               <TextInput
                 style={[styles.input, focusedField === 'displayName' && styles.inputFocused]}
                 value={displayName}
-                onChangeText={setDisplayName}
+                onChangeText={(value) => {
+                  setDisplayName(value);
+                  changeData((current: any) => ({
+                    ...current,
+                    name: value,
+                  }));
+                }}
                 placeholder="Enter your display name"
                 onFocus={() => setFocusedField('displayName')}
                 onBlur={() => setFocusedField(null)}
@@ -183,7 +205,13 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
                 <TextInput
                   style={[styles.input, focusedField === 'email' && styles.inputFocused]}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    changeData((current: any) => ({
+                      ...current,
+                      email: value,
+                    }));
+                  }}
                   placeholder="e.g., artin@sportiner.com"
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -198,7 +226,13 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
                   <TextInput
                     style={[styles.input, styles.passwordInput, focusedField === 'password' && styles.inputFocused]}
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={(value) => {
+                      setPassword(value);
+                      changeData((current: any) => ({
+                        ...current,
+                        password: value,
+                      }));
+                    }}
                     placeholder="e.g., Artin K"
                     secureTextEntry={!showPassword}
                     onFocus={() => setFocusedField('password')}
@@ -221,6 +255,9 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
 
           <View style={styles.ageSection}>
             <Text style={styles.label}>Age Group</Text>
+            <Text style={styles.agePolicyText}>
+              You must be at least 16 years old to use Sportiner.
+            </Text>
             <View style={styles.ageRow}>
               {ageGroups.slice(0, 3).map((group) => (
                 <TouchableOpacity
@@ -229,7 +266,13 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
                     styles.ageButton,
                     selectedAgeGroup === group && styles.ageButtonSelected,
                   ]}
-                  onPress={() => setSelectedAgeGroup(group)}
+                  onPress={() => {
+                    setSelectedAgeGroup(group);
+                    changeData((current: any) => ({
+                      ...current,
+                      age_group: group,
+                    }));
+                  }}
                 >
                   <Text
                     style={[
@@ -250,7 +293,13 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
                     styles.ageButton,
                     selectedAgeGroup === group && styles.ageButtonSelected,
                   ]}
-                  onPress={() => setSelectedAgeGroup(group)}
+                  onPress={() => {
+                    setSelectedAgeGroup(group);
+                    changeData((current: any) => ({
+                      ...current,
+                      age_group: group,
+                    }));
+                  }}
                 >
                   <Text
                     style={[
@@ -360,6 +409,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
     marginBottom: 8,
+  },
+  agePolicyText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+    color: '#666',
+    marginBottom: 12,
   },
   labelFocused: {
     color: '#19E675',

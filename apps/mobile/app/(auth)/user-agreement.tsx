@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Pressable,
   SafeAreaView,
@@ -7,9 +8,23 @@ import {
   StyleSheet,
   Text,
   View,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
+import { supabase } from "@/context/AuthContext";
+import { LEGAL_LAST_UPDATED, LEGAL_LINKS } from "@/constants/legal";
+import {
+  acceptTermsLocally,
+  persistTermsAcceptanceForUser,
+} from "@/lib/termsAcceptance";
+import {
+  logOnboardingError,
+  onboardingErrorCopy,
+  OnboardingFlowError,
+  providerFromMethod,
+  toOnboardingError,
+} from "@/lib/onboardingErrors";
 
 const COLORS = {
   background: "#F9F7F2",
@@ -21,10 +36,34 @@ const COLORS = {
   error: "#BA1A1A",
 };
 
+const legalActions = [
+  {
+    label: "Terms of Use",
+    icon: "document-text-outline" as const,
+    url: LEGAL_LINKS.terms,
+  },
+  {
+    label: "Privacy Policy",
+    icon: "lock-closed-outline" as const,
+    url: LEGAL_LINKS.privacy,
+  },
+  {
+    label: "Community Guidelines",
+    icon: "people-outline" as const,
+    url: LEGAL_LINKS.communityGuidelines,
+  },
+  {
+    label: "Contact Support",
+    icon: "mail-outline" as const,
+    url: LEGAL_LINKS.supportMailto,
+  },
+];
+
 export default function UserAgreement() {
-  const { method, providerName, next } = useLocalSearchParams();
+  const { method, providerName, providerEmail, next } = useLocalSearchParams();
   const [accepted, setAccepted] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [savingAgreement, setSavingAgreement] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   const runShake = () => {
@@ -53,26 +92,73 @@ export default function UserAgreement() {
     ]).start();
   };
 
-  const handleAgree = () => {
+  const handleAgree = async () => {
     if (!accepted) {
       setShowError(true);
       runShake();
       return;
     }
 
-    if (next === "login") {
-      router.replace("/(auth)/login" as never);
-      return;
-    }
+    if (savingAgreement) return;
 
-    router.replace({
-      pathname: "/(auth)/SignupFlow" as never,
-      params: {
-        acceptedTerms: "true",
-        ...(method ? { method: String(method) } : {}),
-        ...(providerName ? { providerName: String(providerName) } : {}),
-      },
-    });
+    const provider = providerFromMethod(method);
+    const requiresUser = next === 'tabs' || provider === 'google' || provider === 'apple';
+    setSavingAgreement(true);
+
+    try {
+      const { data: authData, error: userError } = await supabase.auth.getUser();
+      const userId = authData.user?.id ?? null;
+
+      if (requiresUser && (userError || !userId)) {
+        throw toOnboardingError(
+          { failure: 'terms_save', provider, source: 'terms.get_user' },
+          userError ?? new Error('Missing authenticated user')
+        );
+      }
+
+      await acceptTermsLocally(userId);
+
+      if (next === "signup") {
+        router.replace("/(auth)/SignUp" as never);
+        return;
+      }
+
+      if (next === "login") {
+        router.replace("/(auth)/login" as never);
+        return;
+      }
+
+      if (next === "tabs") {
+        if (!userId || !(await persistTermsAcceptanceForUser(userId))) {
+          throw new OnboardingFlowError({
+            failure: 'terms_save',
+            provider,
+            source: 'terms.users.persist',
+          });
+        }
+
+        router.replace("/(tabs)" as never);
+        return;
+      }
+
+      router.replace({
+        pathname: "/(auth)/SignupFlow" as never,
+        params: {
+          ...(method ? { method: String(method) } : {}),
+          ...(providerName ? { providerName: String(providerName) } : {}),
+          ...(providerEmail ? { providerEmail: String(providerEmail) } : {}),
+        },
+      });
+    } catch (error) {
+      const termsError = toOnboardingError(
+        { failure: 'terms_save', provider, source: 'terms.accept' },
+        error
+      );
+      const copy = onboardingErrorCopy(termsError);
+      logOnboardingError(termsError);
+      Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
+      setSavingAgreement(false);
+    }
   };
 
   const checkboxTranslateX = shakeAnim.interpolate({
@@ -101,10 +187,26 @@ export default function UserAgreement() {
             <View style={styles.legalPill}>
               <Text style={styles.legalPillText}>Legal</Text>
             </View>
-            <Text style={styles.updateText}>Update: July 2026</Text>
+            <Text style={styles.updateText}>Last updated: {LEGAL_LAST_UPDATED}</Text>
           </View>
 
           <Text style={styles.title}>Terms of Use</Text>
+        </View>
+
+        <View style={styles.legalActionGrid}>
+          {legalActions.map((action) => (
+            <Pressable
+              key={action.label}
+              onPress={() => Linking.openURL(action.url)}
+              style={({ pressed }) => [
+                styles.legalActionButton,
+                pressed && styles.legalActionButtonPressed,
+              ]}
+            >
+              <Ionicons name={action.icon} size={18} color={COLORS.secondary} />
+              <Text style={styles.legalActionText}>{action.label}</Text>
+            </Pressable>
+          ))}
         </View>
 
         <View style={styles.card}>
@@ -127,19 +229,60 @@ export default function UserAgreement() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Ionicons name="shield-checkmark-outline" size={22} color={COLORS.primary} />
+              <Text style={styles.sectionTitle}>Terms of Use</Text>
+            </View>
+            <Text style={styles.bodyText}>
+              These Terms of Use govern access to Sportiner, including account
+              creation, player profiles, games, messaging, and community features.
+              You must be at least 16 years old to create an account or use
+              Sportiner. By continuing, you agree to follow these terms and all
+              safety rules.
+            </Text>
+          </View>
+
+          <View style={styles.agePolicySection}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="person-outline" size={22} color={COLORS.primary} />
+              <Text style={styles.sectionTitle}>Age Requirement</Text>
+            </View>
+            <Text style={styles.agePolicyBody}>
+              You must be at least 16 years old to use Sportiner. Sportiner includes
+              player profiles, photos, chat, location-based game discovery, and
+              in-person tennis meetups, so accounts for users under 16 are not allowed.
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="lock-closed-outline" size={22} color={COLORS.primary} />
+              <Text style={styles.sectionTitle}>Privacy Policy</Text>
+            </View>
+            <Text style={styles.bodyText}>
+              Our Privacy Policy explains how Sportiner collects, uses, stores,
+              and protects account, profile, location, booking, messaging, and
+              safety-related information. You can review it before creating an
+              account using the Privacy Policy button above. Sportiner is not
+              intended for users under 16, and we do not knowingly collect
+              personal information from users under 16.
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="shield-checkmark-outline" size={22} color={COLORS.primary} />
               <Text style={styles.sectionTitle}>Zero Tolerance Policy</Text>
             </View>
             <Text style={styles.bodyText}>
-              Sportiner has zero tolerance for objectionable content or abusive
-              behavior. Users may not post, share, upload, send, or promote
-              content that is offensive, hateful, threatening, harassing,
-              sexually explicit, discriminatory, violent, spam, unsafe, or
-              otherwise inappropriate.
+              Sportiner does not tolerate objectionable content, harassment,
+              threats, hate, sexual content, spam, or abusive users. Accounts
+              that violate these rules may be restricted or removed.
             </Text>
             <Text style={styles.bodyText}>
-              Users may not harass, threaten, bully, impersonate, abuse, target,
-              or intimidate other players. Accounts that violate these rules may
-              have content removed and may be suspended or banned.
+              Users may not post, share, upload, send, or promote content that
+              is offensive, hateful, threatening, harassing, sexually explicit,
+              discriminatory, violent, spam, unsafe, or otherwise inappropriate.
+              Users also may not harass, threaten, bully, impersonate, abuse,
+              target, or intimidate other players.
             </Text>
           </View>
 
@@ -151,6 +294,11 @@ export default function UserAgreement() {
             <Text style={styles.bodyText}>
               Sportiner is built for respectful tennis players. Good sportsmanship,
               punctuality, honesty, and basic respect are required.
+            </Text>
+            <Text style={styles.bodyText}>
+              For safer in-person play, use public courts when possible, tell
+              someone where you are going, and do not meet or continue a meetup
+              if you feel unsafe.
             </Text>
 
             <View style={styles.guidelineGrid}>
@@ -182,7 +330,9 @@ export default function UserAgreement() {
               Users can report objectionable content, abusive behavior, unsafe
               conduct, or other violations. Sportiner may review reports, remove
               content, restrict access, suspend accounts, or ban users when needed
-              to protect the community.
+              to protect the community. Report and block controls are available
+              throughout the app for user profiles, messages, and game-related
+              interactions.
             </Text>
           </View>
 
@@ -199,9 +349,14 @@ export default function UserAgreement() {
             </Text>
           </View>
 
-          <Text style={styles.footerText}>
-            For questions about these terms, contact Sportiner support.
-          </Text>
+          <View style={styles.supportSection}>
+            <Text style={styles.footerText}>
+              Questions or safety concerns? Contact support@sportiner.com.
+            </Text>
+            <Pressable onPress={() => Linking.openURL(LEGAL_LINKS.supportMailto)}>
+              <Text style={styles.supportEmail}>{LEGAL_LINKS.supportEmail}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <Pressable
@@ -224,7 +379,7 @@ export default function UserAgreement() {
             ) : null}
           </Animated.View>
           <Text style={styles.checkboxLabel}>
-            I have read and agree to the Terms of Use and Community Guidelines
+            I have read and agree to the Terms of Use, Privacy Policy, and Community Guidelines.
           </Text>
         </Pressable>
 
@@ -286,6 +441,43 @@ const styles = StyleSheet.create({
   },
   titleSection: {
     marginBottom: 24,
+  },
+  legalActionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 24,
+  },
+  legalActionButton: {
+    minHeight: 44,
+    flexBasis: "47%",
+    flexGrow: 1,
+    borderWidth: 2,
+    borderColor: COLORS.secondary,
+    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    shadowColor: COLORS.secondary,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
+  },
+  legalActionButtonPressed: {
+    transform: [{ translateX: 1 }, { translateY: 1 }],
+    shadowOffset: { width: 1, height: 1 },
+  },
+  legalActionText: {
+    flex: 1,
+    color: COLORS.secondary,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "900",
+    textTransform: "uppercase",
   },
   metaRow: {
     flexDirection: "row",
@@ -371,6 +563,20 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginBottom: 10,
   },
+  agePolicySection: {
+    backgroundColor: COLORS.surfaceContainerLow,
+    borderWidth: 2,
+    borderColor: COLORS.secondary,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 30,
+  },
+  agePolicyBody: {
+    color: COLORS.secondary,
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: "800",
+  },
   sectionTitle: {
     color: COLORS.secondary,
     fontSize: 21,
@@ -429,6 +635,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     fontStyle: "italic",
+  },
+  supportSection: {
+    marginTop: 8,
+  },
+  supportEmail: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 4,
   },
   checkboxRow: {
     flexDirection: "row",

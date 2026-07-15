@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/context/AuthContext';
+import { blockUser } from '@/context/ChatContext';
 
 export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void }) {
   const navigation = useNavigation();
@@ -159,15 +160,9 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
                 return;
               }
 
-              const { error: blockError } = await supabase
-                .from('blocked_users')
-                .insert({
-                  blocker_id: user.id,
-                  blocked_id: id
-                });
+              const blocked = await blockUser(id);
 
-              if (blockError) {
-                console.log('Block error:', blockError);
+              if (!blocked) {
                 Alert.alert('Error', 'Failed to block user');
                 return;
               }

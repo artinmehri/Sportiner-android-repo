@@ -202,6 +202,20 @@ export function resolvePayment_amount(row: GameRow): number | null {
   return null;
 }
 
+export function formatCourtShare(
+  isPaid: boolean,
+  amount: number | null | undefined,
+  variant: 'full' | 'compact' = 'full'
+): string {
+  if (!isPaid || !amount || amount <= 0) {
+    return 'Free';
+  }
+
+  return variant === 'compact'
+    ? `$${amount} court share`
+    : `Court share: $${amount} offline`;
+}
+
 export async function fetchAllGameRows(): Promise<GameRow[]> {
   const { data, error } = await supabase
     .from('games')
@@ -239,6 +253,37 @@ export async function fetchUpcomingGameRowsForPlayer(userId: string): Promise<Ga
   }
 
   const gameIds = [...new Set((memberships ?? []).map((m) => m.game_id as string))];
+  if (gameIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('games')
+    .select('*')
+    .in('id', gameIds)
+    .neq('host_id', userId)
+    .gte('time', now)
+    .order('time', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? []) as GameRow[];
+}
+
+export async function fetchPendingRequestedGameRowsForPlayer(userId: string): Promise<GameRow[]> {
+  const now = new Date().toISOString();
+  const { data: requests, error: requestErr } = await supabase
+    .from('game_requests')
+    .select('game_id')
+    .eq('user_id', userId)
+    .eq('status', 'pending');
+
+  if (requestErr) {
+    throw new Error(requestErr.message);
+  }
+
+  const gameIds = [...new Set((requests ?? []).map((r) => r.game_id as string))];
   if (gameIds.length === 0) {
     return [];
   }
@@ -399,7 +444,7 @@ export async function createGameRow(
     time: gameTime,
     level: payload.skillLevel,
     is_public: isOpen,
-    game_capacity: payload.numberOfPlayers,
+    game_capacity: payload.gameType === '1v1' ? 2 : payload.numberOfPlayers,
     is_booked: payload.isBooked,
     is_paid: payload.isPaid,
     payment_amount:
@@ -449,7 +494,11 @@ async function getGameCapacityState(gameId: string): Promise<{
     .eq('id', gameId)
     .maybeSingle();
 
-  if (error || !game) {
+  if (error) {
+    throw error;
+  }
+
+  if (!game) {
     return null;
   }
 
@@ -469,16 +518,23 @@ export async function addPlayerToGame(
   gameId: string,
   userId: string,
   role: 'host' | 'member' = 'member'
-): Promise<void> {
+): Promise<'added' | 'already_member'> {
   const { error } = await supabase.from('game_players').insert({
     game_id: gameId,
     user_id: userId,
     role,
+    joined_at: new Date().toISOString(),
   });
 
-  if (error && error.code !== '23505') {
-    throw new Error(error.message);
+  if (error?.code === '23505') {
+    return 'already_member';
   }
+
+  if (error) {
+    throw error;
+  }
+
+  return 'added';
 }
 
 export async function joinGame(gameId: string, userId: string): Promise<JoinResult> {
@@ -486,12 +542,16 @@ export async function joinGame(gameId: string, userId: string): Promise<JoinResu
     return 'not_configured';
   }
 
-  const { data: existingMember } = await supabase
+  const { data: existingMember, error: memberError } = await supabase
     .from('game_players')
     .select('id')
     .eq('game_id', gameId)
     .eq('user_id', userId)
     .maybeSingle();
+
+  if (memberError) {
+    throw memberError;
+  }
 
   if (existingMember) {
     return 'already_member';
@@ -507,21 +567,35 @@ export async function joinGame(gameId: string, userId: string): Promise<JoinResu
   }
 
   if (state.isOpen) {
-    await addPlayerToGame(gameId, userId, 'member');
+    const addResult = await addPlayerToGame(gameId, userId, 'member');
+    if (addResult === 'already_member') {
+      return 'already_member';
+    }
     // Increment players_enrolled in games table
-    await supabase
+    const { error: countError } = await supabase
       .from('games')
       .update({ players_enrolled: state.playerCount + 1 })
       .eq('id', gameId);
+    if (countError) {
+      console.error('[game-join-count-sync]', {
+        source: 'games.players_enrolled.update',
+        code: countError.code,
+        message: countError.message,
+      });
+    }
     return 'joined';
   }
 
-  const { data: existingRequest } = await supabase
+  const { data: existingRequest, error: requestError } = await supabase
     .from('game_requests')
     .select('id, status')
     .eq('game_id', gameId)
     .eq('user_id', userId)
     .maybeSingle();
+
+  if (requestError) {
+    throw requestError;
+  }
 
   if (existingRequest) {
     if (existingRequest.status === 'accepted') {
@@ -540,7 +614,7 @@ export async function joinGame(gameId: string, userId: string): Promise<JoinResu
     if (insErr.code === '23505') {
       return 'already_requested';
     }
-    throw new Error(insErr.message);
+    throw insErr;
   }
 
   return 'requested';

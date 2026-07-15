@@ -19,8 +19,8 @@ export default function GameConfirmation() {
   const handleInviteFriends = async () => {
     try {
       const result = await Share.share({
-        message: 'Join my game on Sportiner! 🎾',
-        url: 'https://sportiner.app/game/123', 
+        message: 'Find, create, and join local tennis games on Sportiner. 🎾',
+        url: 'https://sportiner.com/app',
       });
       
       if (result.action === Share.sharedAction) {

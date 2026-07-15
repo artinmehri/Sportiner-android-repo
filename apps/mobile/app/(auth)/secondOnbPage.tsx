@@ -17,8 +17,8 @@ import { SignupInterface } from '../../context/SignupInterface.type';
 const { width: screenWidth } = Dimensions.get('window');
 const sliderWidth = screenWidth - 80;
 
-export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterface) {
-  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);  
+export default function SecondOnbPage({onNext, changeData, onBack, data}: SignupInterface) {
+  const [selectedLevel, setSelectedLevel] = useState<string | null>(data?.level ?? null);
   type IconName = ComponentProps<typeof Ionicons>['name'];
   
   const levels: { id: string; label: string; icon: IconName }[] = [
@@ -55,6 +55,7 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
           <View style={[styles.dot, styles.activeDot]} />
           <View style={[styles.dot, styles.activeDot]} />
           <View style={styles.dot} />
+          <View style={styles.dot} />
         </View>
         <View style={styles.placeholder} />
       </View>
@@ -72,7 +73,13 @@ export default function SecondOnbPage({onNext, changeData, onBack}: SignupInterf
   return (
     <Pressable 
       key={level.id}
-      onPress={() => setSelectedLevel(level.id)}
+      onPress={() => {
+        setSelectedLevel(level.id);
+        changeData((current: any) => ({
+          ...current,
+          level: level.id,
+        }));
+      }}
       style={({ pressed }) => [
         styles.levelCard,
         { backgroundColor: isSelected ? '#19E675' : (pressed ? '#E5E5E5' : '#fff') }

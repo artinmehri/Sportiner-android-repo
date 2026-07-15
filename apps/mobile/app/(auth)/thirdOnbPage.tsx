@@ -49,22 +49,38 @@ const timeSlotLabels: Record<TimeSlot, string> = {
 
 
 
-export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterface) {
+export default function ThirdOnbPage({onNext, changeData, onBack, data}: SignupInterface) {
   const router = useRouter();
   type Day = typeof daysOfWeek[number];
   type WeekSchedule = Record<Day, DaySchedule>;
 
-  const [trackSchedule, setTrackSchedule] = useState(false)
-  const [schedule, setSchedule] = useState<WeekSchedule>(() => {
-    return daysOfWeek.reduce((acc, day) => {
-      acc[day] = {
-        morning: false,
-        afternoon: false,
-        evening: false,
+  const getEmptySchedule = () => daysOfWeek.reduce((acc, day) => {
+    acc[day] = {
+      morning: false,
+      afternoon: false,
+      evening: false,
+    };
+    return acc;
+  }, {} as WeekSchedule);
+
+  const getSavedSchedule = (): WeekSchedule => {
+    if (data?.availability && !Array.isArray(data.availability)) {
+      return {
+        ...getEmptySchedule(),
+        ...data.availability,
       };
-      return acc;
-    }, {} as WeekSchedule);
-  });
+    }
+
+    return getEmptySchedule();
+  };
+
+  const hasSelectedAvailability = (currentSchedule: WeekSchedule) =>
+    daysOfWeek.some((day) =>
+      timeSlots.some((timeSlot) => currentSchedule[day]?.[timeSlot])
+    );
+
+  const [schedule, setSchedule] = useState<WeekSchedule>(() => getSavedSchedule());
+  const [trackSchedule, setTrackSchedule] = useState(() => hasSelectedAvailability(getSavedSchedule()));
   const handleContinue = () => {
 
     if (!trackSchedule) {
@@ -84,13 +100,17 @@ export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterfa
 
   const toggleTimeSlot = (day: Day, timeSlot: TimeSlot) => {
     setTrackSchedule(true)
-        setSchedule(prev => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        [timeSlot]: !prev[day][timeSlot]
-      }
-    }));
+    setSchedule(prev => {
+      const nextSchedule = {
+        ...prev,
+        [day]: {
+          ...prev[day],
+          [timeSlot]: !prev[day][timeSlot]
+        }
+      };
+
+      return nextSchedule;
+    });
   };
 
   return (
@@ -104,6 +124,7 @@ export default function ThirdOnbPage({onNext, changeData, onBack}: SignupInterfa
           <View style={[styles.dot, styles.activeDot]} />
           <View style={[styles.dot, styles.activeDot]} />
           <View style={[styles.dot, styles.activeDot]} />
+          <View style={styles.dot} />
         </View>
         <View style={styles.placeholder} />
       </View>
