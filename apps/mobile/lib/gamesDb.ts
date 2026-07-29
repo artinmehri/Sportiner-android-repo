@@ -542,82 +542,33 @@ export async function joinGame(gameId: string, userId: string): Promise<JoinResu
     return 'not_configured';
   }
 
-  const { data: existingMember, error: memberError } = await supabase
-    .from('game_players')
-    .select('id')
-    .eq('game_id', gameId)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (memberError) {
-    throw memberError;
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user || authData.user.id !== userId) {
+    return 'not_authenticated';
   }
 
-  if (existingMember) {
-    return 'already_member';
-  }
-
-  const state = await getGameCapacityState(gameId);
-  if (!state) {
-    return 'not_found';
-  }
-
-  if (state.playerCount >= state.capacity) {
-    return 'full';
-  }
-
-  if (state.isOpen) {
-    const addResult = await addPlayerToGame(gameId, userId, 'member');
-    if (addResult === 'already_member') {
-      return 'already_member';
-    }
-    // Increment players_enrolled in games table
-    const { error: countError } = await supabase
-      .from('games')
-      .update({ players_enrolled: state.playerCount + 1 })
-      .eq('id', gameId);
-    if (countError) {
-      console.error('[game-join-count-sync]', {
-        source: 'games.players_enrolled.update',
-        code: countError.code,
-        message: countError.message,
-      });
-    }
-    return 'joined';
-  }
-
-  const { data: existingRequest, error: requestError } = await supabase
-    .from('game_requests')
-    .select('id, status')
-    .eq('game_id', gameId)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (requestError) {
-    throw requestError;
-  }
-
-  if (existingRequest) {
-    if (existingRequest.status === 'accepted') {
-      return 'already_member';
-    }
-    return 'already_requested';
-  }
-
-  const { error: insErr } = await supabase.from('game_requests').insert({
-    game_id: gameId,
-    user_id: userId,
-    status: 'pending',
+  const { data, error } = await supabase.rpc('join_public_game', {
+    p_game_id: gameId,
   });
 
-  if (insErr) {
-    if (insErr.code === '23505') {
-      return 'already_requested';
-    }
-    throw insErr;
+  if (error) {
+    throw error;
   }
 
-  return 'requested';
+  const result = data as JoinResult;
+  if (
+    result === 'joined' ||
+    result === 'requested' ||
+    result === 'already_member' ||
+    result === 'already_requested' ||
+    result === 'full' ||
+    result === 'not_found' ||
+    result === 'not_authenticated'
+  ) {
+    return result;
+  }
+
+  throw new Error(`Unexpected join result: ${String(data)}`);
 }
 
 export async function approveJoinRequest(requestId: string): Promise<void> {

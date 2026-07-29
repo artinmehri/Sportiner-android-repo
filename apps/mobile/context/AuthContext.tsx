@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as SecureStore from 'expo-secure-store'
 import { useEffect, useState } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
+import { disablePushTokensForCurrentDevice } from '@/lib/pushNotifications'
 
 class LargeSecureStore {
   async getItem(key: string) {
@@ -41,6 +42,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+const USER_PROFILE_SELECT =
+    'id, created_at, name, profile_picture, email, age_group, level, availability, city, last_active_at, elo, gamesPlayed, reliability_score, updated_at, accepted_terms, onboarding_version, onboarding_stage, onboarding_completed_at, favorite_park' as const
+
 export async function getCurrentUserId() {
     const { data, error } = await supabase.auth.getUser();
 
@@ -64,11 +68,11 @@ export async function getCurrentUserId() {
     }
 }
 
-export async function getUser(userId: string) {
+export async function getUser(userId: string): Promise<any | undefined> {
 
     const { data: userData } = await supabase
     .from('users')
-    .select('*')
+    .select(USER_PROFILE_SELECT)
     .eq('id', userId)
     .maybeSingle();
 
@@ -77,7 +81,7 @@ export async function getUser(userId: string) {
     }
 }
 
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<any | undefined> {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
@@ -91,7 +95,7 @@ export async function getCurrentUser() {
 
     const { data: userData } = await supabase
     .from('users')
-    .select('*')
+    .select(USER_PROFILE_SELECT)
     .eq('id', user.id)
     .maybeSingle();
 
@@ -139,6 +143,13 @@ export async function signOutCurrentUser(): Promise<{ error: Error | null }> {
         isOnboarding.current = false;
         isPasswordRecovery.current = false;
         return { error: null };
+    }
+
+    try {
+        // Must run before signOut while the session JWT is still valid.
+        await disablePushTokensForCurrentDevice(supabase, 'logout');
+    } catch (error) {
+        console.warn('Could not deactivate push installation before logout', error);
     }
 
     const { error: signOutError } = await supabase.auth.signOut();

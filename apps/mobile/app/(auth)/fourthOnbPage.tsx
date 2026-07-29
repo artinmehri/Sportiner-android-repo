@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { SignupInterface } from '../../context/SignupInterface.type';
+import { saveLatestLocationPosition } from '@/lib/latestLocation';
 import {
   logOnboardingError,
   onboardingErrorCopy,
@@ -56,6 +57,8 @@ export default function FourthOnbPage({ onNext, onBack, changeData, data }: Sign
         },
         location_permission: 'granted',
       }));
+
+      void saveLatestLocationPosition(position, 'onboarding');
 
       await onNext();
     } catch (error) {

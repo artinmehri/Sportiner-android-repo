@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sportiner",
     "slug": "sportiner",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sportiner",
@@ -16,7 +16,7 @@
     "ios": {
       "bundleIdentifier": "com.sportiner.app",
       "usesAppleSignIn": true,
-      "buildNumber": "58",
+      "buildNumber": "67",
       "simulator": {
         "device": "iPhone 17 Pro"
       },
@@ -51,6 +51,13 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "color": "#19E675",
+          "defaultChannel": "default"
+        }
+      ],
       "expo-apple-authentication",
       [
         "expo-build-properties",

@@ -52,7 +52,7 @@ export default function ProfileDetailsScreen({ onClose }: { onClose?: () => void
     // Step 1 — fetch their row from your users table
     const { data, error: dbError } = await supabase
       .from('users')
-      .select('*')
+      .select('name, city, level, elo, gamesPlayed, reliability_score, profile_picture, availability')
       .eq('id', id)
       .single();
 

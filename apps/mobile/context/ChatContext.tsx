@@ -1,4 +1,4 @@
-import { getCurrentUser, getCurrentUserId, supabase } from "./AuthContext";
+import { getCurrentUserId, supabase } from "./AuthContext";
 import { router } from 'expo-router';
 
 const UUID_RE =
@@ -11,28 +11,6 @@ type ModerationReportInput = {
     reason: string;
     details?: string;
 };
-
-type GameChatMetadata = {
-    title: string | null;
-    type: string | null;
-    image: string | null;
-    chat_id: string | null;
-};
-
-type ExistingChat = {
-    id: string;
-};
-
-function normalizeGameChatType(type: string | null | undefined) {
-    const normalized = String(type || '').toLowerCase();
-    return normalized.includes('1v1') || normalized.includes('1-1') || normalized.includes('1 vs 1')
-        ? 'private'
-        : 'group';
-}
-
-async function sleep(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function getChatMemberIds(chatId: string): Promise<string[]> {
     const { data, error } = await supabase
@@ -184,158 +162,22 @@ export async function getChatId(gameId: string) {
     return chat?.id ?? null;
 }
 
-async function getGameChatMetadata(gameId: string): Promise<GameChatMetadata | null> {
-    const { data, error } = await supabase
-        .from('games')
-        .select('title, type, image, chat_id')
-        .eq('id', gameId)
-        .maybeSingle();
-
-    if (error) {
-        console.log('Error fetching game metadata for chat:', error.message, error.code);
-        return null;
-    }
-
-    return data as GameChatMetadata | null;
-}
-
-async function findExistingGameChat(gameId: string, chatId?: string | null): Promise<ExistingChat | null> {
-    if (chatId) {
-        const { data, error } = await supabase
-            .from('chat')
-            .select('id')
-            .eq('id', chatId)
-            .maybeSingle();
-
-        if (error) {
-            console.log('Error fetching game chat by id:', error.message, error.code);
-        }
-
-        if (data?.id) {
-            return data as ExistingChat;
-        }
-    }
-
-    const { data, error } = await supabase
-        .from('chat')
-        .select('id')
-        .eq('game_id', gameId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-    if (error) {
-        console.log('Error fetching game chat by game id:', error.message, error.code);
-        return null;
-    }
-
-    return data as ExistingChat | null;
-}
-
-async function getOrCreateGameChat(gameId: string, gameType?: string | null): Promise<string | null> {
-    const game = await getGameChatMetadata(gameId);
-
-    if (!game) {
-        return null;
-    }
-
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-        const existing = await findExistingGameChat(gameId, game.chat_id);
-
-        if (existing?.id) {
-            return existing.id;
-        }
-
-        await sleep(200);
-    }
-
-    const now = new Date().toISOString();
-    const chatType = normalizeGameChatType(gameType ?? game.type);
-
-    const { data: createdChat, error: createError } = await supabase
-        .from('chat')
-        .insert({
-            type: chatType,
-            name: game.title || 'Tennis Game',
-            photo: game.image || null,
-            last_message: null,
-            last_message_at: null,
-            created_at: now,
-            updated_at: now,
-            game_id: gameId,
-        })
-        .select('id')
-        .single();
-
-    if (createError || !createdChat?.id) {
-        if (createError?.code === '23505') {
-            const existing = await findExistingGameChat(gameId, game.chat_id);
-            return existing?.id ?? null;
-        }
-
-        console.log('Error creating game chat:', createError?.message, createError?.code);
-        return null;
-    }
-
-    const { error: updateGameError } = await supabase
-        .from('games')
-        .update({ chat_id: createdChat.id })
-        .eq('id', gameId);
-
-    if (updateGameError) {
-        console.log('Error attaching chat to game:', updateGameError.message, updateGameError.code);
-    }
-
-    return createdChat.id;
-}
-
-async function ensureCurrentUserChatMembership(gameId: string, chatId: string) {
-    const user = await getCurrentUser();
-    const userId = await getCurrentUserId();
-
-    if (!user || !userId?.id) {
-        console.log('Error adding user to chat: missing current user');
-        return false;
-    }
-
-    const { error } = await supabase
-        .from('conversation_members')
-        .upsert({
-            id: userId.id,
-            chat_id: chatId,
-            joined_at: new Date().toISOString(),
-            last_read_message_id: null,
-            level: user.level,
-            game_id: gameId,
-        }, { onConflict: 'id,chat_id', ignoreDuplicates: true });
-
-    if (error) {
-        console.log('Error adding user to chat:', error.message, error.code);
-        return false;
-    }
-
-    return true;
-}
-
 // Adding user to chat
 export async function addUserToChat(gameId: string, gameType?: string | null) {
     if (!gameId || !UUID_RE.test(gameId)) return null;
+    void gameType;
 
-    const alreadyInChat = await userInChat(gameId);
-    if (alreadyInChat) {
-        return getChatId(gameId);
-    }
+    const { data: chatId, error } = await supabase.rpc('ensure_game_chat_membership_v1', {
+        p_game_id: gameId,
+    });
 
-    const chatId = await getOrCreateGameChat(gameId, gameType);
-
-    if (!chatId) {
-        console.log('Unable to find or create chat for game:', gameId);
-        return null;
-    }
-
-    const addedToChat = await ensureCurrentUserChatMembership(gameId, chatId);
-
-    if (!addedToChat) {
+    if (error || typeof chatId !== 'string') {
+        console.log(
+            'Unable to ensure game chat membership:',
+            error?.message,
+            error?.code,
+            gameId,
+        );
         return null;
     }
 
@@ -760,50 +602,21 @@ export async function createChat(
     image: string,
     members: Array<{ id: string; level: string }>
 ) {
-    const now = new Date().toISOString();
+    void type;
+    void name;
+    void photo;
+    void image;
+    void members;
 
-    const { data: chat, error: chatError } = await supabase
-        .from('chat')
-        .insert({
-            type,
-            name,
-            photo: image || null,
-            last_message: null,
-            last_message_at: null,
-            created_at: now,
-            updated_at: now,
-            game_id: gameId,
-        })
-        .select()
-        .single();
+    const { data: chatId, error } = await supabase.rpc('ensure_game_chat_membership_v1', {
+        p_game_id: gameId,
+    });
 
-    if (chatError || !chat) {
-        throw new Error(chatError?.message ?? 'Failed to create chat');
-    }
-    
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
-    let index = 0;
-
-    for (const member of members) {
-
-        const { error: memberError } = await supabase.from('conversation_members').insert({
-            id: member.id,
-            chat_id: chat.id,
-            joined_at: now,
-            last_read_message_id: null,
-            level: member.level,
-            game_id: gameId,
-            color: colors[index]
-        });
-
-        index++
-
-        if (memberError) {
-            throw new Error(memberError.message);
-        }
+    if (error || typeof chatId !== 'string') {
+        throw new Error(error?.message ?? 'Failed to create game chat');
     }
 
-    return chat.id;
+    return chatId;
 }
 
 export async function findOtherPlayer(chatId: string) {

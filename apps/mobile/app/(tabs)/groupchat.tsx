@@ -25,6 +25,9 @@ import { getCurrentUserId, getUser, supabase } from '@/context/AuthContext';
 import { formatGameSubtitle, GameRow } from '@/context/GameContext';
 import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 import ReportModal from '@/components/ReportModal';
+import ConversationStarters, {
+  GROUP_CHAT_STARTERS,
+} from '@/components/ConversationStarters';
 const { width, height } = Dimensions.get('window');
 import { Gesture } from 'react-native-gesture-handler';
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming, useDerivedValue } from 'react-native-reanimated';
@@ -151,6 +154,13 @@ const GroupChatScreen = () => {
 
       setCurrentUserId(currentUser?.id)
 
+      if (currentUser?.id) {
+        const profile = await getUser(currentUser.id);
+        if (!cancelled && profile?.name) {
+          setCurrentUserName(profile.name);
+        }
+      }
+
       const gameRow = gameRows?.[0] as GameRow | undefined;
       if (!cancelled) {
         setGame(gameRow ?? null);
@@ -239,12 +249,23 @@ const GroupChatScreen = () => {
   const [currentUserId, setCurrentUserId] = useState<string | undefined>()
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [currentUserName, setCurrentUserName] = useState('');
 
 
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const hasConversationMessages = messages.length > 0;
+  const showConversationStarters = !editingMessage && !isReplying;
+
+  const applySuggestion = (text: string) => {
+    setInputText(text);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  };
 
   const handleSend = async () => {
     if ((!inputText.trim() && !isReplying && !editingMessage) || (isReplying && !inputText.trim())) {
@@ -561,6 +582,19 @@ const handleBlockUser = (blockedUserId: string) => {
       )}
 
       {renderReplyPreview()}
+
+      {showConversationStarters ? (
+        <ConversationStarters
+          suggestions={GROUP_CHAT_STARTERS}
+          onSelect={applySuggestion}
+          expandedByDefault={!hasConversationMessages}
+          systemBanner={
+            !hasConversationMessages
+              ? `${currentUserName || 'A player'} joined the game. Say hello and coordinate the details!`
+              : null
+          }
+        />
+      ) : null}
 
     
       <View style={styles.simpleComposerPill}>

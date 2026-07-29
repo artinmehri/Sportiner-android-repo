@@ -15,15 +15,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { useGameTickets } from "@/context/GameTicketsContext";
 import { useGames, type Game, isGameInTimeFilter, getDistanceKm } from "@/context/GameContext";
-import { getCurrentUserId } from "@/context/AuthContext";
+import { getCurrentUser, getCurrentUserId } from "@/context/AuthContext";
 import { addUserToChat, chatNavigator, getChatId, userInChat } from "@/context/ChatContext";
 import { formatCourtShare } from '@/lib/gamesDb';
 import {
   type GeoCoords,
 } from '@/lib/courtSuggestions';
+import { favoriteParkShortName } from '@/lib/favoriteParks';
+import {
+  getNotificationPermissionState,
+} from '@/lib/pushNotifications';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics'
 import { supabase } from '@/lib/supabase';
+import { saveLatestLocationPosition } from '@/lib/latestLocation';
+
+type SkillLevelPrefill = 'Beginner' | 'Intermediate' | 'Advanced';
+
+function mapUserLevelToSkill(level: unknown): SkillLevelPrefill | null {
+  if (typeof level !== 'string') return null;
+  switch (level.trim().toLowerCase()) {
+    case 'beginner':
+      return 'Beginner';
+    case 'intermediate':
+      return 'Intermediate';
+    case 'advanced':
+    case 'pro':
+      return 'Advanced';
+    default:
+      return null;
+  }
+}
 
 type Event = {
   title: string;
@@ -160,10 +182,14 @@ export default function Index() {
   const [joinFeedbackMessage, setJoinFeedbackMessage] = useState("Joined Game");
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const { requestJoinGame } = useGameTickets();
-  const [locationCoords, setLocationCoords] = useState<GeoCoords | null>(null);
   const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
-  const [userLocation, setUserLocation] = useState(null);
   const [originReady, setOriginReady] = useState(false);
+  const [favoritePark, setFavoritePark] = useState<string | null>(null);
+  const [userSkillLevel, setUserSkillLevel] = useState<SkillLevelPrefill | null>(null);
+  const [userAvailability, setUserAvailability] = useState<unknown>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const alternativesOffsetRef = useRef(0);
 
 
   const {
@@ -176,6 +202,36 @@ export default function Index() {
   useFocusEffect(
     useCallback(() => {
       refreshGames();
+
+      let active = true;
+      (async () => {
+        try {
+          const [user, permission] = await Promise.all([
+            getCurrentUser(),
+            getNotificationPermissionState(),
+          ]);
+          if (!active) return;
+
+          const park =
+            typeof user?.favorite_park === 'string' && user.favorite_park.trim()
+              ? user.favorite_park.trim()
+              : null;
+          setFavoritePark(park);
+          setUserSkillLevel(mapUserLevelToSkill(user?.level));
+          setUserAvailability(user?.availability ?? null);
+          setNotificationsEnabled(
+            permission === 'granted' ||
+              permission === 'provisional' ||
+              permission === 'ephemeral'
+          );
+        } catch (error) {
+          console.log('Failed to load discover empty-state profile', error);
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
     }, [refreshGames])
   );
 
@@ -205,6 +261,7 @@ export default function Index() {
         console.log('LOCKED USER ORIGIN:', coords);
 
         setSafeOrigin(coords);
+        void saveLatestLocationPosition(position, 'nearby_games');
       } catch (e) {
         console.log('Location error', e);
       }
@@ -299,19 +356,125 @@ function gameToEvent(g: Game): Event {
     return () => clearTimeout(timeout);
   }, [showJoinedGameModal]);
 
-  const dbEvents = useMemo(
+  const matchesSearch = (title: string) =>
+    searchQuery === "" || title.toLowerCase().includes(searchQuery.toLowerCase());
+
+  const modeGames = useMemo(
     () =>
       games
         .filter((g) => (mode === "1-1" ? g.gameType === "1v1" : g.gameType === "Group"))
         .filter((g) => (currentUserId ? g.hostId !== currentUserId : true))
-        .filter((g) => isGameInTimeFilter(g.date, selectedFilter))
-        .map(gameToEvent),
-    [games, mode, currentUserId, selectedFilter, nearbyOrigin]
+        .filter((g) => matchesSearch(g.title)),
+    [games, mode, currentUserId, searchQuery]
   );
+
+  const primaryGames = useMemo(() => {
+    return modeGames
+      .filter((g) => isGameInTimeFilter(g.date, selectedFilter))
+      .filter((g) => (favoritePark ? g.location_name === favoritePark : true));
+  }, [modeGames, selectedFilter, favoritePark]);
+
+  const primaryEvents = useMemo(
+    () => primaryGames.map(gameToEvent),
+    [primaryGames, nearbyOrigin]
+  );
+
+  const alternativeGames = useMemo(() => {
+    const primaryIds = new Set(primaryGames.map((g) => g.id));
+    const remaining = modeGames.filter(
+      (g) => !primaryIds.has(g.id) && g.players_enrolled < g.capacity
+    );
+
+    const score = (g: Game) => {
+      let value = 0;
+      if (favoritePark && g.location_name === favoritePark) value += 4;
+      if (isGameInTimeFilter(g.date, selectedFilter)) value += 2;
+      if (favoritePark && g.location_name !== favoritePark) value += 1;
+      return value;
+    };
+
+    return [...remaining]
+      .sort((a, b) => score(b) - score(a) || a.date.localeCompare(b.date))
+      .slice(0, 8);
+  }, [modeGames, primaryGames, favoritePark, selectedFilter]);
+
+  const alternativeEvents = useMemo(
+    () => alternativeGames.map(gameToEvent),
+    [alternativeGames, nearbyOrigin]
+  );
+
+  const parkShortName = favoriteParkShortName(favoritePark);
+  const modeLabel = mode === "Group" ? "group" : "1-1";
+  const dayLabel =
+    selectedFilter === "Today"
+      ? "today"
+      : selectedFilter === "Tomorrow"
+        ? "tomorrow"
+        : "this weekend";
+
+  const emptyTitle = parkShortName
+    ? `No ${modeLabel} games at ${parkShortName} ${dayLabel}`
+    : `No ${modeLabel} games ${dayLabel}`;
+
+  const emptySubtitle = parkShortName
+    ? "Be the first to create one, or explore games at nearby parks."
+    : "Be the first to create one, or check another day.";
+
+  const alternativesSectionTitle = useMemo(() => {
+    if (alternativeGames.length === 0) return "Games you might like";
+    const hasOtherDay = alternativeGames.some(
+      (g) => !isGameInTimeFilter(g.date, selectedFilter)
+    );
+    const hasOtherPark = Boolean(
+      favoritePark &&
+        alternativeGames.some((g) => g.location_name !== favoritePark)
+    );
+    if (hasOtherDay && !hasOtherPark) return "Games on other days";
+    if (hasOtherPark && !hasOtherDay) return "Games nearby";
+    return "Games you might like";
+  }, [alternativeGames, selectedFilter, favoritePark]);
+
+  const openPrefillCreateGame = () => {
+    router.push({
+      pathname: '/(tabs)/CreateGame',
+      params: {
+        prefill: '1',
+        park: favoritePark ?? '',
+        level: userSkillLevel ?? '',
+        type: mode === '1-1' ? '1v1' : 'Group',
+        availability:
+          userAvailability != null ? JSON.stringify(userAvailability) : '',
+      },
+    });
+  };
+
+  const browseNearbyGames = () => {
+    if (searchQuery.trim().length > 0) {
+      setSearchQuery('');
+    }
+
+    if (alternativeEvents.length > 0) {
+      scrollViewRef.current?.scrollTo({
+        y: Math.max(alternativesOffsetRef.current - 12, 0),
+        animated: true,
+      });
+      return;
+    }
+
+    // No alternatives yet — advance the day filter so Discover still finds supply.
+    if (selectedFilter === "Today") {
+      setSelectedFilter("Tomorrow");
+      return;
+    }
+    if (selectedFilter === "Tomorrow") {
+      setSelectedFilter("This Weekend");
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <ScrollView
+        ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
@@ -396,31 +559,83 @@ function gameToEvent(g: Game): Event {
           })}
         </ScrollView>
 
-        {(
-          dbEvents.filter(
-            (event) =>
-              searchQuery === "" ||
-              event.title.toLowerCase().includes(searchQuery.toLowerCase())
-          )
-        ).map((event, idx) => (
-          <EventCard
-            key={event.gameId ?? `seed-${event.title}-${idx}`}
-            event={event}
-            mode={mode}
-            router={router}
-            requestJoinGame={requestJoinGame}
-            refreshGames={refreshGames}
-            joinedGameIds={joinedGameIds}
-            pendingGameIds={pendingGameIds}
-            setShowJoinedGameModal={setShowJoinedGameModal}
-            setJoinFeedbackMessage={setJoinFeedbackMessage}
-          />
-        ))}
+        {primaryEvents.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconShell}>
+              <Ionicons name="tennisball-outline" size={22} color="#19E675" />
+            </View>
+            <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+            <Text style={styles.emptySubtitle}>{emptySubtitle}</Text>
+
+            <View style={styles.emptyActions}>
+              <TouchableOpacity
+                onPress={openPrefillCreateGame}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.emptyCreateLink}>
+                  {parkShortName
+                    ? `Create one at ${parkShortName} →`
+                    : 'Create a game →'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={browseNearbyGames} activeOpacity={0.75}>
+                <Text style={styles.emptyBrowseLink}>Browse nearby games</Text>
+              </TouchableOpacity>
+            </View>
+
+            {notificationsEnabled ? (
+              <Text style={styles.emptyNotifyText}>
+                We’ll notify you when a matching game is created.
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          primaryEvents.map((event, idx) => (
+            <EventCard
+              key={event.gameId ?? `seed-${event.title}-${idx}`}
+              event={event}
+              mode={mode}
+              router={router}
+              requestJoinGame={requestJoinGame}
+              refreshGames={refreshGames}
+              joinedGameIds={joinedGameIds}
+              pendingGameIds={pendingGameIds}
+              setShowJoinedGameModal={setShowJoinedGameModal}
+              setJoinFeedbackMessage={setJoinFeedbackMessage}
+            />
+          ))
+        )}
+
+        {primaryEvents.length === 0 && alternativeEvents.length > 0 ? (
+          <View
+            style={styles.alternativesSection}
+            onLayout={(event) => {
+              alternativesOffsetRef.current = event.nativeEvent.layout.y;
+            }}
+          >
+            <Text style={styles.alternativesTitle}>{alternativesSectionTitle}</Text>
+            {alternativeEvents.map((event, idx) => (
+              <EventCard
+                key={event.gameId ?? `alt-${event.title}-${idx}`}
+                event={event}
+                mode={mode}
+                router={router}
+                requestJoinGame={requestJoinGame}
+                refreshGames={refreshGames}
+                joinedGameIds={joinedGameIds}
+                pendingGameIds={pendingGameIds}
+                setShowJoinedGameModal={setShowJoinedGameModal}
+                setJoinFeedbackMessage={setJoinFeedbackMessage}
+              />
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
 
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/(tabs)/CreateGame')}
+        onPress={openPrefillCreateGame}
       >
         <Ionicons name="add" size={26} color="#005124" />
       </TouchableOpacity>
@@ -775,6 +990,67 @@ const styles = StyleSheet.create({
    alignItems: "center",
    gap: 6,
    paddingRight: 4,
+ },
+ emptyState: {
+   marginTop: 6,
+   paddingHorizontal: 6,
+   paddingVertical: 14,
+   alignItems: "center",
+   gap: 8,
+ },
+ emptyIconShell: {
+   width: 44,
+   height: 44,
+   borderRadius: 22,
+   backgroundColor: "rgba(25, 230, 117, 0.12)",
+   alignItems: "center",
+   justifyContent: "center",
+   marginBottom: 2,
+ },
+ emptyTitle: {
+   fontSize: 18,
+   fontWeight: "800",
+   color: "#1F2937",
+   textAlign: "center",
+   lineHeight: 24,
+ },
+ emptySubtitle: {
+   fontSize: 14,
+   lineHeight: 20,
+   color: "#6B7280",
+   textAlign: "center",
+ },
+ emptyActions: {
+   alignItems: "center",
+   gap: 10,
+   marginTop: 6,
+ },
+ emptyCreateLink: {
+   color: "#19E675",
+   fontSize: 15,
+   fontWeight: "700",
+ },
+ emptyBrowseLink: {
+   color: "#6B7280",
+   fontSize: 14,
+   fontWeight: "600",
+ },
+ emptyNotifyText: {
+   marginTop: 4,
+   fontSize: 12,
+   lineHeight: 16,
+   color: "#9CA3AF",
+   textAlign: "center",
+ },
+ alternativesSection: {
+   marginTop: 8,
+   gap: 14,
+ },
+ alternativesTitle: {
+   fontSize: 16,
+   fontWeight: "800",
+   color: "#121212",
+   marginTop: 4,
  },
  filterPill: {
    backgroundColor: "#005124",

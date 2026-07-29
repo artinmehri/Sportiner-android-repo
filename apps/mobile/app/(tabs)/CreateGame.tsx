@@ -1,5 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
+  findNodeHandle,
   View,
   Text,
   StyleSheet,
@@ -10,12 +13,12 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { addGame, getDistanceKm } from '@/context/GameContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createChat } from '@/context/ChatContext';
-import { getCurrentUser, getCurrentUserId, supabase } from '@/context/AuthContext';
+import { getCurrentUser, getCurrentUserId } from '@/context/AuthContext';
 import {
   findCourtByName,
   getDefaultCourts,
@@ -23,21 +26,126 @@ import {
   type GeoCoords,
   type CourtSuggestion,
 } from '@/lib/courtSuggestions';
+import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
+import { saveLatestLocationPosition } from '@/lib/latestLocation';
+
 type CourtSuggestionWithDistance = CourtSuggestion & {
   distanceKm?: number;
   distanceLabel?: string;
 };
-import * as Location from 'expo-location';
 
 type GameType = '1v1' | 'Group';
 type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 type CourtType = 'Public' | 'Club' | 'Condo';
 
+type AvailabilitySlot = 'morning' | 'afternoon' | 'evening';
+type DayAvailability = Partial<Record<AvailabilitySlot, boolean>>;
+type WeekAvailability = Record<string, DayAvailability>;
+
+const AVAILABILITY_TIMES: Record<AvailabilitySlot, string> = {
+  morning: '09:00',
+  afternoon: '14:00',
+  evening: '18:00',
+};
+
+const WEEKDAY_KEYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
+
+function parseSkillLevel(value: unknown): SkillLevel | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'beginner') return 'Beginner';
+  if (normalized === 'intermediate') return 'Intermediate';
+  if (normalized === 'advanced' || normalized === 'pro') return 'Advanced';
+  if (value === 'Beginner' || value === 'Intermediate' || value === 'Advanced') {
+    return value;
+  }
+  return null;
+}
+
+function parseAvailability(raw: unknown): WeekAvailability | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as WeekAvailability;
+  } catch {
+    return null;
+  }
+}
+
+function firstOpenSlot(day: DayAvailability | undefined): AvailabilitySlot | null {
+  if (!day) return null;
+  if (day.morning) return 'morning';
+  if (day.afternoon) return 'afternoon';
+  if (day.evening) return 'evening';
+  return null;
+}
+
+function suggestDateTimeFromAvailability(
+  availability: WeekAvailability | null
+): { dateIso: string; time: string } | null {
+  if (!availability) return null;
+
+  const now = new Date();
+  for (let offset = 0; offset < 14; offset += 1) {
+    const candidate = new Date(now);
+    candidate.setHours(12, 0, 0, 0);
+    candidate.setDate(now.getDate() + offset);
+
+    const dayKey = WEEKDAY_KEYS[candidate.getDay()];
+    const slot = firstOpenSlot(availability[dayKey]);
+    if (!slot) continue;
+
+    const time = AVAILABILITY_TIMES[slot];
+    const [hours, minutes] = time.split(':').map((part) => Number(part));
+    const slotDate = new Date(candidate);
+    slotDate.setHours(hours, minutes, 0, 0);
+
+    if (slotDate.getTime() <= Date.now()) {
+      continue;
+    }
+
+    return {
+      dateIso: candidate.toISOString(),
+      time,
+    };
+  }
+
+  return null;
+}
+
 export default function CreateGame() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [type, setType] = useState<GameType>('1v1');
-  const [level, setLevel] = useState<SkillLevel>('Beginner');
+  const params = useLocalSearchParams<{
+    prefill?: string | string[];
+    park?: string | string[];
+    level?: string | string[];
+    type?: string | string[];
+    availability?: string | string[];
+  }>();
+  const paramValue = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
+
+  const shouldPrefill = paramValue(params.prefill) === '1';
+  const prefillPark = paramValue(params.park)?.trim() || '';
+  const prefillLevel = parseSkillLevel(paramValue(params.level));
+  const prefillTypeRaw = paramValue(params.type);
+  const prefillType: GameType | null =
+    prefillTypeRaw === '1v1' || prefillTypeRaw === 'Group' ? prefillTypeRaw : null;
+  const prefillAvailability = parseAvailability(paramValue(params.availability));
+
+  const [type, setType] = useState<GameType>(prefillType ?? '1v1');
+  const [level, setLevel] = useState<SkillLevel>(prefillLevel ?? 'Beginner');
   const [host_id, setHost_id] = useState<any>('')
   const [title, setTitle] = useState<string>('');
   const [date, setDate] = useState<string>('');
@@ -47,7 +155,7 @@ export default function CreateGame() {
   const [court_type, setCourt_type] = useState<CourtType>('Public');
   const [is_booked, setIs_booked] = useState<boolean>(false);
   const [image, setImage] = useState('');
-  const [game_capacity, setGame_capacity] = useState<number>(2);
+  const [game_capacity, setGame_capacity] = useState<number>(prefillType === 'Group' ? 4 : 2);
   const [is_paid, setIs_paid] = useState<boolean>(false);
   const [payment_amount, setPayment_amount] = useState<number>(0);
   const [description, setDescription] = useState<string>('');
@@ -56,6 +164,9 @@ export default function CreateGame() {
   const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
   const [originReady, setOriginReady] = useState(false);
   const [hostName, setHostName] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const descriptionInputRef = useRef<TextInput>(null);
+  const didApplyPrefill = useRef(false);
 
   const setSafeOrigin = (coords: GeoCoords) => {
     if (
@@ -160,6 +271,7 @@ export default function CreateGame() {
         console.log('LOCKED USER ORIGIN:', coords);
 
         setSafeOrigin(coords);
+        void saveLatestLocationPosition(position, 'create_game');
       } catch (e) {
         console.log('Location error', e);
       }
@@ -169,6 +281,45 @@ export default function CreateGame() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!shouldPrefill || didApplyPrefill.current) {
+      return;
+    }
+    didApplyPrefill.current = true;
+
+    if (prefillType) {
+      setType(prefillType);
+      setGame_capacity(prefillType === 'Group' ? 4 : 2);
+    }
+
+    if (prefillLevel) {
+      setLevel(prefillLevel);
+    }
+
+    if (prefillPark) {
+      const court = findCourtByName(prefillPark);
+      setLocation_name(prefillPark);
+      setSelectedLocation(prefillPark);
+      if (court) {
+        setLocation_cords(`POINT(${court.lng} ${court.lat})`);
+      }
+      setDescription(`Looking for a hit at ${prefillPark}. Come play!`);
+    }
+
+    const suggestion = suggestDateTimeFromAvailability(prefillAvailability);
+    if (suggestion) {
+      setDate(suggestion.dateIso);
+      setTime(suggestion.time);
+      setTempDate(new Date(suggestion.dateIso));
+    }
+  }, [
+    shouldPrefill,
+    prefillPark,
+    prefillLevel,
+    prefillType,
+    prefillAvailability,
+  ]);
 
   const locationSuggestions: CourtSuggestionWithDistance[] = useMemo(() => {
     const query = location_name.trim().toLowerCase();
@@ -355,14 +506,22 @@ export default function CreateGame() {
     }
     const chatType = type === '1v1' ? 'private' : 'group';
     const members = host_id ? [{ id: host_id, level: level! }] : [];
-    const chatId = await createChat(chatType, game.title, '', game.id, game.image, members);
+    await createChat(chatType, game.title, '', game.id, game.image, members);
 
-    await supabase
-      .from('games')
-      .update({ chat_id: chatId })
-      .eq('id', game.id);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    router.push('/(tabs)/GameConfirmation');
+    router.replace({
+      pathname: '/(tabs)/GameConfirmation',
+      params: {
+        id: game.id,
+        title: game.title ?? resolvedTitle,
+        date: game.time ?? `${date.split('T')[0]}T${time}:00.000Z`,
+        location_name: game.location_name ?? location_name,
+        level: game.level ?? level!,
+        capacity: String(game.game_capacity ?? resolvedCapacity),
+        players_enrolled: String(game.players_enrolled ?? players_enrolled),
+      },
+    });
     
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Something went wrong';
@@ -381,11 +540,18 @@ export default function CreateGame() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 20 }]}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 20 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* The Core Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>The Core</Text>
@@ -609,7 +775,7 @@ export default function CreateGame() {
           <View style={styles.numberSelectorContainer}>
             <Text style={styles.numberSelectorLabel}>Number of players</Text>
             <View style={{ marginTop: 40, marginLeft: -280}}>
-            <Text style={styles.numberSelectorSublabel}>excluding host</Text>
+            <Text style={styles.numberSelectorSublabel}>including host</Text>
             </View>
             <View style={styles.numberSelector}>
               <TouchableOpacity
@@ -648,11 +814,24 @@ export default function CreateGame() {
         <View style={styles.section}>
           <Text style={styles.inputLabel}>Game Description</Text>
           <TextInput
+            ref={descriptionInputRef}
             style={styles.descriptionInput}
             placeholder="Write a description for your game..."
             placeholderTextColor="#999"
             value={description}
             onChangeText={setDescription}
+            onFocus={() => {
+              setTimeout(() => {
+                const inputHandle = findNodeHandle(descriptionInputRef.current);
+                if (inputHandle) {
+                  scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+                    inputHandle,
+                    24,
+                    true,
+                  );
+                }
+              }, 250);
+            }}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
@@ -704,13 +883,14 @@ export default function CreateGame() {
             </>
           )}
         </View>
-      </ScrollView>
-      {/* Create Game Button */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
-        <TouchableOpacity style={styles.createButton} onPress={handleCreateGame}>
-          <Text style={styles.createButtonText}>Create Game</Text>
-        </TouchableOpacity>
-      </View>
+        </ScrollView>
+        {/* Create Game Button */}
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+          <TouchableOpacity style={styles.createButton} onPress={handleCreateGame}>
+            <Text style={styles.createButtonText}>Create Game</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
 
       {/* Date/Time Picker Modal */}
       <Modal
@@ -878,6 +1058,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

@@ -7,11 +7,15 @@ import { decode } from 'base64-arraybuffer';
 import { supabase, getCurrentUser, getCurrentUserId, signOutCurrentUser } from '@/context/AuthContext';
 import { useRouter } from 'expo-router';
 import { LEGAL_LAST_UPDATED, LEGAL_LINKS } from '@/constants/legal';
+import { useNotifications } from '@/context/NotificationContext';
+import { FAVORITE_PARK_OPTIONS } from '@/lib/favoriteParks';
+import { APP_STORE_REVIEW_URL, APP_STORE_WEB_REVIEW_URL } from '@/constants/appStore';
 
 type ProfileSettingsData = {
   displayName?: string;
   availability?: any;
   profileImage?: string | null;
+  favoritePark?: string | null;
 };
 
 type ProfileSettingsScreenProps = {
@@ -26,6 +30,8 @@ type TimeOfDay = 'morning' | 'afternoon' | 'evening';
 export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettingsScreenProps) {
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState('');
+  const [favoritePark, setFavoritePark] = useState<string | null>(null);
+  const [showFavoriteParkModal, setShowFavoriteParkModal] = useState(false);
   const [availability, setAvailability] = useState<{
     morning: string[];
     afternoon: string[];
@@ -39,11 +45,17 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   const [profileImageRead, setProfileImageRead] = useState<any | null>(null)
   const [showWebModal, setShowWebModal] = useState(false);
   const [webContentType, setWebContentType] = useState('');
-  const [rating, setRating] = useState(5);
   const [userId, setUserId] = useState<string | undefined>()
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const logoutInFlight = useRef(false);
   const router = useRouter()
+  const {
+    isRegistering: isRegisteringNotifications,
+    permissionState,
+    requestPermissionAndRegister,
+    syncPushRegistration,
+  } = useNotifications();
   useEffect(() => {
     const loadUser = async () => {
       // Getting user
@@ -59,6 +71,11 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
 
       const name = user?.name;
       setDisplayName(name ?? '');
+      setFavoritePark(
+        typeof user?.favorite_park === 'string' && user.favorite_park.trim()
+          ? user.favorite_park.trim()
+          : null,
+      );
 
       const availability = user?.availability;
 
@@ -220,9 +237,10 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
       return;
     }
 
-    await supabase.auth.signOut();
+    // Prefer shared logout so the current installation is deactivated first.
+    await signOutCurrentUser();
     Alert.alert('Account deleted', 'Your account was deleted successfully.');
-    router.replace('/SignUp');
+    router.replace('/(auth)/SignUp');
   }
 
 
@@ -275,25 +293,60 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   };
 
   const handleSave = async () => {
+    if (!userId || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
     const availabilityForDb = toDbAvailability(availability);
-    const {data, error} = await supabase.from('users')
+    const { error } = await supabase.from('users')
     .update({
       name: displayName,
       availability: availabilityForDb,
+      favorite_park: favoritePark,
     }).eq('id', userId)
 
     if (error) {
+      setIsSaving(false);
       Alert.alert("There was an error saving your changes.")
       console.log(error)
-    } else {
-      console.log("updated data: ", data)
+      return;
+    }
+
+    const { error: prefsError } = await supabase.rpc(
+      'update_notification_preferences_v1',
+      {
+        p_patch: {
+          favourite_park_games: Boolean(favoritePark),
+        },
+      },
+    );
+
+    if (prefsError) {
+      setIsSaving(false);
+      Alert.alert(
+        'Park saved with a warning',
+        'Your favorite park was updated, but notification preferences could not be refreshed. Try again later.',
+      );
+      console.log(prefsError);
       onSave({
         displayName,
         availability: availabilityForDb,
         profileImage,
+        favoritePark,
       });
       onClose();
+      return;
     }
+
+    onSave({
+      displayName,
+      availability: availabilityForDb,
+      profileImage,
+      favoritePark,
+    });
+    setIsSaving(false);
+    onClose();
   };
 
   const openWebContent = (type: string) => {
@@ -301,10 +354,63 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
     setShowWebModal(true);
   };
 
-  const submitFeedback = () => {
-    Alert.alert('Thank you!', `You rated Sportiner ${rating} out of 5 stars. Your feedback helps us improve!`, [
-      { text: 'OK', onPress: () => setShowWebModal(false) }
-    ]);
+  const handleNotificationSettings = async () => {
+    if (isRegisteringNotifications) {
+      return;
+    }
+
+    if (permissionState === 'denied') {
+      await Linking.openSettings();
+      return;
+    }
+
+    const permissionAlreadyAllowed =
+      permissionState === 'granted' ||
+      permissionState === 'provisional' ||
+      permissionState === 'ephemeral';
+    const result = permissionAlreadyAllowed
+      ? await syncPushRegistration()
+      : await requestPermissionAndRegister();
+
+    if (result.success) {
+      Alert.alert('Notifications enabled', 'This device is ready to receive Sportiner notifications.');
+      return;
+    }
+
+    if (result.reason === 'permission-denied') {
+      Alert.alert(
+        'Notifications are off',
+        'Open your phone settings to allow notifications for Sportiner.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Notifications unavailable',
+      'We could not register this device right now. Check your connection and try again.',
+    );
+  };
+
+  const openAppStoreReview = async () => {
+    try {
+      await Linking.openURL(APP_STORE_REVIEW_URL);
+    } catch (error) {
+      console.warn('Could not open the App Store review composer', error);
+
+      try {
+        await Linking.openURL(APP_STORE_WEB_REVIEW_URL);
+      } catch (fallbackError) {
+        console.warn('Could not open the App Store review page', fallbackError);
+        Alert.alert(
+          'App Store unavailable',
+          'We could not open Sportiner on the App Store. Please try again later.',
+        );
+      }
+    }
   };
 
 
@@ -318,8 +424,12 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
           <Ionicons name="arrow-back" size={24} color="black" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
-        <TouchableOpacity style={styles.headerButton} onPress={handleSave}>
-          <Text style={styles.saveButton}>Save</Text>
+        <TouchableOpacity style={styles.headerButton} onPress={handleSave} disabled={isSaving}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#19E675" />
+          ) : (
+            <Text style={styles.saveButton}>Save</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -354,6 +464,27 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
               />
               <Ionicons name="pencil" size={20} color="#666" />
             </View>
+          </View>
+
+          {/* Favorite Park */}
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Favorite Park</Text>
+            <TouchableOpacity
+              style={styles.inputContainer}
+              onPress={() => setShowFavoriteParkModal(true)}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.textInput,
+                  !favoritePark && styles.placeholderText,
+                ]}
+                numberOfLines={2}
+              >
+                {favoritePark ?? 'Select your favorite park'}
+              </Text>
+              <Ionicons name="pencil" size={20} color="#666" />
+            </TouchableOpacity>
           </View>
 
           {/* Availability Preview */}
@@ -421,6 +552,33 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
           </View>
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => void handleNotificationSettings()}
+            disabled={isRegisteringNotifications}
+          >
+            <View style={styles.menuLeft}>
+              <Ionicons name="notifications-outline" size={24} color="#666" />
+              <Text style={styles.menuText}>
+                {permissionState === 'denied'
+                  ? 'Enable in phone settings'
+                  : permissionState === 'granted' ||
+                      permissionState === 'provisional' ||
+                      permissionState === 'ephemeral'
+                    ? 'Notifications enabled'
+                    : 'Enable notifications'}
+              </Text>
+            </View>
+            {isRegisteringNotifications ? (
+              <ActivityIndicator size="small" color="#19E675" />
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color="#666" />
+            )}
+          </TouchableOpacity>
+        </View>
+
         {/* Support & Legal Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support & Legal</Text>
@@ -434,7 +592,10 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
             <Ionicons name="chevron-forward" size={20} color="#666" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuRow} onPress={() => openWebContent('feedback')}>
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => void openAppStoreReview()}
+          >
             <View style={styles.menuLeft}>
               <Ionicons name="create-outline" size={24} color="#666" />
               <Text style={styles.menuText}>Send Feedback</Text>
@@ -483,12 +644,20 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
           </TouchableOpacity>
 
 
-          <TouchableOpacity style={styles.menuRow} onPress={logout}>
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={logout}
+            disabled={isLoggingOut}
+          >
             <View style={styles.menuLeft}>
               <Ionicons name="exit-outline" size={24} color="#BA1A1A" />
               <Text style={[styles.menuText, { color: '#BA1A1A' }]}>Log Out</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#BA1A1A" />
+            {isLoggingOut ? (
+              <ActivityIndicator size="small" color="#BA1A1A" />
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color="#BA1A1A" />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuRow} onPress={deleteAccount}>
@@ -501,6 +670,65 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
 
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showFavoriteParkModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowFavoriteParkModal(false)}
+      >
+        <View style={styles.parkModalOverlay}>
+          <View style={styles.parkModalSheet}>
+            <View style={styles.parkModalHeader}>
+              <Text style={styles.parkModalTitle}>Favorite Park</Text>
+              <TouchableOpacity onPress={() => setShowFavoriteParkModal(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {FAVORITE_PARK_OPTIONS.map((park) => {
+                const isSelected = favoritePark === park;
+                return (
+                  <TouchableOpacity
+                    key={park}
+                    style={[
+                      styles.parkOptionRow,
+                      isSelected && styles.parkOptionRowSelected,
+                    ]}
+                    onPress={() => {
+                      setFavoritePark(park);
+                      setShowFavoriteParkModal(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.parkOptionText,
+                        isSelected && styles.parkOptionTextSelected,
+                      ]}
+                    >
+                      {park}
+                    </Text>
+                    {isSelected ? (
+                      <Ionicons name="checkmark-circle" size={22} color="#002000" />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+
+              <TouchableOpacity
+                style={styles.parkClearRow}
+                onPress={() => {
+                  setFavoritePark(null);
+                  setShowFavoriteParkModal(false);
+                }}
+              >
+                <Text style={styles.parkClearText}>Clear favorite park</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Web Content Modal */}
       <Modal
@@ -570,36 +798,6 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
                     <Text style={styles.supportContactLink}>Visit Support Page</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            )}
-
-            {webContentType === 'feedback' && (
-              <View style={styles.feedbackContent}>
-                <Text style={styles.contentTitle}>Rate Sportiner</Text>
-                <Text style={styles.feedbackQuestion}>What would you rate Sportiner out of 5?</Text>
-                
-                <View style={styles.starContainer}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <TouchableOpacity
-                      key={star}
-                      onPress={() => setRating(star)}
-                      style={styles.starButton}
-                    >
-                      <Ionicons
-                        name={star <= rating ? "star" : "star-outline"}
-                        size={40}
-                        color={star <= rating ? "#19E675" : "#E0E0E0"}
-                        style={styles.star}
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                
-                <TouchableOpacity style={styles.submitButton} onPress={submitFeedback}>
-                  <Text style={styles.submitButtonText}>Submit</Text>
-                </TouchableOpacity>
-                
-                <Text style={styles.feedbackNote}>Your feedback helps us improve the app for all tennis players!</Text>
               </View>
             )}
 
@@ -709,6 +907,72 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: 'black',
+  },
+  placeholderText: {
+    color: '#999',
+  },
+  parkModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  parkModalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 28,
+    maxHeight: '70%',
+  },
+  parkModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  parkModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111',
+  },
+  parkOptionRow: {
+    minHeight: 56,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+  },
+  parkOptionRowSelected: {
+    backgroundColor: '#19E675',
+    borderColor: '#19E675',
+  },
+  parkOptionText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginRight: 10,
+  },
+  parkOptionTextSelected: {
+    color: '#002000',
+  },
+  parkClearRow: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  parkClearText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#666',
   },
   availabilityGrid: {
     backgroundColor: '#F5F5F5',
@@ -889,49 +1153,6 @@ const styles = StyleSheet.create({
   helpDescription: {
     fontSize: 14,
     color: '#666',
-    lineHeight: 20,
-  },
-  feedbackContent: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  feedbackQuestion: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: 'black',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  starContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 32,
-  },
-  starButton: {
-    marginHorizontal: 8,
-  },
-  star: {
-    borderWidth: 2,
-    borderColor: '#19E675',
-    borderRadius: 20,
-    padding: 4,
-  },
-  submitButton: {
-    backgroundColor: '#19E675',
-    paddingHorizontal: 40,
-    paddingVertical: 16,
-    borderRadius: 25,
-    marginBottom: 16,
-  },
-  submitButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  feedbackNote: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
     lineHeight: 20,
   },
   termsContent: {

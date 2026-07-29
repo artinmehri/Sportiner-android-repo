@@ -30,6 +30,7 @@ import {
 } from '@/lib/gamesDb';
 import { parseGameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { refreshLatestLocation } from '@/lib/latestLocation';
 
 export type { JoinResult, GameRow };
 
@@ -342,6 +343,8 @@ export async function addGame(
       }
     }
 
+    void refreshLatestLocation('create_game', { force: true });
+
     return data;
 }
 
@@ -582,8 +585,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (result === 'joined') {
         setJoinedGameIds((prev) => (prev.includes(gameId) ? prev : [...prev, gameId]));
         setPendingGameIds((prev) => prev.filter((id) => id !== gameId));
+        void refreshLatestLocation('join_game', { force: true });
       } else if (result === 'requested') {
         setPendingGameIds((prev) => (prev.includes(gameId) ? prev : [...prev, gameId]));
+        void refreshLatestLocation('join_game', { force: true });
       }
       await refreshGames();
       return result;
@@ -733,145 +738,16 @@ export async function deleteGame(gameId: string) {
   if (!gameId) return false;
 
   try {
-    const user = await getCurrentUserId();
+    const { data, error } = await supabase.rpc('delete_hosted_game_v1', {
+      p_game_id: gameId,
+    });
 
-    if (!user?.id) {
-      console.log('Error deleting game: missing current user');
+    if (error) {
+      console.log('Error deleting game:', error.message, error.code);
       return false;
     }
 
-    const { data: game, error: gameLookupError } = await supabase
-      .from('games')
-      .select('id, host_id, chat_id')
-      .eq('id', gameId)
-      .maybeSingle();
-
-    if (gameLookupError) {
-      console.log('Error checking hosted game before delete:', gameLookupError.message, gameLookupError.code);
-      return false;
-    }
-
-    if (!game || game.host_id !== user.id) {
-      console.log('Error deleting game: current user is not the host');
-      return false;
-    }
-
-    const { data: chats, error: chatLookupError } = await supabase
-      .from('chat')
-      .select('id')
-      .eq('game_id', gameId);
-
-    if (chatLookupError) {
-      console.log('Error finding game chats before delete:', chatLookupError.message, chatLookupError.code);
-      return false;
-    }
-
-    const chatIds = Array.from(
-      new Set(
-        [
-          game.chat_id,
-          ...((chats ?? []).map((chat: { id: string | null }) => chat.id)),
-        ].filter(Boolean) as string[]
-      )
-    );
-
-    if (chatIds.length > 0) {
-      const { error: messagesError } = await supabase
-        .from('messages')
-        .delete()
-        .in('chat_id', chatIds);
-
-      if (messagesError) {
-        console.log('Error deleting game chat messages:', messagesError.message, messagesError.code);
-        return false;
-      }
-
-      const { error: membersByChatError } = await supabase
-        .from('conversation_members')
-        .delete()
-        .in('chat_id', chatIds);
-
-      if (membersByChatError) {
-        console.log('Error deleting game chat members:', membersByChatError.message, membersByChatError.code);
-        return false;
-      }
-    }
-
-    const { error: membersByGameError } = await supabase
-      .from('conversation_members')
-      .delete()
-      .eq('game_id', gameId);
-
-    if (membersByGameError) {
-      console.log('Error deleting game conversation members:', membersByGameError.message, membersByGameError.code);
-      return false;
-    }
-
-    const { error: requestsError } = await supabase
-      .from('game_requests')
-      .delete()
-      .eq('game_id', gameId);
-
-    if (requestsError) {
-      console.log('Error deleting game requests:', requestsError.message, requestsError.code);
-      return false;
-    }
-
-    const { error: clearGameChatError } = await supabase
-      .from('games')
-      .update({ chat_id: null })
-      .eq('id', gameId)
-      .eq('host_id', user.id);
-
-    if (clearGameChatError) {
-      console.log('Error clearing game chat reference:', clearGameChatError.message, clearGameChatError.code);
-      return false;
-    }
-
-    if (chatIds.length > 0) {
-      const { error: chatByIdError } = await supabase
-        .from('chat')
-        .delete()
-        .in('id', chatIds);
-
-      if (chatByIdError) {
-        console.log('Error deleting game chats by id:', chatByIdError.message, chatByIdError.code);
-        return false;
-      }
-    }
-
-    const { error: chatByGameError } = await supabase
-      .from('chat')
-      .delete()
-      .eq('game_id', gameId);
-
-    if (chatByGameError) {
-      console.log('Error deleting game chats by game id:', chatByGameError.message, chatByGameError.code);
-      return false;
-    }
-
-    const { error: playersError } = await supabase
-      .from('game_players')
-      .delete()
-      .eq('game_id', gameId);
-
-    if (playersError) {
-      console.log('Error deleting game players:', playersError.message, playersError.code);
-      return false;
-    }
-
-    const { error: gameError } = await supabase
-      .from('games')
-      .delete()
-      .eq('id', gameId)
-      .eq('host_id', user.id);
-
-    if (gameError) {
-      console.log('Error deleting game:', gameError.message, gameError.code);
-      return false;
-    }
-
-    return true;
+    return data === 'deleted' || data === 'not_found';
   } catch (error) {
     console.log('Unexpected error deleting game:', error);
     return false;
@@ -881,34 +757,16 @@ export async function deleteGame(gameId: string) {
 export async function withdrawRequest(gameId: string) {
   if (!gameId) return false;
 
-  const user = await getCurrentUserId();
-
-  if (!user?.id) return false;
-
-  const { error } = await supabase
-    .from('game_players')
-    .delete()
-    .eq('game_id', gameId)
-    .eq('user_id', user.id);
+  const { data, error } = await supabase.rpc('leave_game_v1', {
+    p_game_id: gameId,
+  });
 
   if (error) {
-    console.log('Error withdrawing from game:', error.message);
+    console.log('Error withdrawing from game:', error.message, error.code);
     return false;
   }
 
-  const { error: requestError } = await supabase
-    .from('game_requests')
-    .delete()
-    .eq('game_id', gameId)
-    .eq('user_id', user.id)
-    .eq('status', 'pending');
-
-  if (requestError) {
-    console.log('Error withdrawing request:', requestError.message);
-    return false;
-  }
-
-  return true;
+  return data === 'left' || data === 'not_member';
 }
 
 export function useGames() {

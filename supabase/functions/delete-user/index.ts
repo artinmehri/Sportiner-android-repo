@@ -370,8 +370,10 @@ serve(async (req) => {
     await anonymizeOrDelete(supabase, "reports", "reporter_id", userId)
     await anonymizeOrDelete(supabase, "reports", "reported_user_id", userId)
     await anonymizeOrDeleteIn(supabase, "reports", "reported_post_id", hostedGameIds)
-    await anonymizeOrDelete(supabase, "moderation_events", "actor_id", userId)
-    await anonymizeOrDelete(supabase, "moderation_events", "target_id", userId)
+
+    await requireSuccess("delete user notifications", () =>
+      supabase.from("notifications").delete().eq("user_id", userId)
+    )
 
     await requireSuccess("delete users row", () =>
       supabase.from("users").delete().eq("id", userId)

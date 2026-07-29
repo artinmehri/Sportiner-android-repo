@@ -27,6 +27,9 @@ import { getCurrentUserId, getUser, supabase } from '@/context/AuthContext';
 import { formatGameSubtitle, type GameRow } from '@/context/GameContext';
 import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 import ReportModal from '@/components/ReportModal';
+import ConversationStarters, {
+  PRIVATE_CHAT_STARTERS,
+} from '@/components/ConversationStarters';
 const { width, height } = Dimensions.get('window');
 
 const DEFAULT_AVATAR =
@@ -261,6 +264,16 @@ const ChatScreen = () => {
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const hasConversationMessages = messages.length > 0;
+  const showConversationStarters = !editingMessage && !isReplying;
+
+  const applySuggestion = (text: string) => {
+    setInputText(text);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  };
 
   const handleSend = async () => {
     if ((!inputText.trim() && !isReplying && !editingMessage) || (isReplying && !inputText.trim())) {
@@ -636,6 +649,14 @@ const ChatScreen = () => {
       )}
 
       {renderReplyPreview()}
+
+      {showConversationStarters ? (
+        <ConversationStarters
+          suggestions={PRIVATE_CHAT_STARTERS}
+          onSelect={applySuggestion}
+          expandedByDefault={!hasConversationMessages}
+        />
+      ) : null}
 
     
       <View style={styles.simpleComposerPill}>

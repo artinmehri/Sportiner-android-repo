@@ -1,0 +1,68 @@
+name: Installed game links
+
+on:
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "supabase/functions/product-event/**"
+      - "docs/qa/installed-game-links.md"
+      - "docs/analytics/deferred-acquisition-queries.sql"
+      - "docs/deep-linking/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/installed-game-links.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/mobile/**"
+      - "supabase/functions/product-event/**"
+      - "docs/qa/installed-game-links.md"
+      - "docs/analytics/deferred-acquisition-queries.sql"
+      - "docs/deep-linking/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/installed-game-links.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript (mobile)
+        run: pnpm --filter mobile exec tsc --noEmit
+
+      - name: Unit + growth contract tests
+        run: pnpm --filter mobile test:unit
+
+      - name: Lint mobile (errors only)
+        run: pnpm --filter mobile exec eslint . --max-warnings 9999 --quiet
+
+      - name: QA matrix present
+        run: |
+          test -f docs/qa/installed-game-links.md
+          test -f docs/analytics/deferred-acquisition-queries.sql
+          rg -q "Fresh-install deferred matrix" docs/qa/installed-game-links.md
+          rg -q "PANEL D1" docs/analytics/deferred-acquisition-queries.sql

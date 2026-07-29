@@ -23,6 +23,7 @@ import { addUserToChat, chatNavigator, getChatId, getplayers, submitModerationRe
 import ReportModal from '@/components/ReportModal';
 import { formatCourtShare } from '@/lib/gamesDb';
 import * as Location from 'expo-location';
+import { saveLatestLocationPosition } from '@/lib/latestLocation';
 import { type GeoCoords } from '@/lib/courtSuggestions';
 import * as Calendar from 'expo-calendar';
 import moment from 'moment';
@@ -128,6 +129,7 @@ export default function Games() {
           !(coords.lat === 0 && coords.lng === 0)
         ) {
           setNearbyOrigin(coords);
+          void saveLatestLocationPosition(position, 'nearby_games');
         }
       } catch (e) {
         console.log('Location error', e);

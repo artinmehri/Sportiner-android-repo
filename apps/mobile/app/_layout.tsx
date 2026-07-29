@@ -6,6 +6,8 @@ import { Slot, useRouter } from 'expo-router';
 import type { Session } from '@supabase/supabase-js';
 import { GameTicketsProvider } from '@/context/GameTicketsContext';
 import { GameProvider } from '@/context/GameContext';
+import { LatestLocationProvider } from '@/context/LatestLocationContext';
+import { NotificationProvider } from '@/context/NotificationContext';
 import * as SplashScreen from 'expo-splash-screen';
 import {
     hasCurrentLocalTermsAcceptance,
@@ -129,6 +131,7 @@ async function userHasAcceptedTerms(session: Session | null): Promise<boolean> {
 
 export default function RootLayout() {
     const [initialRoute, setInitialRoute] = useState<InitialRoute | null>(null);
+    const [initialNavigationComplete, setInitialNavigationComplete] = useState(false);
     const [authUserId, setAuthUserId] = useState<string | null>(null);
     const router = useRouter();
     const splashHidden = useRef(false);
@@ -267,6 +270,7 @@ export default function RootLayout() {
 
         const navigate = async () => {
             try {
+                setInitialNavigationComplete(false);
                 if (initialRoute === 'tabs') {
                     router.replace('/(tabs)');
                 } else if (initialRoute === 'password-reset') {
@@ -281,6 +285,9 @@ export default function RootLayout() {
                 }
 
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+                if (!isCancelled) {
+                    setInitialNavigationComplete(true);
+                }
             } catch (error) {
                 console.warn('Initial navigation failed:', error);
             } finally {
@@ -303,10 +310,17 @@ export default function RootLayout() {
     if (initialRoute === null) return null;
 
     return (
-        <GameProvider key={authUserId ?? 'signed-out'}>
-            <GameTicketsProvider key={authUserId ?? 'signed-out'}>
-                <Slot />
-            </GameTicketsProvider>
-        </GameProvider>
+        <LatestLocationProvider userId={authUserId}>
+            <NotificationProvider
+                navigationReady={initialNavigationComplete}
+                userId={authUserId}
+            >
+                <GameProvider key={authUserId ?? 'signed-out'}>
+                    <GameTicketsProvider key={authUserId ?? 'signed-out'}>
+                        <Slot />
+                    </GameTicketsProvider>
+                </GameProvider>
+            </NotificationProvider>
+        </LatestLocationProvider>
     );
 }

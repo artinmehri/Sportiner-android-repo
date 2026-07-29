@@ -53,7 +53,7 @@ export default function ProfileScreen() {
     // Step 2 — fetch their row from your users table
     const { data, error: dbError } = await supabase
       .from('users')
-      .select('*')
+      .select('name, city, level, elo, gamesPlayed, reliability_score, profile_picture, availability')
       .eq('id', user.id)
       .single();
 

@@ -86,27 +86,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="thirdOnbPage"
-        options={{
-          title: 'Playing Times',
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="secondOnbPage"
-        options={{
-          title: 'Tennis Level',
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="firstOnbPage"
-        options={{
-          title: 'Onboarding',
-          href: null,
-        }}
-      />
-      <Tabs.Screen
         name="EventDetails"
         options={{
           tabBarStyle: { display: 'none' },
@@ -138,27 +117,6 @@ export default function TabLayout() {
         name="profileDetails"
         options={{
           title: 'Profile Details',
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="fourthOnbPage"
-        options={{
-          title: 'Fourth Onboarding',
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="fifthOnbPage"
-        options={{
-          title: 'Fifth Onboarding',
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="GameConfirm"
-        options={{
-          title: 'Game Confirmation',
           href: null,
         }}
       />

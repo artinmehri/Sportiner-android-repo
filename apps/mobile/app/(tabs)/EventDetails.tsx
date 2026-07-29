@@ -356,7 +356,13 @@ export default function EventDetails() {
           <Image source={game?.image} style={styles.eventImage} />
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+                return;
+              }
+              router.replace('/(tabs)');
+            }}
           >
             <Ionicons name="chevron-back" size={24} color="#000" />
           </TouchableOpacity>
