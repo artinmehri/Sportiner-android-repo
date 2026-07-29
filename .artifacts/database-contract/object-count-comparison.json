@@ -1,0 +1,20 @@
+{
+  "expected": {
+    "application_tables": 29,
+    "extension_owned_tables": 1,
+    "indexes_including_constraint_indexes": 123,
+    "non_constraint_application_indexes": 88,
+    "policies": 58,
+    "triggers": 10,
+    "application_functions": 57,
+    "deployed_edge_functions": 4
+  },
+  "observed": {
+    "application_tables": 29,
+    "policies": 58,
+    "triggers": 10,
+    "functions": 57
+  },
+  "missing_tables": [],
+  "extra_tables": []
+}

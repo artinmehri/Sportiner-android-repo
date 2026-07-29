@@ -764,6 +764,7 @@ export default function CreateGame() {
               </TouchableOpacity>
             </View>
           )}
+          
         </View>
 
         {/* The Requirements Section */}
