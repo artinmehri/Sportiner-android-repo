@@ -23,6 +23,9 @@
       "supportsTablet": false,
       "requireFullScreen": true,
       "appleTeamId": "6YMBF7XTQC",
+      "associatedDomains": [
+        "applinks:sportiner.com"
+      ],
       "infoPlist": {
         "UIRequiresFullScreen": true,
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Sportiner uses your location only when you choose nearby discovery to show nearby tennis games and courts. Sportiner does not track your location in the background."
@@ -130,7 +133,9 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": "https://sportiner.com"
+      },
       "eas": {
         "projectId": "3fc54ed7-2c43-46b8-b461-2d9d5c2804e6"
       },

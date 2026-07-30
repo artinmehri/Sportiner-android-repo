@@ -131,7 +131,6 @@ async function userHasAcceptedTerms(session: Session | null): Promise<boolean> {
 }
 
 export default function RootLayout() {
-<<<<<<< HEAD
     const [initialRoute, setInitialRoute] = useState<InitialRoute | null>(null);
     const [initialNavigationComplete, setInitialNavigationComplete] = useState(false);
     const [authUserId, setAuthUserId] = useState<string | null>(null);
