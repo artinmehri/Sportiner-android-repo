@@ -16,6 +16,7 @@ export type LatestLocationResult =
       success: false;
       reason:
         | "not_authenticated"
+        | "profile_not_ready"
         | "permission_denied"
         | "location_unavailable"
         | "inaccurate_location"
@@ -121,6 +122,13 @@ async function persistPosition(
   });
 
   if (error) {
+    // Authentication can complete before a first-time user's public profile is
+    // created. Onboarding saves the same position again after profile setup, so
+    // this expected startup race should not be reported as an operational error.
+    if (error.code === "P0002") {
+      return { success: false, reason: "profile_not_ready" };
+    }
+
     console.warn("Unable to store latest location", {
       source,
       code: error.code,

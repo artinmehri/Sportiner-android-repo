@@ -49,6 +49,27 @@ type Message = {
   status?: string
 };
 
+const mergeMessagesById = (...collections: Message[][]): Message[] => {
+  const messagesById = new Map<string, Message>();
+  const messagesWithoutId: Message[] = [];
+
+  collections.flat().forEach((message) => {
+    if (!message.id) {
+      messagesWithoutId.push(message);
+      return;
+    }
+
+    messagesById.set(message.id, {
+      ...messagesById.get(message.id),
+      ...message,
+    });
+  });
+
+  return [...messagesById.values(), ...messagesWithoutId].sort((left, right) =>
+    String(left.created_at ?? '').localeCompare(String(right.created_at ?? ''))
+  );
+};
+
 type ReportTarget = {
   reportedUserId: string;
   reportedMessageId?: string | null;
@@ -182,8 +203,7 @@ const ChatScreen = () => {
       setAvatar(otherPlayer.profile_picture ?? DEFAULT_AVATAR);
 
       if (messages) {
-        setMessages(
-          messages.map((message: { id: any; sender_id: any; message: any; type: any; image: any; reply_to: any; is_reply: any; created_at: any; updated_at: any; is_edited: any; status: any; }) => {
+        const fetchedMessages = messages.map((message: { id: any; sender_id: any; message: any; type: any; image: any; reply_to: any; is_reply: any; created_at: any; updated_at: any; is_edited: any; status: any; }) => {
             return {
               id: message.id,
               sender_id: message.sender_id,
@@ -197,8 +217,11 @@ const ChatScreen = () => {
               is_edited: message.is_edited,
               status: message.status
             };
-          })
-        );
+          });
+
+        // The initial fetch and Realtime subscription can overlap. Merge them
+        // by database ID so a message is never rendered twice or dropped.
+        setMessages((current) => mergeMessagesById(fetchedMessages, current));
       }
 
       // Mark conversation as read (fire-and-forget, error handling in markAsRead)
@@ -218,7 +241,7 @@ const ChatScreen = () => {
       }, (payload) => {
         if (cancelled) return;
         const newMessage = payload.new as any;
-        setMessages(prev => [...prev, {
+        setMessages(prev => mergeMessagesById(prev, [{
           id: newMessage.id,
           sender_id: newMessage.sender_id,
           message: newMessage.message,
@@ -230,7 +253,7 @@ const ChatScreen = () => {
           updated_at: newMessage.updated_at,
           is_edited: newMessage.is_edited,
           status: newMessage.status
-        }]);
+        }]));
       })
       .subscribe();
 
@@ -311,7 +334,7 @@ const ChatScreen = () => {
         return;
       }
 
-      setMessages(prev => [...prev, savedReply]);
+      setMessages(prev => mergeMessagesById(prev, [savedReply]));
       setInputText('');
       setReplyInfo(null);
       setIsReplying(false);
@@ -331,7 +354,7 @@ const ChatScreen = () => {
           return;
         }
       
-        setMessages(prev => [...prev, savedMessage]);
+        setMessages(prev => mergeMessagesById(prev, [savedMessage]));
 
 
         // Reseting both text and media after sending

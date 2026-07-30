@@ -58,9 +58,12 @@ export default function FourthOnbPage({ onNext, onBack, changeData, data }: Sign
         location_permission: 'granted',
       }));
 
-      void saveLatestLocationPosition(position, 'onboarding');
-
       await onNext();
+
+      // Email signup creates the authenticated user and public profile in
+      // onNext. Persist only after that preparation so the location RPC can
+      // resolve auth.uid() to an existing public.users row.
+      void saveLatestLocationPosition(position, 'onboarding');
     } catch (error) {
       const locationError = toOnboardingError(
         {
