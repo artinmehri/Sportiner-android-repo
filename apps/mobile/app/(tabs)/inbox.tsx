@@ -13,6 +13,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { getConversations } from "@/context/ChatContext";
 import { getCurrentUserId } from "@/context/AuthContext";
+import { useUnreadMessages } from '@/context/UnreadMessagesContext';
 
 const DEFAULT_AVATAR =
   "https://images.unsplash.com/photo-1622668460389-f92e9ed21616?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
@@ -95,6 +96,7 @@ export default function Inbox() {
   const [chats, setChats] = useState<InboxChat[]>([]);
   const searchInputRef = useRef<TextInput>(null);
   const router = useRouter();
+  const { markInboxRead } = useUnreadMessages();
 
   useFocusEffect(
     useCallback(() => {
@@ -113,10 +115,12 @@ export default function Inbox() {
         }
       })();
 
+      void markInboxRead();
+
       return () => {
         cancelled = true;
       };
-    }, [])
+    }, [markInboxRead])
   );
 
   const filteredChats = useMemo(() => {

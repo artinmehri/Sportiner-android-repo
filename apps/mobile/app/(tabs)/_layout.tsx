@@ -4,6 +4,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
+import { UnreadInboxTabIcon } from '@/components/UnreadInboxTabIcon';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -43,7 +44,7 @@ export default function TabLayout() {
         name="inbox"
         options={{
           title: 'Inbox',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="message.fill" color={color} />,
+          tabBarIcon: ({ color }) => <UnreadInboxTabIcon color={color} />,
         }}
       />
       <Tabs.Screen

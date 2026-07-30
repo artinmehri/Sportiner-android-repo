@@ -8,6 +8,7 @@ import { GameTicketsProvider } from '@/context/GameTicketsContext';
 import { GameProvider } from '@/context/GameContext';
 import { LatestLocationProvider } from '@/context/LatestLocationContext';
 import { NotificationProvider } from '@/context/NotificationContext';
+import { UnreadMessagesProvider } from '@/context/UnreadMessagesContext';
 import * as SplashScreen from 'expo-splash-screen';
 import {
     hasCurrentLocalTermsAcceptance,
@@ -130,6 +131,7 @@ async function userHasAcceptedTerms(session: Session | null): Promise<boolean> {
 }
 
 export default function RootLayout() {
+<<<<<<< HEAD
     const [initialRoute, setInitialRoute] = useState<InitialRoute | null>(null);
     const [initialNavigationComplete, setInitialNavigationComplete] = useState(false);
     const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -316,9 +318,11 @@ export default function RootLayout() {
                 userId={authUserId}
             >
                 <GameProvider key={authUserId ?? 'signed-out'}>
-                    <GameTicketsProvider key={authUserId ?? 'signed-out'}>
-                        <Slot />
-                    </GameTicketsProvider>
+                    <UnreadMessagesProvider>
+                        <GameTicketsProvider key={authUserId ?? 'signed-out'}>
+                            <Slot />
+                        </GameTicketsProvider>
+                    </UnreadMessagesProvider>
                 </GameProvider>
             </NotificationProvider>
         </LatestLocationProvider>
