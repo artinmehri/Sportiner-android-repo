@@ -21,6 +21,7 @@ export type GeographyPoint =
 
 export type GameRow = {
   id: string;
+  public_id: string | null;
   created_at: string;
   host_id: string | null;
   title: string | null;

@@ -44,6 +44,7 @@ const DEFAULT_AVATAR =
 
 export interface Game {
   id: string;
+  publicId: string | null;
   hostId: string;
   title: string;
   gameType: GameType;
@@ -250,6 +251,7 @@ export function rowToGame(row: GameRow, host: UserRow | null | undefined, counts
 
   return {
     id: row.id,
+    publicId: row.public_id,
     hostId: row.host_id ?? '',
     title: row.title ?? 'Game',
     gameType,

@@ -514,6 +514,7 @@ export default function CreateGame() {
       pathname: '/(tabs)/GameConfirmation',
       params: {
         id: game.id,
+        publicId: game.public_id ?? '',
         title: game.title ?? resolvedTitle,
         date: game.time ?? `${date.split('T')[0]}T${time}:00.000Z`,
         location_name: game.location_name ?? location_name,

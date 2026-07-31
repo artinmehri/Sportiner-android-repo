@@ -5,13 +5,14 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
-  Share,
+  Alert,
   Animated,
   Easing,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { shareGame } from '@/lib/gameShare';
 
 function paramValue(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] ?? '';
@@ -53,9 +54,11 @@ export default function GameConfirmation() {
     level?: string | string[];
     capacity?: string | string[];
     players_enrolled?: string | string[];
+    publicId?: string | string[];
   }>();
 
   const gameId = paramValue(params.id);
+  const publicId = paramValue(params.publicId);
   const title = paramValue(params.title) || 'Your game';
   const dateIso = paramValue(params.date);
   const locationName = paramValue(params.location_name) || 'Tennis court';
@@ -136,15 +139,16 @@ export default function GameConfirmation() {
 
   const handleInvitePlayers = async () => {
     try {
-      await Share.share({
-        message: [
-          `Join my tennis game on Sportiner 🎾`,
-          title,
-          scheduleLabel,
-          locationName,
-          'https://sportiner.com/app',
-        ].join('\n'),
+      const shared = await shareGame({
+        publicId,
+        title,
+        time: scheduleLabel,
+        location: locationName,
+        level,
       });
+      if (!shared) {
+        Alert.alert('Game link unavailable', 'This game is not ready to share yet. Please try again shortly.');
+      }
     } catch (error) {
       console.error('Error sharing:', error);
     }

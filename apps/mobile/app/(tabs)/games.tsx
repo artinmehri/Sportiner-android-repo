@@ -8,7 +8,6 @@ import {
   Image,
   Dimensions,
   Alert,
-  Share,
   Modal,
   TouchableWithoutFeedback,
   Linking,
@@ -27,6 +26,7 @@ import { saveLatestLocationPosition } from '@/lib/latestLocation';
 import { type GeoCoords } from '@/lib/courtSuggestions';
 import * as Calendar from 'expo-calendar';
 import moment from 'moment';
+import { shareGame } from '@/lib/gameShare';
 
 interface GameRequest {
   game_id: string;
@@ -48,6 +48,7 @@ type GameStatus = {
 
 type GameCard = {
   id: string;
+  publicId?: string | null;
   hostId: string;
   title: string;
   level?: string;
@@ -315,6 +316,7 @@ export default function Games() {
 
     return {
       id: game.id,
+      publicId: game.publicId,
       hostId: game.hostId,
       title: game.title,
       level: game.skillLevel,
@@ -671,20 +673,13 @@ export default function Games() {
 
   const handleShareGame = async () => {
     try {
-      const gameDetails = selectedGame 
-        ? `Check out ${selectedGame.title} on Sportiner. 🎾\n\n📅 ${selectedGame.time}\n📍 ${selectedGame.address}\n⚡ ${selectedGame.level}\n💰 ${selectedGame.cost}\n\nSportiner helps tennis players find, create, and join local games.`
-        : 'Find, create, and join local tennis games on Sportiner. 🎾';
-      
-      const result = await Share.share({
-        message: gameDetails,
-        url: 'https://sportiner.com/app',
-        title: `${selectedGame?.title || 'Tennis Game'} - Sportiner`
-      });
-      
-      if (result.action === Share.sharedAction) {
-        console.log('Game shared successfully');
-      } else if (result.action === Share.dismissedAction) {
-        console.log('Share dismissed');
+      if (!selectedGame) {
+        return;
+      }
+
+      const shared = await shareGame(selectedGame);
+      if (!shared) {
+        Alert.alert('Game link unavailable', 'This game is not ready to share yet. Please try again shortly.');
       }
     } catch (error) {
       console.error('Error sharing game:', error);
