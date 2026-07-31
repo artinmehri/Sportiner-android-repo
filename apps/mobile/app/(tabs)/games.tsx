@@ -28,7 +28,7 @@ import {
   addGameToCalendar,
   getAddToCalendarErrorMessage,
 } from '@/lib/gameCalendar';
-import { shareGame } from '@/lib/gameShare';';
+import { shareGame } from '@/lib/gameShare';
 
 interface GameRequest {
   game_id: string;
@@ -666,7 +666,17 @@ export default function Games() {
         return;
       }
 
-      const shared = await shareGame(selectedGame);
+      const shared = await shareGame(
+        {
+          publicId: selectedGame.publicId,
+          title: selectedGame.title,
+          time: selectedGame.time,
+          location: selectedGame.location ?? selectedGame.address,
+          level: selectedGame.level,
+          cost: selectedGame.cost,
+        },
+        'native_sheet',
+      );
       if (!shared) {
         Alert.alert('Game link unavailable', 'This game is not ready to share yet. Please try again shortly.');
       }

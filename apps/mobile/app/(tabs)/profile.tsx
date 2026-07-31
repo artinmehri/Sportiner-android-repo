@@ -87,9 +87,15 @@ export default function ProfileScreen() {
 
   const handleShare = async () => {
     try {
+      const url = 'https://sportiner.com/app';
       await Share.share({
-        message: `🎾 Looking for tennis players in Toronto\n\nJoin me on Sportiner:`,
-        url: 'https://sportiner.com/app', 
+        title: 'Sportiner',
+        message: [
+          `Looking for tennis partners near you? 🎾`,
+          `Sportiner helps you find, create, and join local games.`,
+          `Download the app:\n${url}`,
+        ].join('\n\n'),
+        url,
       });
     } catch (error) {
       console.log('Error sharing:', error);

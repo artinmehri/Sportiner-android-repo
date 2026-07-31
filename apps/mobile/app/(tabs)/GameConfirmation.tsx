@@ -139,13 +139,16 @@ export default function GameConfirmation() {
 
   const handleInvitePlayers = async () => {
     try {
-      const shared = await shareGame({
-        publicId,
-        title,
-        time: scheduleLabel,
-        location: locationName,
-        level,
-      });
+      const shared = await shareGame(
+        {
+          publicId,
+          title,
+          time: scheduleLabel,
+          location: locationName,
+          level,
+        },
+        'creation_success',
+      );
       if (!shared) {
         Alert.alert('Game link unavailable', 'This game is not ready to share yet. Please try again shortly.');
       }
