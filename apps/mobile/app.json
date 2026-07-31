@@ -28,7 +28,10 @@
       ],
       "infoPlist": {
         "UIRequiresFullScreen": true,
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sportiner uses your location only when you choose nearby discovery to show nearby tennis games and courts. Sportiner does not track your location in the background."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Sportiner uses your location only when you choose nearby discovery to show nearby tennis games and courts. Sportiner does not track your location in the background.",
+        "NSLocationWhenInUseUsageDescription": "Sportiner uses your location to show nearby tennis games and courts when you choose to use nearby discovery.",
+        "NSUserNotificationsUsageDescription": "Sportiner sends you notifications about nearby tennis games, new chat messages, and when someone joins your game.",
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {
@@ -44,6 +47,7 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR"
       ]
@@ -58,7 +62,8 @@
         "expo-notifications",
         {
           "color": "#19E675",
-          "defaultChannel": "default"
+          "defaultChannel": "default",
+          "enableBackgroundRemoteNotifications": true
         }
       ],
       "expo-apple-authentication",

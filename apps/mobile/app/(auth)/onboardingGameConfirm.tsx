@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Alert,
   Image,
+  Linking,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -10,8 +11,10 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Calendar from 'expo-calendar';
-import moment from 'moment';
+import {
+  addGameToCalendar,
+  getAddToCalendarErrorMessage,
+} from '@/lib/gameCalendar';
 
 const FALLBACK_GAME_IMAGE =
   'https://images.unsplash.com/photo-1719360568896-55788b9ddea5?w=900&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OHx8dGVubmlzJTIwY291cnRzfGVufDB8fDB8fHww';
@@ -50,6 +53,7 @@ export default function OnboardingGameConfirm({
 }: Props) {
   const [addingToCalendar, setAddingToCalendar] = useState(false);
   const [addedToCalendar, setAddedToCalendar] = useState(false);
+  const calendarRequestInFlight = useRef(false);
   const isRequested = confirmation.outcome === 'requested';
   const displayedEnrolled =
     confirmation.outcome === 'joined'
@@ -57,55 +61,44 @@ export default function OnboardingGameConfirm({
       : confirmation.players_enrolled;
 
   const handleAddToCalendar = async () => {
-    if (addingToCalendar || addedToCalendar) return;
+    if (calendarRequestInFlight.current || addingToCalendar || addedToCalendar) {
+      return;
+    }
+
+    calendarRequestInFlight.current = true;
+    setAddingToCalendar(true);
 
     try {
-      if (!confirmation.date) {
-        Alert.alert('Error', 'Missing game date');
-        return;
-      }
-
-      const startDate = moment(confirmation.date);
-      if (!startDate.isValid()) {
-        Alert.alert('Error', 'Invalid game date');
-        return;
-      }
-
-      setAddingToCalendar(true);
-
-      const authStatus = await Calendar.requestCalendarPermissionsAsync();
-      if (authStatus.status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Enable calendar access in Settings to add events.'
-        );
-        return;
-      }
-
-      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      const primaryCalendar = calendars.find((cal) => cal.isPrimary) || calendars[0];
-
-      if (!primaryCalendar) {
-        Alert.alert('Error', 'No available calendars found on this device.');
-        return;
-      }
-
-      const endDate = moment(startDate).add(2, 'hours');
-      await Calendar.createEventAsync(primaryCalendar.id, {
+      const result = await addGameToCalendar({
+        gameId: confirmation.gameId,
         title: confirmation.title,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+        startDate: confirmation.date,
         location: confirmation.location_name,
         notes: confirmation.title,
-        alarms: [{ relativeOffset: -10 }],
       });
+
+      if (!result.ok) {
+        const alert = getAddToCalendarErrorMessage(result.reason);
+
+        if (result.reason === 'permission_denied') {
+          Alert.alert(alert.title, alert.message, [
+            { text: 'Not now', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => void Linking.openSettings(),
+            },
+          ]);
+        } else {
+          Alert.alert(alert.title, alert.message);
+        }
+
+        return;
+      }
 
       setAddedToCalendar(true);
       Alert.alert('Success', 'Event added to your calendar');
-    } catch (error) {
-      console.log('Calendar error:', error);
-      Alert.alert('Error', 'Could not add event to calendar');
     } finally {
+      calendarRequestInFlight.current = false;
       setAddingToCalendar(false);
     }
   };

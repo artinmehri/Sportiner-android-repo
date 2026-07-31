@@ -96,7 +96,7 @@ export default function Inbox() {
   const [chats, setChats] = useState<InboxChat[]>([]);
   const searchInputRef = useRef<TextInput>(null);
   const router = useRouter();
-  const { markInboxRead } = useUnreadMessages();
+  const { refreshUnreadCount } = useUnreadMessages();
 
   useFocusEffect(
     useCallback(() => {
@@ -113,14 +113,14 @@ export default function Inbox() {
         } else {
           setChats([]);
         }
-      })();
 
-      void markInboxRead();
+        await refreshUnreadCount();
+      })();
 
       return () => {
         cancelled = true;
       };
-    }, [markInboxRead])
+    }, [refreshUnreadCount])
   );
 
   const filteredChats = useMemo(() => {

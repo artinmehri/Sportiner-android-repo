@@ -67,6 +67,8 @@
 	<string>Sportiner uses reminders access only when you choose to save a reminder for a tennis game.</string>
 	<key>NSRemindersUsageDescription</key>
 	<string>Sportiner uses reminders access only when you choose to save a reminder for a tennis game.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>Sportiner sends you notifications about nearby tennis games, new chat messages, and when someone joins your game.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
@@ -74,7 +76,9 @@
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UIBackgroundModes</key>
-	<array/>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

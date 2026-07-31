@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   SafeAreaView,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -11,7 +10,7 @@ import {
   Vibration,
   View,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
 import type { SignupInterface } from '@/context/SignupInterface.type';
 import { useNotifications } from '@/context/NotificationContext';
@@ -27,31 +26,6 @@ export default function SixthOnbPage({
   const isBusy = isRegistering || isContinuing;
 
   const parkShortName = favoriteParkShortName(data?.favorite_park);
-  const headline = parkShortName
-    ? `Never miss a game at ${parkShortName}`
-    : 'Never miss a game';
-
-  const benefits = [
-    {
-      icon: 'map-marker-outline' as const,
-      title: parkShortName
-        ? `Games at ${parkShortName}`
-        : 'Games at your park',
-      description: parkShortName
-        ? `Get notified when someone creates a game at ${parkShortName}.`
-        : 'Get notified when someone creates a game at your favorite park.',
-    },
-    {
-      icon: 'account-plus-outline' as const,
-      title: 'Player joins',
-      description: 'See when someone joins or requests your game.',
-    },
-    {
-      icon: 'message-text-outline' as const,
-      title: 'Chat updates',
-      description: 'Know when someone sends you a message.',
-    },
-  ];
 
   const continueOnboarding = async () => {
     setIsContinuing(true);
@@ -81,8 +55,8 @@ export default function SixthOnbPage({
 
     if (result.reason === 'permission-denied') {
       Alert.alert(
-        'Notifications are off',
-        'You can enable notifications later in your phone settings.',
+        'Notifications not enabled',
+        'No problem. You can still use Sportiner and turn on notifications later in iPhone Settings.',
         [{ text: 'Continue', onPress: () => void continueOnboarding() }],
       );
       return;
@@ -90,7 +64,7 @@ export default function SixthOnbPage({
 
     Alert.alert(
       'Notifications unavailable',
-      'We could not register this device right now. Check your connection and try again.',
+      'We could not register this device for notifications right now. Check your connection and try again, or continue and enable them later.',
       [
         { text: 'Continue', onPress: () => void continueOnboarding() },
         { text: 'Try Again', onPress: () => void handleEnableNotifications() },
@@ -113,63 +87,77 @@ export default function SixthOnbPage({
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.content}>
+        <View style={styles.iconShell}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="notifications-outline" size={42} color="#19E675" />
+          </View>
+        </View>
+
         <View style={styles.titleSection}>
-          <Text style={styles.mainTitle}>{headline}</Text>
-          <Text style={styles.subTitle}>Enable notifications</Text>
+          <Text style={styles.title}>
+            {parkShortName
+              ? `Never miss a game at ${parkShortName}`
+              : 'Never miss a game'}
+          </Text>
+          <Text style={styles.subtitle}>
+            Sportiner sends you notifications about nearby tennis games
+            {parkShortName ? ` at ${parkShortName}` : ''}, new chat messages,
+            and when someone joins your game. You can change this anytime in
+            Settings.
+          </Text>
         </View>
 
-        <Text style={styles.supportingText}>
-          Get notified when someone creates a game at your favorite park, joins
-          your game, or sends you a message.
-        </Text>
-
-        <View style={styles.cardsContainer}>
-          {benefits.map((benefit) => (
-            <View key={benefit.title} style={styles.benefitCard}>
-              <View style={styles.iconShell}>
-                <MaterialCommunityIcons
-                  name={benefit.icon}
-                  size={24}
-                  color="#19E675"
-                />
-              </View>
-              <View style={styles.benefitCopy}>
-                <Text style={styles.benefitTitle}>{benefit.title}</Text>
-                <Text style={styles.benefitDescription}>{benefit.description}</Text>
-              </View>
-            </View>
-          ))}
+        <View style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Ionicons name="tennisball-outline" size={20} color="#19E675" />
+            <Text style={styles.infoText}>
+              {parkShortName
+                ? `Get alerted when a game is created at ${parkShortName}`
+                : 'Get alerted when a game is created at your favorite park'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Ionicons name="people-outline" size={20} color="#19E675" />
+            <Text style={styles.infoText}>
+              See when someone joins or requests your game
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Ionicons name="chatbubble-outline" size={20} color="#19E675" />
+            <Text style={styles.infoText}>
+              Know when a player sends you a chat message
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Ionicons name="shield-checkmark-outline" size={20} color="#19E675" />
+            <Text style={styles.infoText}>
+              Skip now and enable later in Settings anytime
+            </Text>
+          </View>
         </View>
+      </View>
 
+      <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.enableButton, isBusy && styles.buttonDisabled]}
+          style={[styles.primaryButton, isBusy && styles.buttonDisabled]}
           onPress={() => void handleEnableNotifications()}
           disabled={isBusy}
         >
           {isBusy ? (
             <ActivityIndicator color="#002000" />
           ) : (
-            <Text style={styles.enableButtonText}>Enable Notifications</Text>
+            <Text style={styles.primaryButtonText}>Enable Notifications</Text>
           )}
         </TouchableOpacity>
-
         <TouchableOpacity
+          style={styles.secondaryButton}
           onPress={() => void handleSkip()}
-          style={styles.footer}
           disabled={isBusy}
         >
-          <View style={{ padding: 10 }}>
-            <Text style={styles.footerText}>
-              Not now? <Text style={styles.skipText}>Continue {'>'}</Text>
-            </Text>
-          </View>
+          <Text style={styles.secondaryButtonText}>Not Now</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -177,115 +165,93 @@ export default function SixthOnbPage({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fff',
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
-  },
-  contentContainer: {
-    paddingBottom: 30,
-  },
-  titleSection: {
-    marginTop: 20,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  mainTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#1F2937',
-    marginBottom: 5,
-    textAlign: 'center',
-  },
-  subTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#19E675',
-    textAlign: 'center',
-  },
-  supportingText: {
-    fontSize: 16,
-    lineHeight: 23,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 28,
-    paddingHorizontal: 8,
-  },
-  cardsContainer: {
-    gap: 16,
-    marginBottom: 30,
-  },
-  benefitCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    paddingHorizontal: 28,
+    justifyContent: 'center',
   },
   iconShell: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  iconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: 'rgba(25, 230, 117, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  benefitCopy: {
-    flex: 1,
+  titleSection: {
+    marginBottom: 28,
   },
-  benefitTitle: {
-    fontSize: 17,
-    fontWeight: '700',
+  title: {
+    fontSize: 28,
+    fontWeight: '900',
     color: '#1F2937',
-    marginBottom: 4,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  benefitDescription: {
-    fontSize: 14,
-    lineHeight: 20,
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 23,
     color: '#6B7280',
+    textAlign: 'center',
+  },
+  infoCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 18,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 21,
+    color: '#374151',
     fontWeight: '500',
   },
-  enableButton: {
+  footer: {
+    paddingHorizontal: 28,
+    paddingBottom: 30,
+    gap: 12,
+  },
+  primaryButton: {
     backgroundColor: '#19E675',
-    paddingVertical: 17,
-    paddingHorizontal: 24,
     borderRadius: 17,
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    width: '100%',
     minHeight: 56,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.7,
   },
-  enableButtonText: {
+  primaryButtonText: {
     color: '#002000',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  footer: {
+  secondaryButton: {
+    minHeight: 52,
+    borderRadius: 16,
     alignItems: 'center',
-    paddingVertical: 20,
-    paddingBottom: 10,
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
   },
-  footerText: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  skipText: {
-    color: '#19E675',
-    textDecorationLine: 'underline',
-    fontWeight: '500',
+  secondaryButtonText: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

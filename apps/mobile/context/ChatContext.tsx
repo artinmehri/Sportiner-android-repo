@@ -416,10 +416,9 @@ export async function deleteMessage(messageId: string) {
 
 export async function markAsRead(chatId: string) {
     const userId = await getCurrentUserId();
-    if (!userId) return;
+    if (!userId) return false;
 
     try {
-        // Step 1 — get latest message with created_at
         const { data: latestMessage } = await supabase
             .from('messages')
             .select('id, created_at')
@@ -428,24 +427,44 @@ export async function markAsRead(chatId: string) {
             .limit(1)
             .maybeSingle();
 
-        if (!latestMessage) return;
+        if (!latestMessage) return true;
 
-        // Step 2 — update user read state with regression guard
+        const { data: membership } = await supabase
+            .from('conversation_members')
+            .select('last_read_message_id, last_read_at')
+            .eq('chat_id', chatId)
+            .eq('id', userId.id)
+            .maybeSingle();
+
+        // Inbox badge bumps can advance last_read_at without last_read_message_id.
+        // Always sync the message cursor when it lags, even if last_read_at is ahead.
+        if (membership?.last_read_message_id === latestMessage.id) {
+            return true;
+        }
+
+        const nextReadAt =
+            !membership?.last_read_at || latestMessage.created_at >= membership.last_read_at
+                ? latestMessage.created_at
+                : membership.last_read_at;
+
         const { error } = await supabase
             .from('conversation_members')
             .update({
                 last_read_message_id: latestMessage.id,
-                last_read_at: latestMessage.created_at
+                last_read_at: nextReadAt,
             })
             .eq('chat_id', chatId)
-            .eq('id', userId.id)
-            .lt('last_read_at', latestMessage.created_at); // Regression guard: only update if moving forward
+            .eq('id', userId.id);
 
         if (error) {
             console.log('Error marking conversation as read:', error.message, 'chatId:', chatId, 'userId:', userId.id);
+            return false;
         }
+
+        return true;
     } catch (error) {
         console.log('Exception in markAsRead:', error, 'chatId:', chatId);
+        return false;
     }
 }
 

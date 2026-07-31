@@ -25,6 +25,7 @@ import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming, useD
 import { blockUser, deleteMessage, editMessage, findOtherPlayer, getGameInfo, getMessages, markAsRead, replyMessage, sendMessage, submitModerationReport } from '@/context/ChatContext';
 import { getCurrentUserId, getUser, supabase } from '@/context/AuthContext';
 import { formatGameSubtitle, type GameRow } from '@/context/GameContext';
+import { useUnreadMessages } from '@/context/UnreadMessagesContext';
 import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 import ReportModal from '@/components/ReportModal';
 import ConversationStarters, {
@@ -121,6 +122,7 @@ const copyToClipboard = async (message: any) => {
 
 const ChatScreen = () => {
   const { id } = useLocalSearchParams<{ id?: string }>();
+  const { refreshUnreadCount } = useUnreadMessages();
   const [messages, setMessages] = useState<Message[]>([]);
   const [game, setGame] = useState<GameRow | null>(null);
   const [otherUserId, setOtherUserId] = useState('');
@@ -133,6 +135,11 @@ const ChatScreen = () => {
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [submittingReport, setSubmittingReport] = useState(false);
+
+  const markConversationRead = async (chatId: string) => {
+    await markAsRead(chatId);
+    await refreshUnreadCount();
+  };
 
 
   useEffect(() => {
@@ -192,16 +199,6 @@ const ChatScreen = () => {
         setGameId(gameRow.id)
       }
 
-      const otherPlayerId = await findOtherPlayer(id);
-      if (cancelled || !otherPlayerId) return;
-
-      const otherPlayer = await getUser(otherPlayerId);
-      if (cancelled || !otherPlayer) return;
-
-      setOtherUserId(otherPlayer.id);
-      setName(otherPlayer.name);
-      setAvatar(otherPlayer.profile_picture ?? DEFAULT_AVATAR);
-
       if (messages) {
         const fetchedMessages = messages.map((message: { id: any; sender_id: any; message: any; type: any; image: any; reply_to: any; is_reply: any; created_at: any; updated_at: any; is_edited: any; status: any; }) => {
             return {
@@ -224,10 +221,20 @@ const ChatScreen = () => {
         setMessages((current) => mergeMessagesById(fetchedMessages, current));
       }
 
-      // Mark conversation as read (fire-and-forget, error handling in markAsRead)
-      if (id) {
-        markAsRead(id);
+      // Mark read before peer profile lookups so unread never depends on them.
+      if (!cancelled && id) {
+        void markConversationRead(id);
       }
+
+      const otherPlayerId = await findOtherPlayer(id);
+      if (cancelled || !otherPlayerId) return;
+
+      const otherPlayer = await getUser(otherPlayerId);
+      if (cancelled || !otherPlayer) return;
+
+      setOtherUserId(otherPlayer.id);
+      setName(otherPlayer.name);
+      setAvatar(otherPlayer.profile_picture ?? DEFAULT_AVATAR);
     })();
 
     // Subscribe to new messages in this chat
@@ -254,6 +261,7 @@ const ChatScreen = () => {
           is_edited: newMessage.is_edited,
           status: newMessage.status
         }]));
+        void markConversationRead(id);
       })
       .subscribe();
 
@@ -261,7 +269,7 @@ const ChatScreen = () => {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, [id]);
+  }, [id, refreshUnreadCount]);
 
 
   const navigateToProfile = () => {
@@ -275,6 +283,7 @@ const ChatScreen = () => {
   const [isReplying, setIsReplying] = useState(false);
   const [replyInfo, setReplyInfo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [isSending, setIsSending] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState({
     visible: false,
     message: null as Message | null,
@@ -298,76 +307,87 @@ const ChatScreen = () => {
     });
   };
 
+  const clearComposer = () => {
+    setInputText('');
+    setEditingMessage(null);
+    setReplyInfo(null);
+    setIsReplying(false);
+  };
+
+  const scrollComposerToEnd = () => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
   const handleSend = async () => {
-    if ((!inputText.trim() && !isReplying && !editingMessage) || (isReplying && !inputText.trim())) {
+    const text = inputText.trim();
+    if (!text || isSending) {
       return;
     }
 
-    // Editing a message
-    if (editingMessage) {
-      setMessages(messages.map(msg => 
-        msg.id === editingMessage.id 
-          ? { ...msg, message: inputText, is_edited: true }
-          : msg
-      ));
+    const editing = editingMessage;
+    const replyingTo = isReplying ? replyInfo : null;
 
-      if (editingMessage.id) {
-      await editMessage(editingMessage.id, inputText.trim())
-      setEditingMessage(null);
-      setInputText('');
-      }
+    // Clear edit/reply chrome immediately so the composer never gets stuck open.
+    clearComposer();
+    setIsSending(true);
 
-
-      // Replying to a message
-    } else if (isReplying && replyInfo) {
-
-      if (!replyInfo.id || !id) {
-        Alert.alert('Could not send reply', 'Please try again in a moment.');
-        return;
-      }
-
-      console.log('replying message')
-      const savedReply = await replyMessage(replyInfo.id, 'text', inputText.trim(), id)
-
-      if (!savedReply) {
-        Alert.alert('Could not send reply', 'Please try again.');
-        return;
-      }
-
-      setMessages(prev => mergeMessagesById(prev, [savedReply]));
-      setInputText('');
-      setReplyInfo(null);
-      setIsReplying(false);
-      inputRef.current?.focus();
-
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-
-    // Sending a normal message 
-    } else {
-      if (id) {
-        const savedMessage = await sendMessage(inputText.trim(), 'text', id)
-
-        if (!savedMessage) {
-          Alert.alert('Could not send message', 'Please try again.');
+    try {
+      if (editing) {
+        if (!editing.id) {
+          Alert.alert('Could not edit message', 'Please try again.');
           return;
         }
-      
-        setMessages(prev => mergeMessagesById(prev, [savedMessage]));
 
-
-        // Reseting both text and media after sending
-        setInputText('');
-        setReplyInfo(null);
-        setIsReplying(false);
-      
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === editing.id
+              ? { ...msg, message: text, is_edited: true }
+              : msg
+          )
+        );
+        await editMessage(editing.id, text);
+        inputRef.current?.blur();
+        return;
       }
-  }
-}   
+
+      if (replyingTo) {
+        if (!replyingTo.id || !id) {
+          Alert.alert('Could not send reply', 'Please try again in a moment.');
+          return;
+        }
+
+        const savedReply = await replyMessage(replyingTo.id, 'text', text, id);
+        if (!savedReply) {
+          Alert.alert('Could not send reply', 'Please try again.');
+          return;
+        }
+
+        setMessages((prev) => mergeMessagesById(prev, [savedReply]));
+        scrollComposerToEnd();
+        return;
+      }
+
+      if (!id) {
+        return;
+      }
+
+      const savedMessage = await sendMessage(text, 'text', id);
+      if (!savedMessage) {
+        Alert.alert('Could not send message', 'Please try again.');
+        return;
+      }
+
+      setMessages((prev) => mergeMessagesById(prev, [savedMessage]));
+      scrollComposerToEnd();
+    } catch (error) {
+      console.log('handleSend error', error);
+      Alert.alert('Could not send', 'Please try again.');
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const getOriginalMessage = (messageId: string) => {
     const foundMessage = messages.find((message) => message.id === messageId);
@@ -375,16 +395,24 @@ const ChatScreen = () => {
   }
 
   const handleReply = (message: Message) => {
-    setReplyInfo(message)
-    setIsReplying(true)
-    inputRef.current?.focus();
-};
+    setEditingMessage(null);
+    setReplyInfo(message);
+    setIsReplying(true);
+    setInputText('');
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  };
 
   const handleEdit = (message: Message) => {
+    setReplyInfo(null);
+    setIsReplying(false);
     setEditingMessage(message);
     setInputText(message.message);
     setShowContextMenu({ visible: false, message: null, position: { x: 0, y: 0 } });
-    inputRef.current?.focus();
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
   };
 
   const handleLongPress = (message: Message, event: any) => {
@@ -506,10 +534,12 @@ const ChatScreen = () => {
 
         <TouchableOpacity onPress={() => handleGameNavigation()} style={styles.contactInfo}>
           <View style={styles.contactNameRow}>
-            <Text style={styles.contactName}>{gameTitle}</Text>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactName}>{gameTitle}</Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
-          <Text style={styles.contactSubtitle}>{formatGameSubtitle(game)}</Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactSubtitle}>
+            {formatGameSubtitle(game)}
+          </Text>
         </TouchableOpacity>
       </View>
       <TouchableOpacity
@@ -643,10 +673,7 @@ const ChatScreen = () => {
     
         <TouchableOpacity 
           style={styles.closeReplyButton}
-          onPress={() => {
-            setReplyInfo(null);
-            setIsReplying(false);
-          }}
+          onPress={clearComposer}
         >
           <Ionicons name="close" size={16} color="#666" />
         </TouchableOpacity>
@@ -656,22 +683,19 @@ const ChatScreen = () => {
 
   const renderInput = () => (
     <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
-      {editingMessage && (
+      {editingMessage ? (
         <View style={styles.editHeader}>
           <Text style={styles.editHeaderText}>Editing message</Text>
           <TouchableOpacity
             style={styles.cancelEditButton}
-            onPress={() => {
-              setEditingMessage(null);
-              setInputText('');
-            }}
+            onPress={clearComposer}
           >
             <Text style={styles.cancelEditText}>✕</Text>
           </TouchableOpacity>
         </View>
-      )}
+      ) : null}
 
-      {renderReplyPreview()}
+      {!editingMessage ? renderReplyPreview() : null}
 
       {showConversationStarters ? (
         <ConversationStarters
@@ -690,19 +714,20 @@ const ChatScreen = () => {
               style={styles.composerInput}
               value={inputText}
               onChangeText={setInputText}
-              placeholder="Type..."
+              placeholder={editingMessage ? 'Edit message...' : isReplying ? 'Write a reply...' : 'Type...'}
               placeholderTextColor="#6B7280"
               multiline={false}
+              editable={!isSending}
             />
-            {inputText.trim() &&
+            {inputText.trim() ? (
                       <TouchableOpacity
                         style={styles.sendButton}
-                        onPress={handleSend}
-                        disabled={!inputText.trim() && !editingMessage && !isReplying}
+                        onPress={() => void handleSend()}
+                        disabled={isSending || !inputText.trim()}
                       >
                         <Ionicons name="send" size={22} color="#22C55E" />
                       </TouchableOpacity>
-                   }
+                   ) : null}
             </View>
           </View>
     </View>
@@ -901,8 +926,11 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
   },
   headerLeft: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    minWidth: 0,
+    marginRight: 8,
   },
   backButton: {
     paddingVertical: 8,
@@ -915,6 +943,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   headerMenuOverlay: {
     flex: 1,
@@ -953,19 +982,24 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   contactInfo: {
+    flex: 1,
     flexShrink: 1,
+    minWidth: 0,
   },
   contactNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    minWidth: 0,
   },
   contactName: {
+    flexShrink: 1,
     color: '#111',
     fontSize: 18,
     fontWeight: '700',
   },
   contactNameChevron: {
     marginLeft: 4,
+    flexShrink: 0,
   },
   contactSubtitle: {
     color: '#6B7280',

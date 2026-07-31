@@ -254,12 +254,11 @@ export default function SeventhOnbPage({ onNext, changeData, data }: SignupInter
                     <Text style={styles.gameLevel}>Level: {game.skillLevel}</Text>
                     {formatDistance(game) ? (
                       <>
-                        <Text style={styles.gameMetaDot}> � </Text>
+                        <Text style={styles.gameMetaDot}> · </Text>
                         <Text style={styles.gameDistance}>{formatDistance(game)}</Text>
                       </>
                     ) : null}
                   </View>
-
                   <View style={styles.gameDetails}>
                     <View style={styles.detailRow}>
                       <View style={styles.icon}>

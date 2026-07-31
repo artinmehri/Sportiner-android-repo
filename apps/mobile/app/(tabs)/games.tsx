@@ -24,9 +24,11 @@ import { formatCourtShare } from '@/lib/gamesDb';
 import * as Location from 'expo-location';
 import { saveLatestLocationPosition } from '@/lib/latestLocation';
 import { type GeoCoords } from '@/lib/courtSuggestions';
-import * as Calendar from 'expo-calendar';
-import moment from 'moment';
-import { shareGame } from '@/lib/gameShare';
+import {
+  addGameToCalendar,
+  getAddToCalendarErrorMessage,
+} from '@/lib/gameCalendar';
+import { shareGame } from '@/lib/gameShare';';
 
 interface GameRequest {
   game_id: string;
@@ -73,7 +75,6 @@ type GameCard = {
   location?: string;
 };
 
-
 export default function Games() {
   const router = useRouter();
   const {
@@ -96,6 +97,8 @@ export default function Games() {
   const [playersMap, setPlayersMap] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
   const [nearbyOrigin, setNearbyOrigin] = useState<GeoCoords | null>(null);
+  const [addingCalendarGameId, setAddingCalendarGameId] = useState<string | null>(null);
+  const calendarRequestInFlight = useRef(false);
 
 
   useEffect(() => {
@@ -577,56 +580,42 @@ export default function Games() {
   };
 
   const handleAddToCalendar = async (game: Game) => {
+    if (calendarRequestInFlight.current) return;
+
+    calendarRequestInFlight.current = true;
+    setAddingCalendarGameId(game.id);
+
     try {
-      if (!game.date) {
-        Alert.alert('Error', 'Missing game date');
-        return;
-      }
-  
-      const startDate = moment(game.date);
-  
-      if (!startDate.isValid()) {
-        Alert.alert('Error', 'Invalid game date');
-        return;
-      }
-  
-      const endDate = moment(startDate).add(2, 'hours');
-  
-      // 2. Request permissions from Calendar object
-      const authStatus = await Calendar.requestCalendarPermissionsAsync();
-  
-      if (authStatus.status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Enable calendar access in Settings to add events.'
-        );
-        return;
-      }
-  
-      // 3. Dynamically fetch the system calendars to grab an ID
-      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      const primaryCalendar = calendars.find((cal) => cal.isPrimary) || calendars[0];
-  
-      if (!primaryCalendar) {
-        Alert.alert('Error', 'No available calendars found on this device.');
-        return;
-      }
-  
-      // 4. Pass the extracted calendar ID as the first argument
-      const eventId = await Calendar.createEventAsync(primaryCalendar.id, {
+      const result = await addGameToCalendar({
+        gameId: game.id,
         title: game.title,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+        startDate: game.date,
         location: game.location_name,
-        notes: `${game.title}`,
-        alarms: [{ relativeOffset: -10 }], // 5. Fixed alarm key
+        notes: game.gameDescription || game.title,
       });
-  
-      console.log('Calendar event created:', eventId);
+
+      if (!result.ok) {
+        const alert = getAddToCalendarErrorMessage(result.reason);
+
+        if (result.reason === 'permission_denied') {
+          Alert.alert(alert.title, alert.message, [
+            { text: 'Not now', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => void Linking.openSettings(),
+            },
+          ]);
+        } else {
+          Alert.alert(alert.title, alert.message);
+        }
+
+        return;
+      }
+
       Alert.alert('Success', 'Event added to your calendar');
-    } catch (error) {
-      console.log('Calendar error:', error);
-      Alert.alert('Error', 'Could not add event to calendar');
+    } finally {
+      calendarRequestInFlight.current = false;
+      setAddingCalendarGameId(null);
     }
   };
 
@@ -703,13 +692,13 @@ export default function Games() {
       return;
     }
 
+
     try {
       const inChat = await userInChat(gameId);
       let joinedChatId: string | null = null;
 
       if (!inChat) {
         joinedChatId = await addUserToChat(gameId, gameType);
-
         if (!joinedChatId) {
           Alert.alert('Error', 'Unable to open this game chat. Please try again.');
           return;
@@ -718,15 +707,17 @@ export default function Games() {
 
       const chatId = joinedChatId ?? await getChatId(gameId);
 
+      console.log('chatId result:', chatId);
+
       if (!chatId) {
-        Alert.alert('Error', 'Unable to open this game chat. Please try again.');
+        Alert.alert('Error', 'Unable to open chat. Please try again.');
         return;
       }
 
       await chatNavigator(chatId, gameType);
-    } catch (error) {
-      console.log('Failed opening game chat:', error);
-      Alert.alert('Error', 'Unable to open this game chat. Please try again.');
+    } catch (e) {
+      console.log('handleOnMessage error', e);
+      Alert.alert('Error', 'Failed to open chat');
     }
   }
 
@@ -1075,14 +1066,20 @@ export default function Games() {
                             <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
                               <Ionicons name="location-outline" size={20} color="#000" />
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionButton} onPress={() => {
-  const realGame = myPlayingGames.find(g => g.id === game.id);
-  if (!realGame) {
-    Alert.alert('Error', 'Game not found');
-    return;
-  }
-  handleAddToCalendar(realGame);
-}}>
+                            <TouchableOpacity
+                              disabled={addingCalendarGameId === game.id}
+                              style={styles.actionButton}
+                              onPress={() => {
+                                const realGame = myPlayingGames.find(
+                                  (candidate) => candidate.id === game.id
+                                );
+                                if (!realGame) {
+                                  Alert.alert('Error', 'Game not found');
+                                  return;
+                                }
+                                void handleAddToCalendar(realGame);
+                              }}
+                            >
                               <Ionicons name="calendar-outline" size={20} color="#000" />
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>
@@ -1197,14 +1194,20 @@ export default function Games() {
                             <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenMaps(('address' in game ? game.address : ('location' in game ? game.location : 'Tennis Court')) as string)}>
                               <Ionicons name="location-outline" size={20} color="#000" />
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionButton} onPress={() => {
-  const realGame = myGames.find(g => g.id === game.id);
-  if (!realGame) {
-    Alert.alert('Error', 'Game not found');
-    return;
-  }
-  handleAddToCalendar(realGame);
-}}>
+                            <TouchableOpacity
+                              disabled={addingCalendarGameId === game.id}
+                              style={styles.actionButton}
+                              onPress={() => {
+                                const realGame = myGames.find(
+                                  (candidate) => candidate.id === game.id
+                                );
+                                if (!realGame) {
+                                  Alert.alert('Error', 'Game not found');
+                                  return;
+                                }
+                                void handleAddToCalendar(realGame);
+                              }}
+                            >
                               <Ionicons name="calendar-outline" size={20} color="#000" />
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionButton} onPress={() => handleMenuPress(game)}>

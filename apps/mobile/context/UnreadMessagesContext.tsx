@@ -55,18 +55,11 @@ export function UnreadMessagesProvider({ children }: { children: ReactNode }) {
     setUnreadCount(countUnreadMessages(typedMemberships, messages ?? []));
   }, [user?.id]);
 
+  // Keep the tab badge in sync. Do not rewrite every conversation's last_read_at
+  // here — that raced with per-chat markAsRead and left inbox rows stuck unread.
   const markInboxRead = useCallback(async () => {
-    if (!isSupabaseConfigured || !user?.id) return;
-
-    const { error } = await supabase
-      .from('conversation_members')
-      .update({ last_read_at: new Date().toISOString() })
-      .eq('id', user.id);
-
-    if (!error) {
-      setUnreadCount(0);
-    }
-  }, [user?.id]);
+    await refreshUnreadCount();
+  }, [refreshUnreadCount]);
 
   useEffect(() => {
     void refreshUnreadCount();
