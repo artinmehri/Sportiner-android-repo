@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { SignupInterface } from '../../context/SignupInterface.type';
 import { saveLatestLocationPosition } from '@/lib/latestLocation';
+import { resolveForegroundLocationPermission } from '@/lib/locationPermission';
 import {
   logOnboardingError,
   onboardingErrorCopy,
@@ -23,24 +24,23 @@ import {
 export default function FourthOnbPage({ onNext, onBack, changeData, data }: SignupInterface) {
   const [isRequestingLocation, setIsRequestingLocation] = useState(false);
 
-  const handleUseLocation = async () => {
+  const handleContinue = async () => {
     if (isRequestingLocation) return;
 
     setIsRequestingLocation(true);
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const permission = await resolveForegroundLocationPermission(
+        Location.getForegroundPermissionsAsync,
+        Location.requestForegroundPermissionsAsync,
+      );
 
-      if (status !== 'granted') {
+      if (permission.status !== 'granted') {
         changeData((current: any) => ({
           ...current,
           location: null,
           location_permission: 'denied',
         }));
-        Alert.alert(
-          'Location not enabled',
-          'No problem. You can still browse games and create games manually.'
-        );
         await onNext();
         return;
       }
@@ -87,25 +87,8 @@ export default function FourthOnbPage({ onNext, onBack, changeData, data }: Sign
             void onNext();
           },
         },
-        { text: 'Try Again', onPress: () => void handleUseLocation() },
+        { text: 'Try Again', onPress: () => void handleContinue() },
       ]);
-    } finally {
-      setIsRequestingLocation(false);
-    }
-  };
-
-  const handleSkipLocation = async () => {
-    if (isRequestingLocation) return;
-
-    setIsRequestingLocation(true);
-    changeData((current: any) => ({
-      ...current,
-      location: null,
-      location_permission: 'skipped',
-    }));
-
-    try {
-      await onNext();
     } finally {
       setIsRequestingLocation(false);
     }
@@ -152,7 +135,7 @@ export default function FourthOnbPage({ onNext, onBack, changeData, data }: Sign
           </View>
           <View style={styles.infoRow}>
             <Ionicons name="shield-checkmark-outline" size={20} color="#19E675" />
-            <Text style={styles.infoText}>Skip now and browse manually anytime</Text>
+            <Text style={styles.infoText}>Manual browsing remains available without location</Text>
           </View>
         </View>
       </View>
@@ -160,21 +143,17 @@ export default function FourthOnbPage({ onNext, onBack, changeData, data }: Sign
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.primaryButton, isRequestingLocation && styles.buttonDisabled]}
-          onPress={handleUseLocation}
+          onPress={handleContinue}
           disabled={isRequestingLocation}
+          accessibilityRole="button"
+          accessibilityLabel="Continue to location permission"
+          accessibilityState={{ busy: isRequestingLocation, disabled: isRequestingLocation }}
         >
           {isRequestingLocation ? (
             <ActivityIndicator color="#002000" />
           ) : (
-            <Text style={styles.primaryButtonText}>Use My Location</Text>
+            <Text style={styles.primaryButtonText}>Continue</Text>
           )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={handleSkipLocation}
-          disabled={isRequestingLocation}
-        >
-          <Text style={styles.secondaryButtonText}>Not Now</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -290,20 +269,6 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#002000',
     fontSize: 16,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    borderRadius: 16,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-  },
-  secondaryButtonText: {
-    color: '#333',
-    fontSize: 15,
     fontWeight: '700',
   },
 });

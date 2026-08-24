@@ -5,6 +5,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { UnreadInboxTabIcon } from '@/components/UnreadInboxTabIcon';
+import { GamesTabIcon } from '@/components/GamesTabIcon';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -51,7 +52,7 @@ export default function TabLayout() {
         name="games"
         options={{
           title: 'Games',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gamecontroller.fill" color={color} />,
+          tabBarIcon: ({ color }) => <GamesTabIcon color={color} />,
         }}
       />
       <Tabs.Screen
@@ -59,31 +60,6 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="SignUp"
-        options={{
-          title: 'Sign Up',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="arrow.down.circle.fill" color={color} />,
-          tabBarBadge: 3,
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="groupchat"
-        options={{
-          title: 'Group Chat',
-          href: null,
-          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
@@ -98,6 +74,7 @@ export default function TabLayout() {
         options={{
           title: 'Create Game',
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen

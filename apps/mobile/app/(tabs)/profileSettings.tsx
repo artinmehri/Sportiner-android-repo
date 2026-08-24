@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, TextInput, Alert, Image, Modal, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, TextInput, Alert, Image, Modal, Linking, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -9,13 +9,21 @@ import { useRouter } from 'expo-router';
 import { LEGAL_LAST_UPDATED, LEGAL_LINKS } from '@/constants/legal';
 import { useNotifications } from '@/context/NotificationContext';
 import { FAVORITE_PARK_OPTIONS } from '@/lib/favoriteParks';
+import { USER_LEVEL_OPTIONS, eloForUserLevel, parseUserLevel, userLevelLabel } from '@/lib/userLevel';
 import { APP_STORE_REVIEW_URL, APP_STORE_WEB_REVIEW_URL } from '@/constants/appStore';
+import { PhotoAssetError, preparePickedPhoto, type UploadablePhoto } from '@/lib/photoAsset';
+import { deleteAccountWithAppleReauth } from '@/lib/appleAuth';
+import {
+  isUgcTextRejectedError,
+  UGC_TEXT_REJECTED_COPY,
+} from '@/lib/ugcModeration';
 
 type ProfileSettingsData = {
   displayName?: string;
   availability?: any;
   profileImage?: string | null;
   favoritePark?: string | null;
+  level?: string | null;
 };
 
 type ProfileSettingsScreenProps = {
@@ -32,6 +40,8 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   const [displayName, setDisplayName] = useState('');
   const [favoritePark, setFavoritePark] = useState<string | null>(null);
   const [showFavoriteParkModal, setShowFavoriteParkModal] = useState(false);
+  const [level, setLevel] = useState<string | null>(null);
+  const [showLevelModal, setShowLevelModal] = useState(false);
   const [availability, setAvailability] = useState<{
     morning: string[];
     afternoon: string[];
@@ -76,6 +86,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
           ? user.favorite_park.trim()
           : null,
       );
+      setLevel(parseUserLevel(user?.level));
 
       const availability = user?.availability;
 
@@ -96,32 +107,22 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   }, []);
 
 
-  const handleImageUpload = async (base64String: any) => {
-    try {
-
+  const handleImageUpload = async (photo: UploadablePhoto) => {
     const user = await getCurrentUserId()
     const userId = user?.id;
 
-  if (!userId) throw new Error("No user ID found");
+    if (!userId) throw new Error("No user ID found");
 
-  const filePath = `${userId}/avatar_${Date.now()}.png`;
-
-  // Strip data URI prefix if present
-  const base64Data = base64String.includes('base64,')
-    ? base64String.split('base64,')[1]
-    : base64String;
+    const filePath = `${userId}/avatar_${Date.now()}.${photo.extension}`;
 
     const { data, error } = await supabase.storage
       .from('files')
-      .upload(filePath, decode(base64Data), {
-        contentType: 'image/png',
+      .upload(filePath, decode(photo.base64), {
+        contentType: photo.contentType,
         upsert: true,
       });
 
-    if (error) {
-        Alert.alert('Error occured while uploading your profile picture!')
-        throw error;
-    }
+    if (error) throw error;
 
     const { data: urlData } = supabase.storage
     .from('files')
@@ -131,58 +132,57 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
     const publicUrl = urlData.publicUrl;
 
 
-    const {data: dbData, error: dbError} = await supabase.from('users')
+    const { error: dbError } = await supabase.from('users')
     .update({
         profile_picture: publicUrl
     }).eq('id', userId)
 
 
-    if (dbError) {
-        Alert.alert('error updating profile image')
-        console.log(dbError)
-        console.log(dbError.message)
-        throw dbError;
-    }
+    if (dbError) throw dbError;
 
-    if (dbData) {
-        console.log('image successfully updated!')
-        setProfileImage(publicUrl)
-        setProfileImageRead(publicUrl)
-    }
+    setProfileImage(publicUrl)
+    setProfileImageRead(publicUrl)
 
     return data.path
-
-    } catch (err) {
-      Alert.alert("Couldn't upload image!");
-      console.log(err)
-      throw err;
-    }
-}
+  }
 
   const pickImage = async () => {
-    const result = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (result.granted === false) {
-      Alert.alert('Permission required', 'Sorry, we need camera roll permissions to make this work!');
-      return;
-    }
+    let isUploadingPhoto = false;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: Platform.OS === 'android',
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+        preferredAssetRepresentationMode:
+          ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+      });
 
-    const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], 
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-      base64: true
-    });
-
-
-    const uri = pickerResult.assets?.[0]?.uri
-    setProfileImageRead(uri);
-
-    if (!pickerResult.canceled) {
-      const image = pickerResult.assets[0];
-      const base64 = image.base64;
-      
-      await handleImageUpload(base64);
+      if (result.canceled) return;
+      isUploadingPhoto = true;
+      await handleImageUpload(preparePickedPhoto(result.assets[0]));
+    } catch (error) {
+      if (error instanceof PhotoAssetError && error.code === 'too-large') {
+        Alert.alert(
+          'Photo too large',
+          'This photo is still too large to upload after processing. Try a smaller image.',
+        );
+      } else if (error instanceof PhotoAssetError && error.code === 'invalid') {
+        Alert.alert('Couldn\'t use photo', 'We couldn\'t read this photo. Try choosing another image.');
+      } else if (error instanceof PhotoAssetError) {
+        Alert.alert(
+          'Couldn\'t process photo',
+          'We couldn\'t prepare this photo for upload. Please try another photo.',
+        );
+      } else if (isUploadingPhoto) {
+        Alert.alert('Couldn\'t upload photo', 'Check your connection and try again.');
+      } else {
+        Alert.alert(
+          'Couldn\'t process photo',
+          'We couldn\'t prepare this photo for upload. Please try another photo.',
+        );
+      }
     }
   };
 
@@ -225,9 +225,18 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   }, [router]);
 
   const handleDeleteAccount = async () => {
-    const { data, error } = await supabase.functions.invoke('delete-user', {
-      body: {},
-    });
+    let data: any;
+    let error: any;
+
+    try {
+      ({ data, error } = await deleteAccountWithAppleReauth());
+    } catch {
+      Alert.alert(
+        'Delete failed',
+        'Apple authorization is required before this account can be deleted.'
+      );
+      return;
+    }
 
     if (error || data?.error) {
       Alert.alert(
@@ -237,8 +246,12 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
       return;
     }
 
-    // Prefer shared logout so the current installation is deactivated first.
-    await signOutCurrentUser();
+    // The deleted profile already cascades its push tokens. Clear only this
+    // device's now-stale local session.
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+    if (signOutError) {
+      console.warn('Unable to clear the deleted account session', signOutError);
+    }
     Alert.alert('Account deleted', 'Your account was deleted successfully.');
     router.replace('/(auth)/SignUp');
   }
@@ -299,15 +312,22 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
 
     setIsSaving(true);
     const availabilityForDb = toDbAvailability(availability);
+    const elo = eloForUserLevel(level);
     const { error } = await supabase.from('users')
     .update({
       name: displayName,
       availability: availabilityForDb,
       favorite_park: favoritePark,
+      level,
+      ...(elo === null ? {} : { elo }),
     }).eq('id', userId)
 
     if (error) {
       setIsSaving(false);
+      if (isUgcTextRejectedError(error)) {
+        Alert.alert(UGC_TEXT_REJECTED_COPY.title, UGC_TEXT_REJECTED_COPY.message);
+        return;
+      }
       Alert.alert("There was an error saving your changes.")
       console.log(error)
       return;
@@ -334,6 +354,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
         availability: availabilityForDb,
         profileImage,
         favoritePark,
+        level,
       });
       onClose();
       return;
@@ -344,6 +365,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
       availability: availabilityForDb,
       profileImage,
       favoritePark,
+      level,
     });
     setIsSaving(false);
     onClose();
@@ -464,6 +486,27 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
               />
               <Ionicons name="pencil" size={20} color="#666" />
             </View>
+          </View>
+
+          {/* Level */}
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Level</Text>
+            <TouchableOpacity
+              style={styles.inputContainer}
+              onPress={() => setShowLevelModal(true)}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.textInput,
+                  !level && styles.placeholderText,
+                ]}
+                numberOfLines={1}
+              >
+                {userLevelLabel(level) ?? 'Select your level'}
+              </Text>
+              <Ionicons name="pencil" size={20} color="#666" />
+            </TouchableOpacity>
           </View>
 
           {/* Favorite Park */}
@@ -670,6 +713,55 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
 
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showLevelModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowLevelModal(false)}
+      >
+        <View style={styles.parkModalOverlay}>
+          <View style={styles.parkModalSheet}>
+            <View style={styles.parkModalHeader}>
+              <Text style={styles.parkModalTitle}>Level</Text>
+              <TouchableOpacity onPress={() => setShowLevelModal(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {USER_LEVEL_OPTIONS.map((option) => {
+                const isSelected = level === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[
+                      styles.parkOptionRow,
+                      isSelected && styles.parkOptionRowSelected,
+                    ]}
+                    onPress={() => {
+                      setLevel(option.id);
+                      setShowLevelModal(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.parkOptionText,
+                        isSelected && styles.parkOptionTextSelected,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {isSelected ? (
+                      <Ionicons name="checkmark-circle" size={22} color="#002000" />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showFavoriteParkModal}

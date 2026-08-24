@@ -92,13 +92,15 @@ Deno.serve(async (req) => {
     const disabledReason = normalizeDisableReason(payload.reason?.trim());
     const now = new Date().toISOString();
 
-    const { data: deactivatedRows, error } = await admin
-      .from("push_tokens")
-      .update({
-        enabled: false,
-        disabled_reason: disabledReason,
-        updated_at: now,
-      })
+    const mutation = disabledReason === "logout"
+      ? admin.from("push_tokens").delete()
+      : admin.from("push_tokens").update({
+          enabled: false,
+          disabled_reason: disabledReason,
+          updated_at: now,
+        });
+
+    const { data: deactivatedRows, error } = await mutation
       .eq("user_id", user.id)
       .eq("device_id", deviceId)
       .select("id");

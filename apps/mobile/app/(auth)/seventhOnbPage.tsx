@@ -152,6 +152,29 @@ export default function SeventhOnbPage({ onNext, changeData, data }: SignupInter
     }
   };
 
+  const handleCreateGame = async () => {
+    if (submittingGameId) return;
+
+    setSubmittingGameId('create');
+    try {
+      await onNext({ create: true });
+    } catch (error) {
+      const createError = toOnboardingError(
+        {
+          failure: 'session',
+          provider: providerFromMethod(data?.method),
+          source: 'onboarding.finish_create_game',
+        },
+        error
+      );
+      const copy = onboardingErrorCopy(createError);
+      logOnboardingError(createError);
+      Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
+    } finally {
+      setSubmittingGameId(null);
+    }
+  };
+
   const handleBrowseAllGames = async () => {
     if (submittingGameId) return;
 
@@ -219,8 +242,16 @@ export default function SeventhOnbPage({ onNext, changeData, data }: SignupInter
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Title Section */}
         <View style={styles.titleSection}>
-          <Text style={styles.mainTitle}>Recommended for you</Text>
-          <Text style={styles.subTitle}>Pick one to join</Text>
+          <Text style={styles.mainTitle}>
+            {!isLoading && games.length === 0
+              ? 'Anyone can create a game'
+              : 'Recommended for you'}
+          </Text>
+          <Text style={styles.subTitle}>
+            {!isLoading && games.length === 0
+              ? 'Choose when and where you want to play'
+              : 'Anyone can create a game'}
+          </Text>
         </View>
 
         {/* Game Cards */}
@@ -238,7 +269,9 @@ export default function SeventhOnbPage({ onNext, changeData, data }: SignupInter
             </View>
           ) : games.length === 0 ? (
             <View style={styles.loadingContainer}>
-              <Text style={styles.noGamesText}>No games available nearby</Text>
+              <Text style={styles.noGamesText}>
+                No games nearby yet. Start one and others can join.
+              </Text>
             </View>
           ) : (
             games.map((game) => (
@@ -288,6 +321,20 @@ export default function SeventhOnbPage({ onNext, changeData, data }: SignupInter
           )}
         </View>
 
+        {!isLoading ? (
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={handleCreateGame}
+            disabled={Boolean(submittingGameId)}
+            accessibilityRole="button"
+            accessibilityLabel="Create a game"
+          >
+            <Text style={styles.createButtonText}>
+              {submittingGameId === 'create' ? 'Opening...' : 'Create a game'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         {/* Footer */}
         <TouchableOpacity
           onPress={handleBrowseAllGames}
@@ -296,7 +343,8 @@ export default function SeventhOnbPage({ onNext, changeData, data }: SignupInter
         >
           <View style={{ padding: 10 }}>
             <Text style={styles.footerText}>
-              Not these? <Text style={styles.browseText}>Browse all games {'>'}</Text>
+              {games.length > 0 ? 'Not these? ' : ''}
+              <Text style={styles.browseText}>Browse all games {'>'}</Text>
             </Text>
           </View>
         </TouchableOpacity>
@@ -416,11 +464,14 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#1F2937',
     marginBottom: 5,
+    textAlign: 'center',
   },
   subTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '900',
     color: '#19E675',
+    textAlign: 'center',
+    lineHeight: 28,
   },
   cardsContainer: {
     gap: 20,
@@ -507,6 +558,20 @@ const styles = StyleSheet.create({
     color: '#002000',
     fontSize: 16,
     fontWeight: '600',
+  },
+  createButton: {
+    backgroundColor: '#19E675',
+    paddingVertical: 17,
+    paddingHorizontal: 24,
+    borderRadius: 17,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    width: '100%',
+  },
+  createButtonText: {
+    color: '#002000',
+    fontSize: 16,
+    fontWeight: '800',
   },
   joinedButton: {
     backgroundColor: 'rgba(25, 230, 117, 0.2)',

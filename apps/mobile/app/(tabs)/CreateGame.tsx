@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Dimensions,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  findNodeHandle,
   View,
   Text,
   StyleSheet,
@@ -29,6 +30,16 @@ import {
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { saveLatestLocationPosition } from '@/lib/latestLocation';
+import { combineLocalDateAndTime } from '@/lib/gameTime';
+import {
+  getCreateGameFormError,
+  type CreateGameFormError,
+  type CreateGameFormField,
+} from '@/lib/createGameForm';
+import {
+  isUgcTextRejectedError,
+  UGC_TEXT_REJECTED_COPY,
+} from '@/lib/ugcModeration';
 
 type CourtSuggestionWithDistance = CourtSuggestion & {
   distanceKm?: number;
@@ -145,11 +156,14 @@ export default function CreateGame() {
   const prefillAvailability = parseAvailability(paramValue(params.availability));
 
   const [type, setType] = useState<GameType>(prefillType ?? '1v1');
-  const [level, setLevel] = useState<SkillLevel>(prefillLevel ?? 'Beginner');
+  const [level, setLevel] = useState<SkillLevel | null>(
+    shouldPrefill ? prefillLevel : null
+  );
   const [host_id, setHost_id] = useState<any>('')
   const [title, setTitle] = useState<string>('');
   const [date, setDate] = useState<string>('');
-  const [time, setTime] = useState<string>('15:00');
+  const [time, setTime] = useState<string>('');
+  const [fieldError, setFieldError] = useState<CreateGameFormError | null>(null);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState<boolean>(false);
   const [selectedLocation, setSelectedLocation] = useState<string>('');
   const [court_type, setCourt_type] = useState<CourtType>('Public');
@@ -165,8 +179,14 @@ export default function CreateGame() {
   const [originReady, setOriginReady] = useState(false);
   const [hostName, setHostName] = useState('');
   const scrollViewRef = useRef<ScrollView>(null);
+  const locationInputRef = useRef<TextInput>(null);
+  const titleInputRef = useRef<TextInput>(null);
   const descriptionInputRef = useRef<TextInput>(null);
+  const paymentInputRef = useRef<TextInput>(null);
+  const fieldRefs = useRef<Partial<Record<CreateGameFormField, View | null>>>({});
+  const scrollYRef = useRef(0);
   const didApplyPrefill = useRef(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const setSafeOrigin = (coords: GeoCoords) => {
     if (
@@ -282,6 +302,81 @@ export default function CreateGame() {
     };
   }, []);
 
+  const setFieldRef = (field: CreateGameFormField) => (node: View | null) => {
+    fieldRefs.current[field] = node;
+  };
+
+  const clearFieldError = (field: CreateGameFormField) => {
+    setFieldError((current) => (current?.field === field ? null : current));
+  };
+
+  const isFieldInvalid = (field: CreateGameFormField) => fieldError?.field === field;
+
+  const errorText = (field: CreateGameFormField) =>
+    fieldError && fieldError.field === field ? (
+      <Text style={styles.fieldErrorText}>{fieldError.message}</Text>
+    ) : null;
+
+  const scrollToShow = (
+    node: { measureInWindow: TextInput['measureInWindow'] } | null,
+    pinToTop = false
+  ) => {
+    const scroll = scrollViewRef.current;
+    if (!scroll || !node) return;
+
+    node.measureInWindow((_x, y, _w, h) => {
+      const keyboardHeight = Keyboard.metrics()?.height ?? 0;
+      if (pinToTop) {
+        const targetY = 132;
+        const delta = y - targetY;
+        if (Math.abs(delta) > 8) {
+          scroll.scrollTo({ y: Math.max(0, scrollYRef.current + delta), animated: true });
+        }
+        return;
+      }
+
+      const visibleBottom = Dimensions.get('window').height - keyboardHeight - 88;
+      const overflow = y + h + 16 - visibleBottom;
+      if (overflow > 0) {
+        scroll.scrollTo({ y: scrollYRef.current + overflow, animated: true });
+      }
+    });
+  };
+
+  const revealField = (field: CreateGameFormField) => {
+    const node = fieldRefs.current[field];
+    if (!node) return;
+    requestAnimationFrame(() => scrollToShow(node, true));
+    if (field === 'location') locationInputRef.current?.focus();
+    if (field === 'title') titleInputRef.current?.focus();
+    if (field === 'description') descriptionInputRef.current?.focus();
+    if (field === 'payment') paymentInputRef.current?.focus();
+  };
+
+  const focusedInput = () =>
+    [locationInputRef, titleInputRef, descriptionInputRef, paymentInputRef]
+      .map((input) => input.current)
+      .find((input) => input?.isFocused()) ?? null;
+
+  useEffect(() => {
+    const willShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const didShow = Keyboard.addListener('keyboardDidShow', () => {
+      scrollToShow(focusedInput());
+    });
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+    return () => {
+      willShow.remove();
+      didShow.remove();
+      hide.remove();
+    };
+  }, []);
+
   useEffect(() => {
     if (!shouldPrefill || didApplyPrefill.current) {
       return;
@@ -353,10 +448,11 @@ export default function CreateGame() {
     });
     }, [location_name, nearbyOrigin, originReady]);
 
-  const selectGameType = (type: GameType) => {
-    setType(type);
-    if (type === '1v1') {
+  const selectGameType = (nextType: GameType) => {
+    setType(nextType);
+    if (nextType === '1v1') {
       setGame_capacity(2);
+      clearFieldError('title');
     } else if (game_capacity < 3) {
       setGame_capacity(3);
     }
@@ -386,10 +482,12 @@ export default function CreateGame() {
   const confirmDateSelection = () => {
     if (datePickerMode === 'date') {
       setDate(tempDate.toISOString());
+      clearFieldError('date');
     } else {
       const hours = String(tempDate.getHours()).padStart(2, '0');
       const minutes = String(tempDate.getMinutes()).padStart(2, '0');
       setTime(`${hours}:${minutes}`);
+      clearFieldError('time');
     }
     setShowPickerModal(false);
   };
@@ -402,7 +500,11 @@ export default function CreateGame() {
 
   const openTimePicker = () => {
     setDatePickerMode('time');
-    const currentTime = time ? new Date(`1970-01-01T${time}`) : new Date();
+    const [hours, minutes] = time.split(':').map((part) => Number(part));
+    const currentTime = new Date();
+    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+      currentTime.setHours(hours, minutes, 0, 0);
+    }
     setTempDate(currentTime);
     setShowPickerModal(true);
   };
@@ -416,6 +518,7 @@ export default function CreateGame() {
     `POINT(${court.lng} ${court.lat})`
     );
     setShowLocationSuggestions(false);
+    clearFieldError('location');
   };
 
   const handleLocationFocus = () => {
@@ -424,47 +527,38 @@ export default function CreateGame() {
 
   const handleLocationChange = (text: string) => {
     setLocation_name(text);
-    setShowLocationSuggestions(text.length > 0 || true);
+    setSelectedLocation('');
+    setLocation_cords(null);
+    setShowLocationSuggestions(true);
+    clearFieldError('location');
   };
 
   const handleCreateGame = async () => {
-    if (!date) {
-      Alert.alert('Missing Information', 'Please select a date for your game');
-      return;
-    }
-    
-    if (!time) {
-      Alert.alert('Missing Information', 'Please select a time for your game');
-      return;
-    }
-    
-    if (!location_name.trim()) {
-      Alert.alert('Missing Information', 'Please enter a location for your game');
-      return;
-    }
-    
-    if (type == 'Group' && !title.trim()) {
-      Alert.alert('Missing Information', 'Please enter a creative title for your game');
+    Keyboard.dismiss();
+
+    const court = findCourtByName(location_name);
+    const splittingCost = court_type !== 'Public' && is_paid;
+    const error = getCreateGameFormError({
+      level: level ?? '',
+      date,
+      time,
+      locationName: location_name,
+      hasKnownLocation: Boolean(court),
+      type,
+      title,
+      description,
+      isPaid: splittingCost,
+      paymentAmount: payment_amount,
+    });
+
+    if (error) {
+      setFieldError(error);
+      setTimeout(() => revealField(error.field), 50);
       return;
     }
 
-    if (!description.trim()) {
-      Alert.alert('Missing Information', 'Please provide a description for your game');
-      return;
-    }
+    setFieldError(null);
 
-    if (!level) {
-      Alert.alert('Missing Information', 'Please select a skill level for your game');
-      return;
-    }
-
-    
-    if (is_paid && !payment_amount) {
-      Alert.alert('Missing Information', 'Please enter the offline reimbursement amount per player');
-      return;
-    }
-
-    
     try {
 
     if (!host_id) {
@@ -482,22 +576,32 @@ export default function CreateGame() {
 
     const resolvedCapacity = type === '1v1' ? 2 : game_capacity;
     const players_enrolled = 1;
+    const gameTime = combineLocalDateAndTime(date, time);
+
+    if (!gameTime) {
+      Alert.alert('Invalid date or time', 'Please select the game date and time again.');
+      return;
+    }
+
+    const resolvedCoords = court
+      ? `POINT(${court.lng} ${court.lat})`
+      : location_cords;
 
     const game = await addGame(
       host_id,
       resolvedTitle,
-      description,
+      description.trim(),
       type,
-      location_cords,
-      `${date.split('T')[0]}T${time}:00.000Z`,
-      location_name,
+      resolvedCoords,
+      gameTime,
+      location_name.trim(),
       level!,
       resolvedCapacity,
       is_booked,
-      payment_amount,
+      splittingCost ? payment_amount : 0,
       gameImage,
       court_type,
-      is_paid,
+      splittingCost,
       players_enrolled);
       
     if (!game) {
@@ -516,7 +620,8 @@ export default function CreateGame() {
         id: game.id,
         publicId: game.public_id ?? '',
         title: game.title ?? resolvedTitle,
-        date: game.time ?? `${date.split('T')[0]}T${time}:00.000Z`,
+        gameType: type,
+        date: game.time ?? gameTime,
         location_name: game.location_name ?? location_name,
         level: game.level ?? level!,
         capacity: String(game.game_capacity ?? resolvedCapacity),
@@ -525,6 +630,10 @@ export default function CreateGame() {
     });
     
     } catch (e: unknown) {
+      if (isUgcTextRejectedError(e)) {
+        Alert.alert(UGC_TEXT_REJECTED_COPY.title, UGC_TEXT_REJECTED_COPY.message);
+        return;
+      }
       const message = e instanceof Error ? e.message : 'Something went wrong';
       console.log(message)
       Alert.alert('Could not create game', message);
@@ -543,15 +652,21 @@ export default function CreateGame() {
 
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           ref={scrollViewRef}
           style={styles.scrollView}
-          contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 20 }]}
+          contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          onScroll={(event) => {
+            scrollYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
         >
         {/* The Core Section */}
         <View style={styles.section}>
@@ -599,32 +714,43 @@ export default function CreateGame() {
           </View>
 
           {/* Skill Level */}
-          <Text style={styles.levelLable}>Skill level</Text>
-          <View style={styles.skillLevelContainer}>
-            {(['Beginner', 'Intermediate', 'Advanced'] as SkillLevel[]).map((skillLevel) => (
-              <TouchableOpacity
-                key={skillLevel}
-                style={[
-                  styles.skillLevelButton,
-                  level === skillLevel && styles.skillLevelButtonActive,
-                ]}
-                onPress={() => setLevel(skillLevel)}
-              >
-                {level === skillLevel && (
-                  <Ionicons name="checkmark" size={16} color="#19E675" style={styles.checkIcon} />
-                )}
-                <Text
+          <View ref={setFieldRef('level')}>
+            <Text style={styles.levelLable}>Skill level</Text>
+            <View
+              style={[
+                styles.skillLevelContainer,
+                isFieldInvalid('level') && styles.fieldInvalid,
+              ]}
+            >
+              {(['Beginner', 'Intermediate', 'Advanced'] as SkillLevel[]).map((skillLevel) => (
+                <TouchableOpacity
+                  key={skillLevel}
                   style={[
-                    styles.skillLevelText,
-                    level === skillLevel && styles.skillLevelTextActive,
+                    styles.skillLevelButton,
+                    level === skillLevel && styles.skillLevelButtonActive,
                   ]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
+                  onPress={() => {
+                    setLevel(skillLevel);
+                    clearFieldError('level');
+                  }}
                 >
-                  {skillLevel}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  {level === skillLevel && (
+                    <Ionicons name="checkmark" size={16} color="#19E675" style={styles.checkIcon} />
+                  )}
+                  <Text
+                    style={[
+                      styles.skillLevelText,
+                      level === skillLevel && styles.skillLevelTextActive,
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                  >
+                    {skillLevel}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {errorText('level')}
           </View>
         </View>
 
@@ -634,14 +760,17 @@ export default function CreateGame() {
 
           {/* Date and Time */}
           <View style={styles.dateTimeRow}>
-            <View style={styles.dateTimeColumn}>
+            <View ref={setFieldRef('date')} style={styles.dateTimeColumn}>
               <Text style={{    
                 fontSize: 16,
     fontWeight: '300',
     color: '#000',
     marginBottom: 5}}>Date</Text>
               <TouchableOpacity
-                style={styles.dateTimeInput}
+                style={[
+                  styles.dateTimeInput,
+                  isFieldInvalid('date') && styles.fieldInvalid,
+                ]}
                 onPress={openDatePicker}
               >
                 <Text style={[styles.dateTimeText, !date && styles.placeholderText]}>
@@ -649,38 +778,64 @@ export default function CreateGame() {
                 </Text>
                 <Ionicons name="calendar-outline" size={20} color="#666" />
               </TouchableOpacity>
+              {errorText('date')}
             </View>
-            <View style={styles.dateTimeColumn}>
+            <View ref={setFieldRef('time')} style={styles.dateTimeColumn}>
               <Text style={{fontSize: 16,
     fontWeight: '300',
     color: '#000',
     marginBottom: 5}}>Time</Text>
               <TouchableOpacity
-                style={styles.dateTimeInput}
+                style={[
+                  styles.dateTimeInput,
+                  isFieldInvalid('time') && styles.fieldInvalid,
+                ]}
                 onPress={openTimePicker}
               >
-                <Text style={styles.dateTimeText}>{time}</Text>
+                <Text style={[styles.dateTimeText, !time && styles.placeholderText]}>
+                  {time || 'HH:MM'}
+                </Text>
                 <Ionicons name="time-outline" size={20} color="#666" />
               </TouchableOpacity>
+              {errorText('time')}
             </View>
           </View>
 
           {/* Location */}
+          <View ref={setFieldRef('location')}>
           <Text style={styles.inputLabel}>Location</Text>
           <View style={styles.locationInputContainer}>
-            <View style={styles.locationInput}>
+            <View
+              style={[
+                styles.locationInput,
+                isFieldInvalid('location') && styles.fieldInvalid,
+              ]}
+            >
               <Ionicons name="location-outline" size={20} color="#666" style={styles.locationIcon} />
               <TextInput
+                ref={locationInputRef}
                 style={styles.locationTextInput}
                 placeholder="Search for courts or parks"
                 placeholderTextColor="#999"
                 value={location_name}
                 onChangeText={handleLocationChange}
-                onFocus={handleLocationFocus}
+                onFocus={() => {
+                  handleLocationFocus();
+                  setTimeout(() => scrollToShow(locationInputRef.current), 50);
+                }}
+                onBlur={() => {
+                  setTimeout(() => setShowLocationSuggestions(false), 200);
+                }}
+                returnKeyType="done"
+                autoCorrect={false}
               />
             </View>
             {showLocationSuggestions && (
-              <View style={styles.locationSuggestionsContainer}>
+              <ScrollView
+                style={styles.locationSuggestionsContainer}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+              >
                 {locationSuggestions.map((suggestion) => (
                   <TouchableOpacity
                     key={suggestion.id}
@@ -717,8 +872,10 @@ export default function CreateGame() {
                     </View>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </ScrollView>
             )}
+          </View>
+          {errorText('location')}
           </View>
 
           {/* Court Type */}
@@ -731,7 +888,12 @@ export default function CreateGame() {
                   styles.courtTypeButton,
                   court_type === type && styles.courtTypeButtonActive,
                 ]}
-                onPress={() => setCourt_type(type)}
+                onPress={() => {
+                  setCourt_type(type);
+                  if (type === 'Public') {
+                    clearFieldError('payment');
+                  }
+                }}
               >
                 {court_type === type && (
                   <Ionicons name="checkmark" size={16} color="#19E675" style={styles.checkIcon} />
@@ -799,45 +961,62 @@ export default function CreateGame() {
 
           {/* Game Title */}
           {type === 'Group' && (
-            <View style={styles.section}>
+            <View ref={setFieldRef('title')} style={styles.section}>
               <Text style={styles.inputLabel}>Game Title</Text>
               <TextInput
-                style={styles.titleInput}
+                ref={titleInputRef}
+                style={[
+                  styles.titleInput,
+                  isFieldInvalid('title') && styles.fieldInvalid,
+                ]}
                 placeholder="Enter a title for your game..."
                 placeholderTextColor="#999"
                 value={title}
-                onChangeText={setTitle}
+                onChangeText={(value) => {
+                  setTitle(value);
+                  clearFieldError('title');
+                }}
+                returnKeyType="next"
+                onFocus={() => {
+                  setTimeout(() => scrollToShow(titleInputRef.current), 50);
+                }}
+                onSubmitEditing={() => descriptionInputRef.current?.focus()}
               />
+              {errorText('title')}
             </View>
           )}
 
 
         {/* Game Description */}
-        <View style={styles.section}>
+        <View ref={setFieldRef('description')} style={styles.section}>
           <Text style={styles.inputLabel}>Game Description</Text>
           <TextInput
             ref={descriptionInputRef}
-            style={styles.descriptionInput}
+            style={[
+              styles.descriptionInput,
+              isFieldInvalid('description') && styles.fieldInvalid,
+            ]}
             placeholder="Write a description for your game..."
             placeholderTextColor="#999"
             value={description}
-            onChangeText={setDescription}
+            onChangeText={(value) => {
+              setDescription(value);
+              clearFieldError('description');
+            }}
             onFocus={() => {
-              setTimeout(() => {
-                const inputHandle = findNodeHandle(descriptionInputRef.current);
-                if (inputHandle) {
-                  scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
-                    inputHandle,
-                    24,
-                    true,
-                  );
-                }
-              }, 250);
+              setTimeout(() => scrollToShow(descriptionInputRef.current), 50);
+            }}
+            onContentSizeChange={() => {
+              if (descriptionInputRef.current?.isFocused()) {
+                scrollToShow(descriptionInputRef.current);
+              }
             }}
             multiline
-            numberOfLines={4}
+            scrollEnabled={false}
             textAlignVertical="top"
+            blurOnSubmit={false}
           />
+          {errorText('description')}
         </View>
 
           {/* Cost sharing */}
@@ -846,7 +1025,14 @@ export default function CreateGame() {
               <View style={styles.bookingStatusContainer}>
                 <TouchableOpacity
                   style={styles.checkboxContainer}
-                  onPress={() => setIs_paid(!is_paid)}
+                  onPress={() => {
+                    const next = !is_paid;
+                    setIs_paid(next);
+                    if (!next) {
+                      setPayment_amount(0);
+                      clearFieldError('payment');
+                    }
+                  }}
                 >
                   <View style={[styles.checkbox, is_paid && styles.checkboxChecked]}>
                     {is_paid && <Ionicons name="checkmark" size={16} color="#19E675" />}
@@ -860,23 +1046,34 @@ export default function CreateGame() {
               </View>
 
               {is_paid && (
-                <View style={styles.paymentInputContainer}>
+                <View ref={setFieldRef('payment')} style={styles.paymentInputContainer}>
                   <Text style={styles.inputLabel}>Offline reimbursement amount per player</Text>
-                  <View style={styles.paymentInputWrapper}>
+                  <View
+                    style={[
+                      styles.paymentInputWrapper,
+                      isFieldInvalid('payment') && styles.fieldInvalid,
+                    ]}
+                  >
                     <Text style={styles.dollarSign}>$</Text>
                     <TextInput
+                      ref={paymentInputRef}
                       style={styles.paymentInput}
-                      placeholder="0" // Changed to a whole number placeholder
-                      keyboardType="number-pad" // Shows a pure number pad without a decimal point on iOS
+                      placeholder="0"
+                      keyboardType="number-pad"
                       placeholderTextColor="#999"
-                      value={payment_amount.toString()}
+                      value={payment_amount ? String(payment_amount) : ''}
+                      returnKeyType="done"
+                      onFocus={() => {
+                        setTimeout(() => scrollToShow(paymentInputRef.current), 50);
+                      }}
                       onChangeText={(text) => {
-                        // Strip everything except numbers (no decimals allowed)
                         const cleaned = text.replace(/[^0-9]/g, '');
                         setPayment_amount(cleaned.length === 0 ? 0 : Number(cleaned));
+                        clearFieldError('payment');
                       }}
                     />
                   </View>
+                  {errorText('payment')}
                   <Text style={styles.paymentInputHint}>
                     This is an offline reimbursement note only. Sportiner does not process payments or collect money.
                   </Text>
@@ -887,7 +1084,7 @@ export default function CreateGame() {
         </View>
         </ScrollView>
         {/* Create Game Button */}
-        <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+        <View style={[styles.footer, { paddingBottom: keyboardVisible ? 10 : insets.bottom + 10 }]}>
           <TouchableOpacity style={styles.createButton} onPress={handleCreateGame}>
             <Text style={styles.createButtonText}>Create Game</Text>
           </TouchableOpacity>
@@ -1035,6 +1232,7 @@ export default function CreateGame() {
                   setShowPaidInfoModal(false);
                   setIs_paid(false);
                   setPayment_amount(0);
+                  clearFieldError('payment');
                 }}
               >
                 <Text style={styles.bookingInfoCancelText}>Cancel</Text>
@@ -1089,6 +1287,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
+    paddingBottom: 32,
     gap: 24,
   },
   section: {
@@ -1132,6 +1331,8 @@ const styles = StyleSheet.create({
   skillLevelContainer: {
     flexDirection: 'row',
     gap: 8,
+    borderRadius: 24,
+    padding: 2,
   },
   skillLevelButton: {
     flex: 1,
@@ -1195,6 +1396,16 @@ const styles = StyleSheet.create({
     color: '#000',
     marginBottom: 1
   },
+  fieldInvalid: {
+    borderWidth: 2,
+    borderColor: '#E11D48',
+  },
+  fieldErrorText: {
+    marginTop: -10,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#E11D48',
+  },
   visibilityLable: {
     fontSize: 16,
     fontWeight: '300',
@@ -1207,7 +1418,7 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     color: '#000',
     marginTop: 12,
-    marginBottom: -3
+    marginBottom: 5
   },
   dateTimeRow: {
     flexDirection: 'row',
@@ -1256,19 +1467,11 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   locationSuggestionsContainer: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     marginTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-    zIndex: 1000,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
     maxHeight: 270,
   },
   locationSuggestionItem: {

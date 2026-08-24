@@ -62,6 +62,9 @@ type DeactivatePushTokenResponse = {
   error?: string;
 };
 
+let registrationInFlight: Promise<RegistrationResult> | null = null;
+let registrationPaused = false;
+
 function isAllowedPermissionState(state: NotificationPermissionState): boolean {
   return state === 'granted' || state === 'provisional' || state === 'ephemeral';
 }
@@ -143,7 +146,7 @@ async function withTimeout<T>(
   }
 }
 
-export async function registerPushNotifications(
+async function performPushRegistration(
   supabase: SupabaseClient,
   options: RegisterOptions,
 ): Promise<RegistrationResult> {
@@ -225,14 +228,45 @@ export async function registerPushNotifications(
   }
 }
 
+export function registerPushNotifications(
+  supabase: SupabaseClient,
+  options: RegisterOptions,
+): Promise<RegistrationResult> {
+  if (registrationPaused) {
+    return Promise.resolve({ success: false, reason: 'not-authenticated' });
+  }
+
+  if (registrationInFlight) {
+    return registrationInFlight;
+  }
+
+  const registration = performPushRegistration(supabase, options);
+  registrationInFlight = registration;
+  void registration.finally(() => {
+    if (registrationInFlight === registration) {
+      registrationInFlight = null;
+    }
+  });
+  return registration;
+}
+
+export async function pausePushRegistrationForLogout(): Promise<void> {
+  registrationPaused = true;
+  await registrationInFlight;
+}
+
+export function resumePushRegistrationAfterLogout(): void {
+  registrationPaused = false;
+}
+
 export async function disablePushTokensForCurrentDevice(
   supabase: SupabaseClient,
   reason: PushDisableReason,
-): Promise<void> {
+): Promise<boolean> {
   const { data: sessionData, error: sessionError } =
     await supabase.auth.getSession();
   if (sessionError || !sessionData.session?.user) {
-    return;
+    return false;
   }
 
   try {
@@ -250,7 +284,7 @@ export async function disablePushTokensForCurrentDevice(
     const result = await withTimeout(disableRequest, DISABLE_TIMEOUT_MS);
     if (!result) {
       console.warn('Push-token deactivation timed out');
-      return;
+      return false;
     }
 
     const { data, error } = result;
@@ -263,8 +297,10 @@ export async function disablePushTokensForCurrentDevice(
         reason,
       });
     }
+
+    return true;
   } catch (error) {
-    // Never block logout/permission flows on deactivation failures.
     console.warn('Failed to disable this device push token', error);
+    return false;
   }
 }

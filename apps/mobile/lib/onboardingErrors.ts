@@ -1,3 +1,5 @@
+import { isUgcTextRejectedError, UGC_TEXT_REJECTED_COPY } from './ugcModeration';
+
 export type OnboardingProvider = 'email' | 'google' | 'apple' | 'unknown';
 
 export type OnboardingFailure =
@@ -15,6 +17,7 @@ export type OnboardingFailure =
   | 'game_full'
   | 'game_unavailable'
   | 'configuration'
+  | 'ugc_text_rejected'
   | 'network';
 
 export type OnboardingErrorContext = {
@@ -105,6 +108,10 @@ function classifyFailure(
   fallback: OnboardingFailure,
   details: ErrorDetails
 ): OnboardingFailure {
+  if (isUgcTextRejectedError(details)) {
+    return 'ugc_text_rejected';
+  }
+
   if (isNetworkFailure(details)) {
     return 'network';
   }
@@ -172,6 +179,8 @@ export function onboardingErrorCopy(error: OnboardingFlowError): {
   message: string;
 } {
   switch (error.failure) {
+    case 'ugc_text_rejected':
+      return UGC_TEXT_REJECTED_COPY;
     case 'network':
       return { title: 'Connection problem', message: 'Check your internet connection and try again.' };
     case 'account_exists':

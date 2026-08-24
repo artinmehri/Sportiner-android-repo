@@ -7,10 +7,12 @@ export type CourtSuggestion = {
 
 const TORONTO_COURTS: CourtSuggestion[] = [
   { id: '1', name: 'Cedarvale Park', lat: 43.6926862432366, lng: -79.43200873596362 },
-  { id: '2', name: 'Sir Winston Churchill Park Tennis Club', lat: 43.68375564175669, lng: -79.40871756033495 },
-  { id: '3', name: 'Hillcrest Park', lat: 43.67598988841953, lng: -79.42411274751468 },
+  { id: '2', name: 'Ramsden Park', lat: 43.6764023, lng: -79.3932 },
+  { id: '3', name: 'Eglinton Park', lat: 43.7069278, lng: -79.4045237 },
   { id: '4', name: 'Oriole Park', lat: 43.6972457332, lng: -79.400237963 },
   { id: '5', name: 'Viewmount Park Tennis Club', lat: 43.70763875602304, lng: -79.43670190658098 },
+  { id: '6', name: 'Hillcrest Park', lat: 43.67598988841953, lng: -79.42411274751468 },
+  { id: '7', name: 'Sir Winston Churchill Park Tennis Club', lat: 43.68375564175669, lng: -79.40871756033495 },
 ];
 
 export type GeoCoords = { lat: number; lng: number };

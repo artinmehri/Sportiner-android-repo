@@ -4,7 +4,14 @@ import SecondOnbPage from "./secondOnbPage";
 import ThirdOnbPage from "./thirdOnbPage";
 import FourthOnbPage from "./fourthOnbPage";
 import FifthOnbPage from "./fifthOnbPage";
-import { supabase, isOnboarding } from "@/context/AuthContext";
+import {
+    getOnboardingStatus,
+    onboardingStatusToStep,
+    setOnboardingStatus,
+    supabase,
+    isOnboarding,
+    type OnboardingStatus,
+} from "@/context/AuthContext";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert } from "react-native";
 import { decode } from 'base64-arraybuffer';
@@ -28,6 +35,7 @@ import OnboardingGameConfirm, {
     type OnboardingJoinConfirmation,
 } from "./onboardingGameConfirm";
 import { FAVORITE_PARK_OPTIONS } from "@/lib/favoriteParks";
+import { eloForUserLevel } from "@/lib/userLevel";
 
 type SignupNotificationPermission =
     | 'granted'
@@ -76,10 +84,15 @@ type SignupData = {
 };
 
 export default function SignupFlow() {
-    const { method, providerName, providerEmail } = useLocalSearchParams();
+    const { method, providerName, providerEmail, resumeStep } = useLocalSearchParams();
     const router = useRouter()
 
-    const [step, setStep] = useState(1);
+    const [step, setStep] = useState(() => {
+        const parsed = onboardingStatusToStep(
+            typeof resumeStep === 'string' ? resumeStep : undefined,
+        );
+        return Math.min(Math.max(parsed, 1), 7);
+    });
     const [formData, setFormData] = useState<SignupData>({
         name: '',
         profile_picture: null,
@@ -164,6 +177,39 @@ export default function SignupFlow() {
             }));
         }
     }, [method, providerName, providerEmail]);
+
+    useEffect(() => {
+        if (!termsVerified || step < 1 || step > 7) return;
+
+        let active = true;
+        const saveCurrentPage = async () => {
+            const { data } = await supabase.auth.getUser();
+            if (!active || !data.user) return;
+
+            const currentStatus = await getOnboardingStatus(data.user.id);
+            if (currentStatus === 'Completed') {
+                isOnboarding.current = false;
+                router.replace('/(tabs)');
+                return;
+            }
+
+            const currentStep = onboardingStatusToStep(currentStatus);
+            if (currentStep > step) {
+                setStep(currentStep);
+                return;
+            }
+
+            await setOnboardingStatus(
+                data.user.id,
+                String(step) as OnboardingStatus,
+            );
+        };
+
+        void saveCurrentPage();
+        return () => {
+            active = false;
+        };
+    }, [router, step, termsVerified]);
 
     const handleBack = () => {
         if (step === 1) {
@@ -276,9 +322,9 @@ export default function SignupFlow() {
         return null;
     }
 
-    async function getEmailUser() {
-        const email = formData.email.trim().toLowerCase();
-        const password = formData.password;
+    async function getEmailUser(input: Pick<SignupData, 'email' | 'password' | 'name'> = formData) {
+        const email = input.email.trim().toLowerCase();
+        const password = input.password;
 
         const { data: sessionData } = await supabase.auth.getSession();
         if (
@@ -311,7 +357,7 @@ export default function SignupFlow() {
             password,
             options: {
                 data: {
-                    display_name: formData.name,
+                    display_name: input.name,
                     last_active_at: new Date().toISOString(),
                 },
             },
@@ -358,6 +404,67 @@ export default function SignupFlow() {
         }
 
         return signUpData.user;
+    }
+
+    async function handleFirstPageNext(value?: string | Record<string, unknown>) {
+        const firstPageData =
+            value && typeof value === 'object' ? value as Partial<SignupData> : {};
+
+        setFormData((current) => ({ ...current, ...firstPageData }));
+
+        try {
+            if (!method || method === 'email') {
+                await getEmailUser({
+                    email: String(firstPageData.email ?? ''),
+                    password: String(firstPageData.password ?? ''),
+                    name: String(firstPageData.name ?? ''),
+                });
+            }
+
+            const { data } = await supabase.auth.getUser();
+            if (!data.user) {
+                throw new OnboardingFlowError({
+                    failure: 'session',
+                    provider: signupProvider,
+                    source: 'onboarding.first_page.status',
+                });
+            }
+
+            const currentStatus = await getOnboardingStatus(data.user.id);
+            if (currentStatus === 'Completed') {
+                isOnboarding.current = false;
+                router.replace('/(tabs)');
+                return;
+            }
+
+            const currentStep = onboardingStatusToStep(currentStatus);
+            if (currentStep > 1) {
+                setStep(currentStep);
+                return;
+            }
+
+            if (!(await setOnboardingStatus(data.user.id, '1'))) {
+                throw new OnboardingFlowError({
+                    failure: 'session',
+                    provider: signupProvider,
+                    source: 'onboarding.first_page.status',
+                });
+            }
+
+            setStep(2);
+        } catch (error) {
+            const onboardingError = toOnboardingError(
+                {
+                    failure: 'account_creation',
+                    provider: signupProvider,
+                    source: 'onboarding.first_page',
+                },
+                error,
+            );
+            const copy = onboardingErrorCopy(onboardingError);
+            logOnboardingError(onboardingError);
+            Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
+        }
     }
 
     async function addData(): Promise<SignupResult> {
@@ -412,15 +519,7 @@ export default function SignupFlow() {
                 });
             }
 
-            let elo = 400;
-
-            if (formData.level === 'intermediate') {
-                elo = 800;
-            } else if (formData.level === 'advanced') {
-                elo = 1200;
-            } else if (formData.level === 'pro') {
-                elo = 1600;
-            }
+            const elo = eloForUserLevel(formData.level) ?? 400;
 
             const profilePicture = formData.profile_picture?.startsWith('http')
                 ? formData.profile_picture
@@ -430,7 +529,6 @@ export default function SignupFlow() {
                 {
                     id: user.id,
                     name: formData.name.trim(),
-                    email: userEmail,
                     age_group: formData.age_group,
                     level: formData.level,
                     availability: formData.availability,
@@ -441,6 +539,9 @@ export default function SignupFlow() {
                     gamesPlayed: 0,
                     reliability_score: 75,
                     accepted_terms: true,
+                    onboarding_stage: '5',
+                    onboarding_version: 2,
+                    onboarding_completed_at: null,
                 },
                 { onConflict: 'id' }
             );
@@ -588,7 +689,8 @@ export default function SignupFlow() {
         }));
     }
 
-    async function continueAfterFavoritePark(favoritePark?: string) {
+    async function continueAfterFavoritePark(value?: string | Record<string, unknown>) {
+        const favoritePark = typeof value === 'string' ? value : undefined;
         const isSkip = !favoritePark;
 
         try {
@@ -617,12 +719,48 @@ export default function SignupFlow() {
         setStep(6);
     }
 
+    async function completeOnboardingToCreateGame() {
+        const { data } = await supabase.auth.getUser();
+        const userId = preparedUserId.current ?? data.user?.id;
+        if (!userId || !(await setOnboardingStatus(userId, 'Completed'))) {
+            Alert.alert('Could not finish setup', 'Please try again in a moment.');
+            return;
+        }
+
+        isOnboarding.current = false;
+        router.replace({
+            pathname: '/(tabs)/CreateGame',
+            params: {
+                prefill: '1',
+                park: typeof formData.favorite_park === 'string' ? formData.favorite_park : '',
+                level: typeof formData.level === 'string' ? formData.level : '',
+                type: 'Group',
+                availability:
+                    formData.availability != null ? JSON.stringify(formData.availability) : '',
+            },
+        });
+    }
+
     async function completeOnboardingToHome() {
+        const { data } = await supabase.auth.getUser();
+        const userId = preparedUserId.current ?? data.user?.id;
+        if (!userId || !(await setOnboardingStatus(userId, 'Completed'))) {
+            Alert.alert('Could not finish setup', 'Please try again in a moment.');
+            return;
+        }
+
         isOnboarding.current = false;
         router.replace('/(tabs)');
     }
 
     async function completeOnboardingToGame(gameId: string) {
+        const { data } = await supabase.auth.getUser();
+        const userId = preparedUserId.current ?? data.user?.id;
+        if (!userId || !(await setOnboardingStatus(userId, 'Completed'))) {
+            Alert.alert('Could not finish setup', 'Please try again in a moment.');
+            return;
+        }
+
         isOnboarding.current = false;
         router.replace({
             pathname: '/(tabs)/EventDetails',
@@ -630,7 +768,21 @@ export default function SignupFlow() {
         });
     }
 
-    async function handleSubmit(selectedGameId?: string) {
+    async function handleSubmit(value?: string | Record<string, unknown>) {
+        if (value && typeof value === 'object' && value.create === true) {
+            if (finalActionInFlight.current) {
+                return;
+            }
+            finalActionInFlight.current = true;
+            try {
+                await completeOnboardingToCreateGame();
+            } finally {
+                finalActionInFlight.current = false;
+            }
+            return;
+        }
+
+        const selectedGameId = typeof value === 'string' ? value : undefined;
         if (finalActionInFlight.current) {
             return;
         }
@@ -747,7 +899,7 @@ export default function SignupFlow() {
     if (step === 1) {
         return (
             <FirstOnbPage
-                onNext={() => setStep(2)}
+                onNext={handleFirstPageNext}
                 changeData={setFormData}
                 onBack={handleBack}
                 method={method as string}

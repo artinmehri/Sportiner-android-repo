@@ -1,10 +1,11 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Share, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, StatusBar, ScrollView, Modal, Platform, Share, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import ProfileSettingsScreen from './profileSettings';
 import { supabase } from '@/context/AuthContext';
+import { buildSingleLinkShareContent } from '@/lib/nativeShareContent';
 
 type UserRow = {
   name: string | null;
@@ -88,15 +89,16 @@ export default function ProfileScreen() {
   const handleShare = async () => {
     try {
       const url = 'https://sportiner.com/app';
-      await Share.share({
+      await Share.share(buildSingleLinkShareContent({
         title: 'Sportiner',
         message: [
           `Looking for tennis partners near you? 🎾`,
           `Sportiner helps you find, create, and join local games.`,
-          `Download the app:\n${url}`,
         ].join('\n\n'),
         url,
-      });
+        platform: Platform.OS,
+        androidLinkText: `Download the app:\n${url}`,
+      }));
     } catch (error) {
       console.log('Error sharing:', error);
     }

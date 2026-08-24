@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
 
     const now = new Date().toISOString();
 
-    // Move this Expo token / installation away from any other account.
+    // Retire every older row for this installation or Expo token.
     const { error: reassignmentError } = await admin
       .from("push_tokens")
       .update({
@@ -92,7 +92,6 @@ Deno.serve(async (req) => {
         disabled_reason: "account_switched",
         updated_at: now,
       })
-      .neq("user_id", user.id)
       .or(`device_id.eq.${deviceId},expo_push_token.eq.${expoPushToken}`)
       .eq("enabled", true);
 

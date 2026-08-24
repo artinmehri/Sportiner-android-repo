@@ -1,5 +1,5 @@
 export interface SignupInterface {
-    onNext: (selectedGameId?: string) => void | Promise<void>;
+    onNext: (value?: string | Record<string, unknown>) => void | Promise<void>;
     onBack: () => void;
     changeData: (value: any | ((prev: any) => any)) => void;
     method?: string;

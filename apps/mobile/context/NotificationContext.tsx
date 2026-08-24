@@ -72,6 +72,7 @@ async function openNotificationDestination(
   const data = notification.request.content.data ?? {};
   const type = notificationType(data.type);
   const chatId = stringValue(data.chatId);
+  const messageId = stringValue(data.messageId);
   const gameId = stringValue(data.gameId);
   const chatKind =
     stringValue(data.chatKind) ??
@@ -108,9 +109,8 @@ async function openNotificationDestination(
     }
 
     router.push({
-      pathname:
-        resolvedChatKind === 'private' ? '/(tabs)/chat' : '/(tabs)/groupchat',
-      params: { id: chatId },
+      pathname: resolvedChatKind === 'private' ? '/chat/[id]' : '/groupchat/[id]',
+      params: messageId ? { id: chatId, messageId } : { id: chatId },
     });
     return;
   }
@@ -146,6 +146,7 @@ export function NotificationProvider({
   const [permissionState, setPermissionState] =
     useState<NotificationPermissionState>('undetermined');
   const registrationInFlight = useRef<Promise<RegistrationResult> | null>(null);
+  const acknowledgedDeliveryIds = useRef<Set<string>>(new Set());
   const lastHandledResponseId = useRef<string | null>(null);
   const pendingResponseRef =
     useRef<Notifications.NotificationResponse | null>(null);
@@ -195,6 +196,38 @@ export function NotificationProvider({
   const syncPushRegistration = useCallback(
     () => runRegistration(false),
     [runRegistration],
+  );
+
+  const acknowledgeNotificationDelivery = useCallback(
+    async (notification: Notifications.Notification) => {
+      const notificationId = stringValue(
+        notification.request.content.data?.notificationId,
+      );
+
+      if (
+        !notificationId ||
+        acknowledgedDeliveryIds.current.has(notificationId)
+      ) {
+        return;
+      }
+
+      acknowledgedDeliveryIds.current.add(notificationId);
+
+      const { error } = await supabase
+        .from('notifications')
+        .update({ delivered_at: new Date().toISOString() })
+        .eq('id', notificationId)
+        .is('delivered_at', null);
+
+      if (error) {
+        acknowledgedDeliveryIds.current.delete(notificationId);
+        console.warn('Unable to acknowledge notification delivery', {
+          notificationId,
+          code: error.code,
+        });
+      }
+    },
+    [],
   );
 
   const handleNotificationResponse = useCallback(
@@ -258,10 +291,17 @@ export function NotificationProvider({
   }, [handleNotificationResponse, navigationReady, userId]);
 
   useEffect(() => {
-    const receivedSubscription =
-      Notifications.addNotificationReceivedListener(setLastNotification);
+    const receivedSubscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        setLastNotification(notification);
+        void acknowledgeNotificationDelivery(notification);
+      },
+    );
     const responseSubscription =
       Notifications.addNotificationResponseReceivedListener((response) => {
+        // A tap proves delivery even when the app was killed and the
+        // received listener never fired.
+        void acknowledgeNotificationDelivery(response.notification);
         void handleNotificationResponse(response);
       });
     const tokenSubscription = Notifications.addPushTokenListener(() => {
@@ -272,6 +312,7 @@ export function NotificationProvider({
 
     const initialResponse = Notifications.getLastNotificationResponse();
     if (initialResponse) {
+      void acknowledgeNotificationDelivery(initialResponse.notification);
       void handleNotificationResponse(initialResponse);
     }
 
@@ -280,7 +321,12 @@ export function NotificationProvider({
       responseSubscription.remove();
       tokenSubscription.remove();
     };
-  }, [handleNotificationResponse, syncPushRegistration, userId]);
+  }, [
+    acknowledgeNotificationDelivery,
+    handleNotificationResponse,
+    syncPushRegistration,
+    userId,
+  ]);
 
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {

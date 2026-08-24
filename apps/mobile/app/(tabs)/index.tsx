@@ -175,8 +175,8 @@ function parsePoint(location: any) {
 }
 
 export default function Index() {
-  const [mode, setMode] = useState<"1-1" | "Group">("1-1");
-  const [selectedFilter, setSelectedFilter] = useState<"Today" | "Tomorrow" | "This Weekend">("Today");
+  const [mode, setMode] = useState<"1-1" | "Group">("Group");
+  const [selectedFilter, setSelectedFilter] = useState<"Today" | "Tomorrow" | "This Weekend">("This Weekend");
   const [searchQuery, setSearchQuery] = useState("");
   const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
   const [joinFeedbackMessage, setJoinFeedbackMessage] = useState("Joined Game");
@@ -416,9 +416,8 @@ function gameToEvent(g: Game): Event {
     ? `No ${modeLabel} games at ${parkShortName} ${dayLabel}`
     : `No ${modeLabel} games ${dayLabel}`;
 
-  const emptySubtitle = parkShortName
-    ? "Be the first to create one, or explore games at nearby parks."
-    : "Be the first to create one, or check another day.";
+  const emptySubtitle =
+    "Anyone can create a game. Choose when and where you want to play.";
 
   const alternativesSectionTitle = useMemo(() => {
     if (alternativeGames.length === 0) return "Games you might like";
@@ -569,14 +568,13 @@ function gameToEvent(g: Game): Event {
 
             <View style={styles.emptyActions}>
               <TouchableOpacity
+                style={styles.emptyCreateButton}
                 onPress={openPrefillCreateGame}
-                activeOpacity={0.75}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Create a game"
               >
-                <Text style={styles.emptyCreateLink}>
-                  {parkShortName
-                    ? `Create one at ${parkShortName} →`
-                    : 'Create a game →'}
-                </Text>
+                <Text style={styles.emptyCreateButtonText}>Create a game</Text>
               </TouchableOpacity>
 
               <TouchableOpacity onPress={browseNearbyGames} activeOpacity={0.75}>
@@ -636,8 +634,11 @@ function gameToEvent(g: Game): Event {
       <TouchableOpacity
         style={styles.fab}
         onPress={openPrefillCreateGame}
+        accessibilityRole="button"
+        accessibilityLabel="Create a game"
       >
-        <Ionicons name="add" size={26} color="#005124" />
+        <Ionicons name="add" size={22} color="#005124" />
+        <Text style={styles.fabText}>Create a game</Text>
       </TouchableOpacity>
 
       {/* Joined Game Modal */}
@@ -1015,20 +1016,33 @@ const styles = StyleSheet.create({
    lineHeight: 24,
  },
  emptySubtitle: {
-   fontSize: 14,
-   lineHeight: 20,
-   color: "#6B7280",
+   fontSize: 15,
+   lineHeight: 22,
+   fontWeight: "600",
+   color: "#374151",
    textAlign: "center",
  },
  emptyActions: {
    alignItems: "center",
+   alignSelf: "stretch",
    gap: 10,
    marginTop: 6,
  },
- emptyCreateLink: {
-   color: "#19E675",
-   fontSize: 15,
-   fontWeight: "700",
+ emptyCreateButton: {
+   backgroundColor: "#19E675",
+   borderRadius: 30,
+   paddingVertical: 14,
+   paddingHorizontal: 25,
+   maxWidth: 300,
+   minHeight: 48,
+   alignItems: "center",
+   justifyContent: "center",
+   alignSelf: "center",
+ },
+ emptyCreateButtonText: {
+   color: "#005124",
+   fontSize: 16,
+   fontWeight: "800",
  },
  emptyBrowseLink: {
    color: "#6B7280",
@@ -1393,17 +1407,24 @@ cardDistanceFull: {
    position: "absolute",
    bottom: 22,
    right: 18,
-   width: 56,
-   height: 56,
-   borderRadius: 28,
-   backgroundColor: "#19E675",
+   flexDirection: "row",
    alignItems: "center",
    justifyContent: "center",
+   gap: 4,
+   height: 56,
+   paddingHorizontal: 16,
+   borderRadius: 28,
+   backgroundColor: "#19E675",
    shadowColor: "#000",
    shadowOffset: { width: 0, height: 6 },
    shadowOpacity: 0.14,
    shadowRadius: 8,
    elevation: 5,
+ },
+ fabText: {
+   color: "#005124",
+   fontSize: 15,
+   fontWeight: "800",
  },
  modalOverlay: {
    flex: 1,

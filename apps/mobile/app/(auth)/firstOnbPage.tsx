@@ -10,11 +10,13 @@ import {
   Image,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { SignupInterface } from '../../context/SignupInterface.type';
 import { useRouter } from 'expo-router';
+import { PhotoAssetError, preparePickedPhoto } from '@/lib/photoAsset';
 
 
 export default function FirstOnbPage({onNext, changeData, onBack, method, providerName, data}: SignupInterface) {
@@ -32,7 +34,6 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
 
   const isAppleSignup = method === 'apple';
   const isSocialSignup = method === 'apple' || method === 'google';
-  const hasAppleProviderName = isAppleSignup && Boolean(providerName?.trim());
   const router = useRouter()
   const ageGroups = ['16-17', '18-25', '26-35', '36-50', '50+'];
 
@@ -61,7 +62,7 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
 
   const handleContinue = async () => {
     const resolvedDisplayName = isAppleSignup
-      ? providerName?.trim() || displayName.trim()
+      ? providerName?.trim() || displayName.trim() || 'Tennis Player'
       : displayName.trim();
 
     if (!resolvedDisplayName) {
@@ -91,8 +92,7 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
       return;
     }
 
-    changeData((prev: any) => ({
-      ...prev,
+    const nextData = {
       name: resolvedDisplayName,
       profile_picture: profileImage || getRandomDefaultImage(),
       profile_picture_preview: profileImagePreview,
@@ -100,35 +100,31 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
       password: password,
       age_group: selectedAgeGroup,
       method: method
-    }))
+    };
 
-    onNext();
+    changeData((prev: any) => ({ ...prev, ...nextData }));
+
+    await onNext(nextData);
     console.log('data sent to signup flow')
   };
 
 
   const handleImagePick = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (permissionResult.granted === false) {
-      Alert.alert('Permission Required', 'Please grant camera roll permissions to upload a photo.');
-      return;
-    }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: Platform.OS === 'android',
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+        preferredAssetRepresentationMode:
+          ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+      });
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-      base64: true
-    });
+      if (result.canceled) return;
 
-
-    if (!result.canceled) {
-      // The image data is inside the 'assets' array
-      const image = result.assets[0];
-      const base64 = image.base64; // This is what we need!
-      const imageValue = base64 ? `data:image/jpeg;base64,${base64}` : image.uri;
+      const image = preparePickedPhoto(result.assets[0]);
+      const imageValue = `data:${image.contentType};base64,${image.base64}`;
 
       setProfileImageRead(image.uri);
       setProfileImage(imageValue)
@@ -137,6 +133,20 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
         profile_picture: imageValue,
         profile_picture_preview: image.uri,
       }));
+    } catch (error) {
+      if (error instanceof PhotoAssetError && error.code === 'too-large') {
+        Alert.alert(
+          'Photo too large',
+          'This photo is still too large to upload after processing. Try a smaller image.',
+        );
+      } else if (error instanceof PhotoAssetError && error.code === 'invalid') {
+        Alert.alert('Couldn\'t use photo', 'We couldn\'t read this photo. Try choosing another image.');
+      } else {
+        Alert.alert(
+          'Couldn\'t process photo',
+          'We couldn\'t prepare this photo for upload. Please try another photo.',
+        );
+      }
     }
   }
 
@@ -172,12 +182,12 @@ export default function FirstOnbPage({onNext, changeData, onBack, method, provid
             </View>
           </TouchableOpacity>
           <Text style={styles.photoDescription}>
-            Hosts are 80% more likely to accept players with a clear photo.
+            A clear photo helps other players recognize you.
           </Text>
         </View>
 
         <View style={styles.formSection}>
-          {(!isAppleSignup || !hasAppleProviderName) && (
+          {!isAppleSignup && (
             <View style={styles.inputGroup}>
               <Text style={[styles.label, focusedField === 'displayName' && styles.labelFocused]}>Display Name</Text>
               <TextInput

@@ -8,7 +8,12 @@ import { SafeAreaFrameContext } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/scripts/GoogleIcon'
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { isOnboarding, supabase, userExists } from '@/context/AuthContext';
+import {
+  getOnboardingStatus,
+  onboardingStatusToStep,
+  isOnboarding,
+  supabase,
+} from '@/context/AuthContext';
 import * as Crypto from 'expo-crypto'
 import {
   bindLocalTermsAcceptanceToUser,
@@ -23,6 +28,7 @@ import {
   toOnboardingError,
   type OnboardingProvider,
 } from '@/lib/onboardingErrors';
+import { storeAppleAuthorizationCode } from '@/lib/appleAuth';
 
 GoogleSignin.configure({
   webClientId: '939148334598-u3nj7v0p1fvrgak8hg14rssm0incde6s.apps.googleusercontent.com',
@@ -35,7 +41,7 @@ export default function SignUp() {
   const router = useRouter();
   // ref
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['40%', '48%'], []);
+  const snapPoints = useMemo(() => ['34%', '40%'], []);
 
   const showSocialAuthError = (
     provider: OnboardingProvider,
@@ -106,6 +112,37 @@ export default function SignUp() {
     }
   };
 
+  const routeAuthenticatedUser = async (
+    userId: string,
+    provider: OnboardingProvider,
+    params: Record<string, string>,
+  ) => {
+    const status = await getOnboardingStatus(userId);
+    const acceptedTerms = await finishAuthenticatedTermsCheck(userId, provider);
+
+    if (status === 'Completed') {
+      isOnboarding.current = false;
+      if (acceptedTerms) {
+        router.replace('/(tabs)');
+      } else {
+        routeToAgreement({ ...params, next: 'tabs' });
+      }
+      return;
+    }
+
+    isOnboarding.current = true;
+    const onboardingParams = {
+      ...params,
+      resumeStep: String(onboardingStatusToStep(status)),
+    };
+
+    if (acceptedTerms) {
+      routeToSignupFlow(onboardingParams);
+    } else {
+      routeToAgreement(onboardingParams);
+    }
+  };
+
 
   const handleGoogleSignUp = async () => {
     try {
@@ -135,36 +172,7 @@ export default function SignUp() {
           return;
         }
 
-        const response = await userExists()
-
-        // Checking if user exists
-        if (response === true) {
-          console.log('user already exists from signup.tsx!')
-          const acceptedTerms = await finishAuthenticatedTermsCheck(authData.user.id, 'google');
-          isOnboarding.current = false
-
-          console.log('redirecting existing user!')
-
-          if (acceptedTerms) {
-            router.replace('/(tabs)');
-          } else {
-            routeToAgreement({ next: 'tabs' });
-          }
-
-          return;
-
-        } else {
-          console.log("user doesn't exist!")
-          isOnboarding.current = true
-
-          console.log("redirecting the user to signup process!")
-          if (await bindTermsForUser(authData.user.id, 'google')) {
-            routeToSignupFlow({ method: 'google' });
-          } else {
-            routeToAgreement({ method: 'google' });
-          }
-
-        }
+        await routeAuthenticatedUser(authData.user.id, 'google', { method: 'google' });
     } catch (error) {
       isOnboarding.current = false;
       showSocialAuthError('google', 'auth.google.sign_up', error);
@@ -220,6 +228,13 @@ export default function SignUp() {
         return;
       }
 
+      try {
+        await storeAppleAuthorizationCode(credential.authorizationCode);
+      } catch (captureError) {
+        await supabase.auth.signOut({ scope: 'local' });
+        throw captureError;
+      }
+
       const metadata = authData.user?.user_metadata ?? {};
       const metadataName = [metadata.given_name, metadata.family_name]
         .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
@@ -233,36 +248,13 @@ export default function SignUp() {
         (typeof metadata.display_name === 'string' ? metadata.display_name.trim() : '');
       const appleEmail = credential.email?.trim() || authData.user?.email?.trim() || '';
 
-      const response = await userExists();
-
-      if (response === true) {
-        console.log('user already exists!');
-        const acceptedTerms = await finishAuthenticatedTermsCheck(authData.user.id, 'apple');
-        isOnboarding.current = false;
-
-        if (acceptedTerms) {
-          router.replace('/(tabs)');
-        } else {
-          routeToAgreement({ next: 'tabs' });
-        }
-
-        return;
-      }
-
-      console.log("user doesn't exist! from apple signup in signup.tsx!");
-      isOnboarding.current = true;
-
       const appleParams = {
         method: 'apple',
         providerName: appleDisplayName,
         providerEmail: appleEmail,
       };
 
-      if (await bindTermsForUser(authData.user.id, 'apple')) {
-        routeToSignupFlow(appleParams);
-      } else {
-        routeToAgreement(appleParams);
-      }
+      await routeAuthenticatedUser(authData.user.id, 'apple', appleParams);
     } catch (error: any) {
       isOnboarding.current = false;
       showSocialAuthError('apple', 'auth.apple.sign_up', error);
@@ -295,17 +287,6 @@ export default function SignUp() {
           snapPoints={snapPoints}
           enableDynamicSizing={false}>
           <BottomSheetView style={styles.container}>
-            <View style={styles.introContainer}>
-              <View style={styles.tennisBadge}>
-                <Ionicons name="tennisball-outline" size={16} color="#002000" />
-                <Text style={styles.tennisBadgeText}>Tennis community</Text>
-              </View>
-              <Text style={styles.signupTitle}>Find tennis games near you</Text>
-              <Text style={styles.signupSubtitle}>
-                You must be at least 16 years old to use Sportiner.
-              </Text>
-            </View>
-
             <View style={styles.socialBtnContainer}>
               <TouchableOpacity style={styles.socialBtn} onPress={handleAppleSignUp}>
                 <Ionicons size={30} name="logo-apple"></Ionicons>
@@ -342,50 +323,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingHorizontal: 24,
   },
   inner: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-  },
-  introContainer: {
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  tennisBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#E9FFF2',
-    borderRadius: 9999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: 10,
-  },
-  tennisBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#002000',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  signupTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111111',
-    textAlign: 'center',
-    letterSpacing: -0.4,
-  },
-  signupSubtitle: {
-    marginTop: 8,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666666',
-    textAlign: 'center',
-    lineHeight: 20,
   },
   frameImage: {
     marginTop: -190,
@@ -472,25 +415,24 @@ const styles = StyleSheet.create({
   },
   socialBtnContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 70,
+    justifyContent: 'space-evenly',
     alignItems: 'center',
-    paddingVertical: 14,
+    padding: 16,
+    marginTop: -5
   },
   emailBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'stretch',
+    alignSelf: 'center',
     borderRadius: 9999,
     marginTop: -9,
     paddingVertical: 15,
-    paddingHorizontal: 24,
+    paddingHorizontal: 90,
     backgroundColor: '#19E675'
   },
   emailBtnText: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#002000',
   },
 });

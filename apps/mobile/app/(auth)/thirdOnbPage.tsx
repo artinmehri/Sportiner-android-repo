@@ -133,7 +133,7 @@ export default function ThirdOnbPage({onNext, changeData, onBack, data}: SignupI
         <View style={styles.titleSection}>
           <Text style={styles.title}>When are you usually free to play?</Text>
           <Text style={styles.subtitle}>
-            Select all times that work for you. We{"'"}ll notify you when games match
+            Anyone can create a game. Pick times that work, and we{"'"}ll also notify you about matches.
           </Text>
         </View>
 

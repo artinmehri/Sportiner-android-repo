@@ -30,6 +30,68 @@ type PushTokenRow = {
   expo_push_token: string;
 };
 
+async function disablePushToken(
+  supabase: SupabaseClient,
+  tokenId: string,
+  reason: string,
+  context: { notificationId: string; recipientUserId: string },
+): Promise<void> {
+  const { error } = await supabase
+    .from("push_tokens")
+    .update({
+      enabled: false,
+      disabled_reason: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", tokenId);
+
+  if (error) {
+    console.error("Could not disable push token", {
+      ...context,
+      tokenId,
+      reason,
+      error: error.message,
+      code: error.code,
+    });
+  }
+}
+
+async function logPushDeliveryAttempt(
+  supabase: SupabaseClient,
+  input: {
+    notificationId: string;
+    tokenId: string;
+    ticketStatus: "accepted" | "error" | "request_error";
+    ticketId?: string;
+    ticketError?: string;
+  },
+): Promise<void> {
+  const acceptedAt = new Date();
+  const { error } = await supabase
+    .from("notifications")
+    .update({
+      push_token_id: input.tokenId,
+      expo_ticket_id: input.ticketId ?? null,
+      ticket_status: input.ticketStatus,
+      ticket_error: input.ticketError ?? null,
+      receipt_status: input.ticketId ? "pending" : null,
+      next_receipt_check_at: input.ticketId
+        ? new Date(acceptedAt.getTime() + 15 * 60 * 1000).toISOString()
+        : null,
+    })
+    .eq("id", input.notificationId);
+
+  if (error) {
+    console.error("Could not log push delivery attempt", {
+      notificationId: input.notificationId,
+      tokenId: input.tokenId,
+      ticketStatus: input.ticketStatus,
+      error: error.message,
+      code: error.code,
+    });
+  }
+}
+
 export function getAdminClient(): SupabaseClient {
   const url = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -123,7 +185,8 @@ export async function createAndSendNotification(
   }
 
   const enabledTokenRows = (tokenRows ?? []) as PushTokenRow[];
-  const validTokenRows = enabledTokenRows.filter((tokenRow) => {
+  const validTokenRows: PushTokenRow[] = [];
+  for (const tokenRow of enabledTokenRows) {
     const valid = isExpoPushToken(tokenRow.expo_push_token);
     if (!valid) {
       console.warn("Skipping invalid Expo push token", {
@@ -131,9 +194,20 @@ export async function createAndSendNotification(
         recipientUserId: input.userId,
         tokenId: tokenRow.id,
       });
+      await disablePushToken(supabase, tokenRow.id, "invalid_format", {
+        notificationId: notification.id,
+        recipientUserId: input.userId,
+      });
+      await logPushDeliveryAttempt(supabase, {
+        notificationId: notification.id,
+        tokenId: tokenRow.id,
+        ticketStatus: "error",
+        ticketError: "InvalidExpoPushToken",
+      });
+    } else {
+      validTokenRows.push(tokenRow);
     }
-    return valid;
-  });
+  }
 
   if (validTokenRows.length === 0) {
     return {
@@ -157,6 +231,7 @@ export async function createAndSendNotification(
       data: {
         ...input.data,
         type: input.type,
+        notificationId: notification.id,
       },
     }));
 
@@ -180,6 +255,16 @@ export async function createAndSendNotification(
           status: expoResponse.status,
           tokenCount: tokenBatch.length,
         });
+        await Promise.all(
+          tokenBatch.map((tokenRow) =>
+            logPushDeliveryAttempt(supabase, {
+              notificationId: notification.id,
+              tokenId: tokenRow.id,
+              ticketStatus: "request_error",
+              ticketError: `HTTP_${expoResponse.status}`,
+            })
+          ),
+        );
         continue;
       }
 
@@ -190,31 +275,30 @@ export async function createAndSendNotification(
         const ticket = tickets[i];
         const tokenRow = tokenBatch[i];
 
-        if (ticket?.status === "ok") {
+        if (ticket?.status === "ok" && ticket.id) {
           successfulTickets += 1;
+          await logPushDeliveryAttempt(supabase, {
+            notificationId: notification.id,
+            tokenId: tokenRow.id,
+            ticketStatus: "accepted",
+            ticketId: ticket.id,
+          });
           continue;
         }
 
         if (ticket?.details?.error === "DeviceNotRegistered") {
-          const { error: disableError } = await supabase
-            .from("push_tokens")
-            .update({
-              enabled: false,
-              disabled_reason: "device_not_registered",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", tokenRow.id);
-
-          if (disableError) {
-            console.error("Could not disable unregistered push token", {
-              notificationId: notification.id,
-              recipientUserId: input.userId,
-              tokenId: tokenRow.id,
-              error: disableError.message,
-              code: disableError.code,
-            });
-          }
+          await disablePushToken(supabase, tokenRow.id, "device_not_registered", {
+            notificationId: notification.id,
+            recipientUserId: input.userId,
+          });
         }
+
+        await logPushDeliveryAttempt(supabase, {
+          notificationId: notification.id,
+          tokenId: tokenRow.id,
+          ticketStatus: "error",
+          ticketError: ticket?.details?.error ?? "MissingTicket",
+        });
 
         console.error("Expo rejected push", {
           notificationId: notification.id,
@@ -230,6 +314,16 @@ export async function createAndSendNotification(
         tokenCount: tokenBatch.length,
         error: error instanceof Error ? error.message : String(error),
       });
+      await Promise.all(
+        tokenBatch.map((tokenRow) =>
+          logPushDeliveryAttempt(supabase, {
+            notificationId: notification.id,
+            tokenId: tokenRow.id,
+            ticketStatus: "request_error",
+            ticketError: "NetworkRequestFailed",
+          })
+        ),
+      );
     }
   }
 

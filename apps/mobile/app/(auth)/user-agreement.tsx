@@ -60,7 +60,7 @@ const legalActions = [
 ];
 
 export default function UserAgreement() {
-  const { method, providerName, providerEmail, next } = useLocalSearchParams();
+  const { method, providerName, providerEmail, next, resumeStep } = useLocalSearchParams();
   const [accepted, setAccepted] = useState(false);
   const [showError, setShowError] = useState(false);
   const [savingAgreement, setSavingAgreement] = useState(false);
@@ -141,12 +141,26 @@ export default function UserAgreement() {
         return;
       }
 
+      if (next === 'onboarding') {
+        router.replace({
+          pathname: "/(auth)/SignupFlow" as never,
+          params: {
+            ...(method ? { method: String(method) } : {}),
+            ...(providerName ? { providerName: String(providerName) } : {}),
+            ...(providerEmail ? { providerEmail: String(providerEmail) } : {}),
+            ...(resumeStep ? { resumeStep: String(resumeStep) } : {}),
+          },
+        });
+        return;
+      }
+
       router.replace({
         pathname: "/(auth)/SignupFlow" as never,
         params: {
           ...(method ? { method: String(method) } : {}),
           ...(providerName ? { providerName: String(providerName) } : {}),
           ...(providerEmail ? { providerEmail: String(providerEmail) } : {}),
+          ...(resumeStep ? { resumeStep: String(resumeStep) } : {}),
         },
       });
     } catch (error) {

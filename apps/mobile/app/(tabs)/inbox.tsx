@@ -14,6 +14,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { getConversations } from "@/context/ChatContext";
 import { getCurrentUserId } from "@/context/AuthContext";
 import { useUnreadMessages } from '@/context/UnreadMessagesContext';
+import { isConversationUnread } from '@/lib/unreadMessages';
 
 const DEFAULT_AVATAR =
   "https://images.unsplash.com/photo-1622668460389-f92e9ed21616?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
@@ -64,16 +65,27 @@ function toInboxChat(
     last_message_at: string | null;
     last_message_id: string | null;
     last_message_sender_id: string | null;
-    conversation_members?: { last_read_message_id: string | null }[];
+    conversation_members?: {
+      id?: string;
+      last_read_message_id: string | null;
+      last_read_at?: string | null;
+    }[];
   },
   currentUserId: string
 ): InboxChat {
   const { day, time, timeElapsed } = formatChatTimestamps(row.last_message_at);
-  const lastReadMessageId = row.conversation_members?.[0]?.last_read_message_id;
-  const unread =
-  !!row.last_message_id &&
-  row.last_message_id !== lastReadMessageId &&
-  row.last_message_sender_id !== currentUserId;
+  const myMembership =
+    row.conversation_members?.find((membership) => membership.id === currentUserId) ??
+    row.conversation_members?.[0];
+
+  const unread = isConversationUnread({
+    currentUserId,
+    lastMessageId: row.last_message_id,
+    lastMessageAt: row.last_message_at,
+    lastMessageSenderId: row.last_message_sender_id,
+    lastReadMessageId: myMembership?.last_read_message_id,
+    lastReadAt: myMembership?.last_read_at,
+  });
 
   return {
     id: row.id,
@@ -273,7 +285,7 @@ function ChatItem({
   return (
     <TouchableOpacity 
       style={styles.chatItem}
-      onPress={() => isGroupChat ? router.push({ pathname: "/(tabs)/groupchat", params: { id: chat.id} }) : router.push({ pathname: "/(tabs)/chat", params: { id: chat.id }})}
+      onPress={() => isGroupChat ? router.push({ pathname: "/groupchat/[id]", params: { id: chat.id} }) : router.push({ pathname: "/chat/[id]", params: { id: chat.id }})}
     >
       <Image source={{ uri: chat.avatar || DEFAULT_AVATAR }} style={styles.avatar} />
       <View style={styles.chatContent}>

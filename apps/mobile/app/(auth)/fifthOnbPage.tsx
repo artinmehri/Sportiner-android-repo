@@ -88,7 +88,7 @@ export default function FifthOnbPage({
         <View style={styles.titleSection}>
           <Text style={styles.title}>What{"'"}s your favorite park?</Text>
           <Text style={styles.subtitle}>
-            We{"'"}ll use this to tip you off about new tennis games at the parks you care about.
+            We{"'"}ll show games here, and anyone can create one at the parks you care about.
           </Text>
         </View>
 

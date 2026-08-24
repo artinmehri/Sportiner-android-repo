@@ -1,14 +1,15 @@
 import { supabase } from '@/lib/supabase';
 import { Image } from 'expo-image';
-import { View, StyleSheet, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Text, TouchableOpacity, Alert, ScrollView, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { useGames, userInGame } from '@/context/GameContext';
+import { useGames, userInGame, withdrawRequest } from '@/context/GameContext';
 import { useAuth } from '@/context/AuthContext';
 import { addUserToChat, blockUser, getChatId, userInChat, getplayers, chatNavigator } from '@/context/ChatContext';
 import { formatCourtShare } from '@/lib/gamesDb';
+import { emitGameViewedEvent } from '@/lib/productEvent';
 import * as Haptics from 'expo-haptics'
 
 const WEATHER_API_KEY = "Z3CQUVZMBCCHJVSHVHU2J9KGY";
@@ -19,17 +20,23 @@ export default function EventDetails() {
   const { user } = useAuth();
   const {
     getGameById,
+    ensureGameById,
     joinGame,
     refreshGames,
     joinedGameIds,
     pendingGameIds,
+    error: gamesError,
   } = useGames();
   const [submitting, setSubmitting] = useState(false);
-  const game = id ? getGameById(String(id)) : undefined;
+  const gameId = id ? String(id) : null;
+  const cachedGame = gameId ? getGameById(gameId) : undefined;
+  const [directGame, setDirectGame] = useState<typeof cachedGame>(undefined);
+  const game = cachedGame ?? directGame;
   const [weather, setWeather] = useState(null);
   const [showJoinedGameModal, setShowJoinedGameModal] = useState(false);
   const [players, setPlayers] = useState<any[]>([]);
   const [showMenu, setShowMenu] = useState(false);
+  const [hasFinishedGameRefresh, setHasFinishedGameRefresh] = useState(false);
 
   const membership = useMemo(() => {
     if (!game || !user?.id) {
@@ -50,8 +57,48 @@ export default function EventDetails() {
 
   useFocusEffect(
     useCallback(() => {
-      refreshGames();
-    }, [refreshGames])
+      if (!gameId) {
+        setDirectGame(undefined);
+        setHasFinishedGameRefresh(true);
+        return;
+      }
+
+      let isActive = true;
+      // Keep the current game on screen while refetching the same id.
+      // Drop only when the route id changed (avoids showing the wrong game).
+      setDirectGame((current) => (current?.id === gameId ? current : undefined));
+      setHasFinishedGameRefresh(false);
+
+      const loadRequestedGame = async () => {
+        try {
+          const resolved = await ensureGameById(gameId);
+          if (!isActive) return;
+          setDirectGame(resolved);
+          if (resolved?.publicId) {
+            void emitGameViewedEvent({
+              gamePublicId: resolved.publicId,
+              viewSurface: 'game_details',
+            });
+          }
+          // Soft-refresh browse/membership in the background; do not gate UI on it.
+          void refreshGames();
+        } catch (error) {
+          console.warn('[EventDetails] Unable to load requested game', error);
+          if (!isActive) return;
+          setDirectGame(undefined);
+        } finally {
+          if (isActive) {
+            setHasFinishedGameRefresh(true);
+          }
+        }
+      };
+
+      void loadRequestedGame();
+
+      return () => {
+        isActive = false;
+      };
+    }, [ensureGameById, gameId, refreshGames])
   );
 
   useEffect(() => {
@@ -301,6 +348,37 @@ export default function EventDetails() {
     );
   };
 
+  const canLeaveGame = membership === 'joined' || membership === 'pending';
+
+  const handleLeaveGame = () => {
+    if (!game) {
+      Alert.alert('Error', 'Game data not loaded');
+      return;
+    }
+
+    Alert.alert('Leave this game?', '', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave',
+        style: 'destructive',
+        onPress: async () => {
+          setSubmitting(true);
+          try {
+            const success = await withdrawRequest(game.id);
+            if (!success) {
+              Alert.alert('Error', 'Could not leave this game. Please try again.');
+              return;
+            }
+            await refreshGames();
+            setShowMenu(false);
+          } finally {
+            setSubmitting(false);
+          }
+        },
+      },
+    ]);
+  };
+
   const handleBlockHost = async () => {
     if (!game || !user) {
       Alert.alert('Error', 'You must be logged in to block');
@@ -348,6 +426,63 @@ export default function EventDetails() {
       ]
     );
   };
+
+  const handleRetryGameLoad = async () => {
+    if (!gameId) {
+      return;
+    }
+
+    setHasFinishedGameRefresh(false);
+    setDirectGame(undefined);
+    try {
+      const resolved = await ensureGameById(gameId);
+      setDirectGame(resolved);
+      void refreshGames();
+    } catch (error) {
+      console.warn('[EventDetails] Retry failed to load requested game', error);
+      setDirectGame(undefined);
+    } finally {
+      setHasFinishedGameRefresh(true);
+    }
+  };
+
+  if (gameId && !game && !hasFinishedGameRefresh) {
+    return (
+      <View style={styles.gameStateContainer}>
+        <ActivityIndicator size="large" color="#19E675" />
+        <Text style={styles.gameStateTitle}>Loading game...</Text>
+        <Text style={styles.gameStateMessage}>Getting the latest details from Sportiner.</Text>
+      </View>
+    );
+  }
+
+  if (!game) {
+    return (
+      <View style={styles.gameStateContainer}>
+        <View style={styles.gameStateIcon}>
+          <Ionicons name="alert-circle-outline" size={34} color="#005124" />
+        </View>
+        <Text style={styles.gameStateTitle}>Game unavailable</Text>
+        <Text style={styles.gameStateMessage}>
+          {gamesError || 'This game may have ended, been removed, or become unavailable.'}
+        </Text>
+        <TouchableOpacity
+          style={styles.gameStatePrimaryButton}
+          onPress={() => void handleRetryGameLoad()}
+          accessibilityRole="button"
+        >
+          <Text style={styles.gameStatePrimaryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.gameStateSecondaryButton}
+          onPress={() => router.replace('/(tabs)')}
+          accessibilityRole="button"
+        >
+          <Text style={styles.gameStateSecondaryButtonText}>Browse Games</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
 
   return (
@@ -402,8 +537,10 @@ export default function EventDetails() {
                 <Ionicons name="calendar-outline" size={20} color="#19E675" />
               </View>
               <Text style={styles.lableText}>DATE</Text>
-              <Text style={styles.detailText}>{dateLine}</Text>
-              <Text style={styles.detailText}>{timeLine}</Text>
+              <View style={styles.detailValueSlot}>
+                <Text style={styles.detailText}>{dateLine}</Text>
+                <Text style={styles.detailText}>{timeLine}</Text>
+              </View>
             </View>
 
             <View style={styles.detailItem}>
@@ -411,7 +548,9 @@ export default function EventDetails() {
                 <Ionicons name="location" size={20} color="#19E675" />
               </View>
               <Text style={styles.lableText}>LOCATION</Text>
-              <Text numberOfLines={3} style={[styles.detailText, { maxWidth: 70 }]}>{locationLine}</Text>
+              <View style={styles.detailValueSlot}>
+                <Text numberOfLines={2} style={styles.detailText}>{locationLine}</Text>
+              </View>
             </View>
 
             <View style={styles.detailItem}>
@@ -419,7 +558,9 @@ export default function EventDetails() {
                 <Ionicons name="cash-outline" size={20} color="#19E675" />
               </View>
               <Text style={styles.lableText}>COURT SHARE</Text>
-              <Text style={styles.detailText}>{courtShareLine}</Text>
+              <View style={styles.detailValueSlot}>
+                <Text numberOfLines={2} style={styles.detailText}>{courtShareLine}</Text>
+              </View>
             </View>
 
           </View>
@@ -549,6 +690,19 @@ export default function EventDetails() {
             </View>
             <Text style={styles.menuText}>Block Host</Text>
           </TouchableOpacity>
+
+          {canLeaveGame && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleLeaveGame}
+              disabled={submitting}
+            >
+              <View style={styles.menuIconContainer}>
+                <Ionicons name="log-out-outline" size={20} color="#FF0000" />
+              </View>
+              <Text style={styles.menuText}>Leave Game</Text>
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
@@ -557,6 +711,63 @@ export default function EventDetails() {
 }
 
 const styles = StyleSheet.create({
+  gameStateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 32,
+  },
+  gameStateIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(25, 230, 117, 0.14)',
+  },
+  gameStateTitle: {
+    marginTop: 20,
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#121212',
+    textAlign: 'center',
+  },
+  gameStateMessage: {
+    marginTop: 10,
+    maxWidth: 320,
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#5F6368',
+    textAlign: 'center',
+  },
+  gameStatePrimaryButton: {
+    width: '100%',
+    maxWidth: 320,
+    minHeight: 50,
+    marginTop: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 25,
+    backgroundColor: '#19E675',
+  },
+  gameStatePrimaryButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#002E16',
+  },
+  gameStateSecondaryButton: {
+    minHeight: 48,
+    marginTop: 8,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gameStateSecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#005124',
+  },
   scrollView: {
     flex: 1,
     backgroundColor: '#fff'
@@ -664,13 +875,13 @@ const styles = StyleSheet.create({
   },
   detailItemContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    alignItems: 'flex-start',
   },
   detailItem: {
+    flex: 1,
     flexDirection: 'column',
     alignItems: 'center',
-    marginBottom: 12,
-    width: 80,
+    paddingHorizontal: 6,
   },
   iconContainer: {
     width: 40,
@@ -686,15 +897,27 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   lableText: {
-    fontSize: 12,
-    color: '#A1A1AA',
-    fontWeight: '500',
-    marginTop: 10
+    marginTop: 10,
+    fontSize: 13,
+    lineHeight: 16,
+    color: '#18181B',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  detailValueSlot: {
+    minHeight: 40,
+    marginTop: 2,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    width: '100%',
   },
   detailText: {
-    fontSize: 15,
-    color: '#121212',
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#52525B',
     fontWeight: '500',
+    textAlign: 'center',
   },
   section: {
     marginBottom: 32,

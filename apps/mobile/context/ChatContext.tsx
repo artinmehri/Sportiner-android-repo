@@ -1,5 +1,7 @@
 import { getCurrentUserId, supabase } from "./AuthContext";
 import { router } from 'expo-router';
+import { hydrateChatImage, removeChatImage } from '@/lib/chatImages';
+import { isUgcTextRejectedError } from '@/lib/ugcModeration';
 
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -54,8 +56,10 @@ async function hasBlockedRelationshipInChat(chatId: string, senderId: string): P
 
 export async function submitModerationReport({
     reportedUserId,
+    reportedMessageId = null,
     reportedPostId = null,
     reason,
+    details = '',
 }: ModerationReportInput) {
     const userId = await getCurrentUserId();
     if (!userId?.id || !reportedUserId || userId.id === reportedUserId) return false;
@@ -65,8 +69,10 @@ export async function submitModerationReport({
         .insert({
             reporter_id: userId.id,
             reported_user_id: reportedUserId,
+            reported_message_id: reportedMessageId,
             reported_post_id: reportedPostId,
             reason,
+            details: details.trim() || null,
         });
 
     if (error) {
@@ -212,6 +218,7 @@ export async function replyMessage(reply_to: string, type: string, reply_message
     .single();
 
     if (error) {
+        if (isUgcTextRejectedError(error)) throw error;
         console.log(error.message)
         return null;
     }
@@ -229,8 +236,8 @@ export async function replyMessage(reply_to: string, type: string, reply_message
     })
     .eq('id', chatId);
 
-    // Update sender's own read state to the message just sent
-    await supabase
+    // Sender has already "read" their own outbound message.
+    const { error: readError } = await supabase
         .from('conversation_members')
         .update({
             last_read_message_id: data.id,
@@ -239,11 +246,21 @@ export async function replyMessage(reply_to: string, type: string, reply_message
         .eq('chat_id', chatId)
         .eq('id', userId.id);
 
+    if (readError) {
+        console.log('Failed to advance sender read cursor after reply:', readError.message);
+    }
+
     return data;
 }
 
 
-export async function sendMessage(message: string, type: string, chatId: string, image?: string) {
+export async function sendMessage(
+    message: string,
+    type: string,
+    chatId: string,
+    image?: string,
+    messageId?: string,
+) {
     const userId = await getCurrentUserId();
     if (!userId) return null;
 
@@ -255,9 +272,10 @@ export async function sendMessage(message: string, type: string, chatId: string,
         return null;
     }
 
-    const { data, error } = await supabase
+    const { data: inserted, error } = await supabase
     .from('messages')
     .insert({
+        ...(messageId ? { id: messageId } : {}),
         chat_id: chatId,
         sender_id: userId.id,
         type: type,
@@ -268,9 +286,27 @@ export async function sendMessage(message: string, type: string, chatId: string,
     .select()
     .single();
 
+    let data = inserted;
     if (error) {
-        console.log(error.message);
-        return null;
+        if (messageId && error.code === '23505') {
+            const { data: existing, error: existingError } = await supabase
+                .from('messages')
+                .select()
+                .eq('id', messageId)
+                .eq('sender_id', userId.id)
+                .maybeSingle();
+
+            if (!existingError && existing?.chat_id === chatId && existing.image === image) {
+                data = existing;
+            } else {
+                console.log(existingError?.message ?? error.message);
+                return null;
+            }
+        } else {
+            if (isUgcTextRejectedError(error)) throw error;
+            console.log(error.message);
+            return null;
+        }
     }
 
     await supabase
@@ -284,8 +320,8 @@ export async function sendMessage(message: string, type: string, chatId: string,
     })
     .eq('id', chatId);
 
-    // Update sender's own read state to the message just sent
-    await supabase
+    // Sender has already "read" their own outbound message.
+    const { error: readError } = await supabase
         .from('conversation_members')
         .update({
             last_read_message_id: data.id,
@@ -294,7 +330,11 @@ export async function sendMessage(message: string, type: string, chatId: string,
         .eq('chat_id', chatId)
         .eq('id', userId.id);
 
-    return data;
+    if (readError) {
+        console.log('Failed to advance sender read cursor after send:', readError.message);
+    }
+
+    return hydrateChatImage(data);
 }
 
 export async function getGameInfo(chatId: string) {
@@ -334,18 +374,21 @@ export async function getMessages(chatId: string) {
             .select('blocker_id, blocked_id')
             .or(`blocker_id.eq.${userId.id},blocked_id.eq.${userId.id}`);
 
-        if (blockedError) {
-            console.log('Error filtering blocked chat messages:', blockedError.message);
-            return data;
-        }
-
         const blockedPeerIds = new Set(
             (blockedRows ?? []).map((row: { blocker_id: string; blocked_id: string }) => (
                 row.blocker_id === userId.id ? row.blocked_id : row.blocker_id
             ))
         );
 
-        return data.filter((message: { sender_id?: string }) => !blockedPeerIds.has(message.sender_id ?? ''));
+        const visibleMessages = blockedError
+            ? data
+            : data.filter((message: { sender_id?: string }) => !blockedPeerIds.has(message.sender_id ?? ''));
+
+        if (blockedError) {
+            console.log('Error filtering blocked chat messages:', blockedError.message);
+        }
+
+        return Promise.all(visibleMessages.map((message) => hydrateChatImage(message)));
     }
 
     return [];
@@ -375,23 +418,57 @@ export async function getplayers(gameId: string) {
     }
 }
 
-
-export async function editMessage(messageId: string, message: string) {
-
+export async function getConversationMemberIds(chatId: string): Promise<string[]> {
     const { data, error } = await supabase
-    .from('messages').update({
-        message: message,
-        is_edited: true
-    }).eq('id', messageId)
-    .select();
-
-    if (data) {
-        console.log('user message added successfully!')
-    }
+    .from('conversation_members')
+    .select('id')
+    .eq('chat_id', chatId);
 
     if (error) {
-        console.log(error.message)
+        console.log(error.message);
+        return [];
     }
+
+    return (data ?? []).map((member) => member.id as string);
+}
+
+
+export async function editMessage(messageId: string, message: string) {
+    const currentUser = await getCurrentUserId();
+    if (!currentUser?.id) return null;
+
+    const { data, error } = await supabase
+    .from('messages')
+    .update({
+        message,
+        is_edited: true
+    })
+    .eq('id', messageId)
+    .eq('sender_id', currentUser.id)
+    .select()
+    .maybeSingle();
+
+    if (error) {
+        if (isUgcTextRejectedError(error)) throw error;
+        console.log(error.message);
+        return null;
+    }
+
+    if (data) {
+        const { error: chatError } = await supabase
+            .from('chat')
+            .update({
+                last_message: data.message,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('last_message_id', messageId);
+
+        if (chatError) {
+            console.log('Failed to refresh chat preview after edit:', chatError.message);
+        }
+    }
+
+    return data;
 }
 
 
@@ -399,18 +476,69 @@ export async function deleteMessage(messageId: string) {
     const userId = await getCurrentUserId();
     if (!userId?.id) return false;
 
-    const { error } = await supabase
-    .from('messages')
-    .delete()
-    .eq('id', messageId)
-    .eq('sender_id', userId.id);
+    const { data: message, error: messageError } = await supabase
+        .from('messages')
+        .select('id, chat_id, image')
+        .eq('id', messageId)
+        .eq('sender_id', userId.id)
+        .maybeSingle();
 
-    if (error) {
-        console.log(error.message);
+    if (messageError || !message?.chat_id) {
+        console.log(messageError?.message ?? 'message lookup returned no row');
         return false;
     }
 
-    console.log('message deleted successfully!');
+    if (message.image && !message.image.startsWith('http')) {
+        try {
+            await removeChatImage(message.image);
+        } catch (error) {
+            console.log('Failed to remove chat image before message delete:', error);
+            return false;
+        }
+    }
+
+    const deleteRow = () => supabase
+        .from('messages')
+        .delete()
+        .eq('id', messageId)
+        .eq('sender_id', userId.id)
+        .select('id, chat_id')
+        .maybeSingle();
+
+    let { data: deleted, error } = await deleteRow();
+    if (error || !deleted?.chat_id) {
+        // Storage is already gone, so retry only the idempotent row delete.
+        ({ data: deleted, error } = await deleteRow());
+    }
+
+    if (error || !deleted?.chat_id) {
+        console.log(error?.message ?? 'message delete returned no row');
+        return false;
+    }
+
+    const { data: latest } = await supabase
+        .from('messages')
+        .select('id, message, created_at, sender_id')
+        .eq('chat_id', deleted.chat_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    const { error: chatError } = await supabase
+        .from('chat')
+        .update({
+            last_message: latest?.message ?? null,
+            last_message_at: latest?.created_at ?? null,
+            last_message_id: latest?.id ?? null,
+            last_message_sender_id: latest?.sender_id ?? null,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', deleted.chat_id);
+
+    if (chatError) {
+        console.log('Failed to refresh chat preview after delete:', chatError.message);
+    }
+
     return true;
 }
 
@@ -485,7 +613,8 @@ export async function getConversations() {
         last_message_id,
         conversation_members!inner (   
             id,
-            last_read_message_id
+            last_read_message_id,
+            last_read_at
         ),
         members:conversation_members (  
             user:users (
@@ -520,13 +649,28 @@ export async function getConversations() {
             ))
         );
 
-        return data.filter((chat: { members?: { user?: { id?: string } | { id?: string }[] | null }[] }) => {
-            const memberIds = (chat.members ?? [])
-                .map((member) => Array.isArray(member.user) ? member.user[0]?.id : member.user?.id)
-                .filter(Boolean) as string[];
+        return data
+            .filter((chat: { members?: { user?: { id?: string } | { id?: string }[] | null }[] }) => {
+                const memberIds = (chat.members ?? [])
+                    .map((member) => Array.isArray(member.user) ? member.user[0]?.id : member.user?.id)
+                    .filter(Boolean) as string[];
 
-            return !memberIds.some((memberId) => blockedPeerIds.has(memberId));
-        });
+                return !memberIds.some((memberId) => blockedPeerIds.has(memberId));
+            })
+            .map((chat) => {
+                const memberships = Array.isArray(chat.conversation_members)
+                    ? chat.conversation_members
+                    : chat.conversation_members
+                      ? [chat.conversation_members]
+                      : [];
+                // The embed can include peer rows when aliased twice — keep only mine.
+                const myMembership = memberships.find((membership) => membership.id === userId.id);
+
+                return {
+                    ...chat,
+                    conversation_members: myMembership ? [myMembership] : [],
+                };
+            });
     }
 
     return [];
@@ -600,7 +744,7 @@ export async function chatNavigator(chatId: string, type: any) {
     if (is1v1) {
         console.log('navigating to private chat');
         router.push({
-            pathname: '/(tabs)/chat',
+            pathname: '/chat/[id]',
             params: { id: chatId },
         });
         return;
@@ -608,7 +752,7 @@ export async function chatNavigator(chatId: string, type: any) {
 
     console.log('navigating to group chat');
     router.push({
-        pathname: '/(tabs)/groupchat',
+        pathname: '/groupchat/[id]',
         params: { id: chatId },
     });
 }

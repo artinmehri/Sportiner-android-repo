@@ -9,6 +9,7 @@
  */
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { parseGameLinkChannel, type ParsedGameLinkChannel } from "./channel.ts";
 import {
   appStoreUrl,
   canonicalGameUrl,
@@ -45,19 +46,21 @@ Deno.serve(async (req) => {
 
   const publicId = extractPublicId(url);
   const shareCode = normalizeShareCode(url.searchParams.get("s") ?? url.searchParams.get("share_code"));
+  const channel = parseGameLinkChannel(url.searchParams.get("ch"));
 
   if (!publicId) {
     return htmlResponse(renderUnavailablePage(null), 404);
   }
 
   const resolved = await resolvePublicGame(publicId, shareCode);
-  void emitLandingViewed(req, publicId, resolved.state);
-  void emitGameLinkOpened(req, publicId);
+  void emitLandingViewed(req, publicId, resolved.state, channel, Boolean(shareCode));
+  void emitGameLinkOpened(req, publicId, channel, Boolean(shareCode));
 
   return htmlResponse(
     renderLandingPage({
       publicId,
       shareCode,
+      channel,
       state: resolved.state,
       title: resolved.title,
       parkName: resolved.parkName,
@@ -145,6 +148,9 @@ async function handleInstallPost(req: Request): Promise<Response> {
   const shareCode = normalizeShareCode(
     typeof body.share_code === "string" ? body.share_code : null,
   );
+  const channel = parseGameLinkChannel(
+    typeof body.ch === "string" ? body.ch : null,
+  );
   const country = typeof body.country === "string" ? body.country : null;
   const requestedMethod =
     typeof body.handoff_method === "string" ? body.handoff_method : null;
@@ -158,14 +164,15 @@ async function handleInstallPost(req: Request): Promise<Response> {
 
   // Re-validate live state — terminal games still get App Store, without restore claims.
   const resolved = await resolvePublicGame(publicId, shareCode);
+  const canonical = canonicalGameUrl(publicId, shareCode, channel?.code ?? null);
 
   if (requestedMethod === "copy_link") {
-    void emitAppStoreRedirect(req, publicId, "copy_link", shareCode);
+    void emitAppStoreRedirect(req, publicId, "copy_link", shareCode, channel);
     return Response.json(
       {
         ok: true,
         handoff_method: "copy_link",
-        canonical_url: canonicalGameUrl(publicId, shareCode),
+        canonical_url: canonical,
         joinable: isJoinableState(resolved.state),
       },
       { headers: { ...corsHeaders(req), "Content-Type": "application/json" } },
@@ -184,7 +191,7 @@ async function handleInstallPost(req: Request): Promise<Response> {
     country,
   });
 
-  void emitAppStoreRedirect(req, publicId, redirect.method, shareCode);
+  void emitAppStoreRedirect(req, publicId, redirect.method, shareCode, channel);
 
   return Response.json(
     {
@@ -193,7 +200,7 @@ async function handleInstallPost(req: Request): Promise<Response> {
       handoff_method: redirect.method,
       joinable: isJoinableState(resolved.state),
       message: installPromiseCopy(resolved.state, redirect.method === "deferred_provider"),
-      canonical_url: canonicalGameUrl(publicId, shareCode),
+      canonical_url: canonical,
       deferred_enabled: isDeferredWebHandoffEnabled(),
     },
     { headers: { ...corsHeaders(req), "Content-Type": "application/json" } },
@@ -210,10 +217,15 @@ function newAnonymousIds(): { event_id: string; anonymous_id: string } {
 async function postAnonymousEvent(
   eventName: string,
   properties: Record<string, unknown>,
-  shareCode?: string | null,
+  options?: {
+    shareCode?: string | null;
+    channel?: ParsedGameLinkChannel | null;
+  },
 ): Promise<void> {
   if (!SUPABASE_ANON_KEY || !PRODUCT_EVENT_URL) return;
   const ids = newAnonymousIds();
+  const channel = options?.channel ?? null;
+  const shareCode = options?.shareCode ?? null;
   try {
     await fetch(PRODUCT_EVENT_URL, {
       method: "POST",
@@ -226,8 +238,12 @@ async function postAnonymousEvent(
         event_id: ids.event_id,
         anonymous_id: ids.anonymous_id,
         platform: "web",
-        properties,
+        properties: {
+          ...properties,
+          ...(channel ? { channel_code: channel.code } : {}),
+        },
         ...(shareCode ? { share_code: shareCode } : {}),
+        ...(channel ? { channel_hint: channel.channel } : {}),
       }),
       signal: AbortSignal.timeout(1500),
     });
@@ -240,15 +256,27 @@ async function emitLandingViewed(
   req: Request,
   publicId: string,
   state: GameLandingState,
+  channel: ParsedGameLinkChannel | null,
+  shareCodePresent: boolean,
 ): Promise<void> {
   void req;
-  await postAnonymousEvent("shared_game_landing_viewed", {
-    game_public_id: publicId,
-    game_state: state,
-  });
+  await postAnonymousEvent(
+    "shared_game_landing_viewed",
+    {
+      game_public_id: publicId,
+      game_state: state,
+      share_code_present: shareCodePresent,
+    },
+    { channel },
+  );
 }
 
-async function emitGameLinkOpened(req: Request, publicId: string): Promise<void> {
+async function emitGameLinkOpened(
+  req: Request,
+  publicId: string,
+  channel: ParsedGameLinkChannel | null,
+  shareCodePresent: boolean,
+): Promise<void> {
   const referrerHost = (() => {
     const ref = req.headers.get("Referer") ?? req.headers.get("Referrer");
     if (!ref) return null;
@@ -258,11 +286,16 @@ async function emitGameLinkOpened(req: Request, publicId: string): Promise<void>
       return null;
     }
   })();
-  await postAnonymousEvent("game_link_opened", {
-    game_public_id: publicId,
-    entry_surface: "web_landing",
-    ...(referrerHost ? { referrer_host: referrerHost } : {}),
-  });
+  await postAnonymousEvent(
+    "game_link_opened",
+    {
+      game_public_id: publicId,
+      entry_surface: "web_landing",
+      share_code_present: shareCodePresent,
+      ...(referrerHost ? { referrer_host: referrerHost } : {}),
+    },
+    { channel },
+  );
 }
 
 async function emitAppStoreRedirect(
@@ -270,6 +303,7 @@ async function emitAppStoreRedirect(
   publicId: string,
   method: HandoffMethod,
   shareCode?: string | null,
+  channel?: ParsedGameLinkChannel | null,
 ): Promise<void> {
   void req;
   await postAnonymousEvent(
@@ -277,8 +311,9 @@ async function emitAppStoreRedirect(
     {
       game_public_id: publicId,
       handoff_method: method,
+      share_code_present: Boolean(shareCode),
     },
-    shareCode,
+    { shareCode, channel },
   );
 }
 
@@ -322,12 +357,14 @@ ${publicId ? `<p><a href="${escapeHtml(canonicalGameUrl(publicId, null))}">Try t
 function renderLandingPage(input: {
   publicId: string;
   shareCode: string | null;
+  channel: ParsedGameLinkChannel | null;
   state: GameLandingState;
   title: string | null;
   parkName: string | null;
   localWhen: string | null;
 }): string {
-  const canonical = canonicalGameUrl(input.publicId, input.shareCode);
+  const channelCode = input.channel?.code ?? null;
+  const canonical = canonicalGameUrl(input.publicId, input.shareCode, channelCode);
   const openHref = canonical;
   const store = appStoreUrl();
   const joinable = isJoinableState(input.state);
@@ -383,6 +420,7 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
 (function () {
   var publicId = ${JSON.stringify(input.publicId)};
   var shareCode = ${JSON.stringify(input.shareCode)};
+  var channelCode = ${JSON.stringify(channelCode)};
   var installPath = location.pathname.replace(/\\/?$/, "") + "/install";
   if (installPath.indexOf("/install") === -1) {
     installPath = "/functions/v1/game-landing/install";
@@ -395,6 +433,14 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
   var storeFallback = ${JSON.stringify(store)};
 
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg || ""; }
+  function installBody(extra) {
+    var body = { public_id: publicId, share_code: shareCode };
+    if (channelCode) body.ch = channelCode;
+    if (extra) {
+      for (var key in extra) body[key] = extra[key];
+    }
+    return JSON.stringify(body);
+  }
 
   getBtn.addEventListener("click", function () {
     getBtn.disabled = true;
@@ -402,7 +448,7 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
     fetch(installPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ public_id: publicId, share_code: shareCode }),
+      body: installBody(),
       keepalive: true
     }).then(function (r) { return r.json().catch(function () { return null; }); })
       .then(function (data) {
@@ -428,7 +474,7 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
     fetch(installPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ public_id: publicId, share_code: shareCode, handoff_method: "copy_link" }),
+      body: installBody({ handoff_method: "copy_link" }),
       keepalive: true
     }).catch(function () {});
   });

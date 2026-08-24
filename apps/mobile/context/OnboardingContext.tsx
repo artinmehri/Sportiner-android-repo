@@ -8,6 +8,10 @@ import {
   SUPABASE_BAD_HOST_HINT,
   SUPABASE_SETUP_HINT,
 } from '@/lib/supabase';
+import {
+  isUgcTextRejectedError,
+  UGC_TEXT_REJECTED_COPY,
+} from '@/lib/ugcModeration';
 
 const RATE_LIMIT_HINT =
   'Supabase is temporarily blocking more sign-up emails for this address. Wait a few minutes, or in Dashboard go to Authentication → Rate Limits and relax limits for development. You can also turn off “Confirm email” under Email provider to send fewer messages. If you already have an account, fixing your password and finishing again will use sign-in only (no new sign-up email).';
@@ -194,7 +198,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         {
           id: uid,
           name: displayName.trim(),
-          email: email.trim(),
           age_group: ageGroup,
           level: tennisLevel ?? 'Beginner',
           availability: schedule ?? {},
@@ -203,6 +206,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       );
 
       if (profileErr) {
+        if (isUgcTextRejectedError(profileErr)) {
+          return { error: UGC_TEXT_REJECTED_COPY.message };
+        }
         return { error: profileErr.message };
       }
 

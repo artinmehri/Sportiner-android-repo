@@ -41,9 +41,22 @@ export function normalizeShareCode(value: string | null | undefined): string | n
   return SHARE_CODE_RE.test(v) ? v : null;
 }
 
-export function canonicalGameUrl(publicId: string, shareCode: string | null): string {
-  const base = `https://sportiner.com/g/${publicId}`;
-  return shareCode ? `${base}?s=${encodeURIComponent(shareCode)}` : base;
+export function canonicalGameUrl(
+  publicId: string,
+  shareCode: string | null,
+  channelCode: string | null = null,
+): string {
+  const params = new URLSearchParams();
+  if (shareCode) {
+    params.set("s", shareCode);
+  }
+  if (channelCode) {
+    params.set("ch", channelCode);
+  }
+  const query = params.toString();
+  return query
+    ? `https://sportiner.com/g/${publicId}?${query}`
+    : `https://sportiner.com/g/${publicId}`;
 }
 
 /** Country-safe Apple URL; omit country for Apple’s locale negotiation. */

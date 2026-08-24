@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
@@ -15,60 +16,48 @@ import {
   Animated,
   Image,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
-import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming, useDerivedValue } from 'react-native-reanimated';
-import { blockUser, deleteMessage, editMessage, findOtherPlayer, getGameInfo, getMessages, markAsRead, replyMessage, sendMessage, submitModerationReport } from '@/context/ChatContext';
-import { getCurrentUserId, getUser, supabase } from '@/context/AuthContext';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { blockUser, deleteMessage, editMessage, findOtherPlayer, getGameInfo, markAsRead, replyMessage, sendMessage, submitModerationReport } from '@/context/ChatContext';
+import { getCurrentUserId, getUser } from '@/context/AuthContext';
 import { formatGameSubtitle, type GameRow } from '@/context/GameContext';
 import { useUnreadMessages } from '@/context/UnreadMessagesContext';
-import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 import ReportModal from '@/components/ReportModal';
 import ConversationStarters, {
   PRIVATE_CHAT_STARTERS,
 } from '@/components/ConversationStarters';
+import { useOnlinePresence } from '@/context/OnlinePresenceContext';
+import { useChatMessages } from '@/context/MessagesContext';
+import type { ChatMessage } from '@/lib/chatMessages';
+import {
+  ChatImageError,
+  newChatMessageId,
+  pickChatImage,
+  removeChatImage,
+  uploadChatImage,
+  type ChatImageAsset,
+} from '@/lib/chatImages';
+import {
+  isUgcTextRejectedError,
+  UGC_TEXT_REJECTED_COPY,
+} from '@/lib/ugcModeration';
 const { width, height } = Dimensions.get('window');
 
 const DEFAULT_AVATAR =
   'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80';
 
-type Message = {
-  id?: string;
-  sender_id: string;
-  message: string
-  image?: string;
-  type: string;
-  reply_to?: string;
-  is_reply?: boolean,
-  created_at?: Timestamp;
-  updated_at?: Timestamp;
-  is_edited?: boolean;
-  status?: string
-};
+type Message = ChatMessage;
 
-const mergeMessagesById = (...collections: Message[][]): Message[] => {
-  const messagesById = new Map<string, Message>();
-  const messagesWithoutId: Message[] = [];
-
-  collections.flat().forEach((message) => {
-    if (!message.id) {
-      messagesWithoutId.push(message);
-      return;
-    }
-
-    messagesById.set(message.id, {
-      ...messagesById.get(message.id),
-      ...message,
-    });
-  });
-
-  return [...messagesById.values(), ...messagesWithoutId].sort((left, right) =>
-    String(left.created_at ?? '').localeCompare(String(right.created_at ?? ''))
-  );
+type PendingPhoto = {
+  asset: ChatImageAsset;
+  messageId: string;
+  uploadedPath?: string;
 };
 
 type ReportTarget = {
@@ -91,6 +80,7 @@ const SwipeableMessage = ({ message, onReply, children }: SwipeableMessageProps)
 
   const panGesture = Gesture.Pan()
     .activeOffsetX(20)
+    .failOffsetY([-12, 12])
     .onUpdate((e) => {
       if (e.translationX >= 0) {
         translateX.value = e.translationX;
@@ -121,9 +111,23 @@ const copyToClipboard = async (message: any) => {
 
 
 const ChatScreen = () => {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, messageId: messageIdParam } = useLocalSearchParams<{
+    id: string;
+    messageId?: string;
+  }>();
+  const messageId = Array.isArray(messageIdParam) ? messageIdParam[0] : messageIdParam;
   const { refreshUnreadCount } = useUnreadMessages();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const refreshUnreadCountRef = useRef(refreshUnreadCount);
+  refreshUnreadCountRef.current = refreshUnreadCount;
+  const { isUserOnline } = useOnlinePresence();
+  const {
+    messages,
+    upsertMessages,
+    patchMessage,
+    dropMessage,
+    dropMessagesFromSender,
+  } = useChatMessages(id);
+  const [screenFocused, setScreenFocused] = useState(true);
   const [game, setGame] = useState<GameRow | null>(null);
   const [otherUserId, setOtherUserId] = useState('');
   const [name, setName] = useState('');
@@ -135,10 +139,17 @@ const ChatScreen = () => {
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [submittingReport, setSubmittingReport] = useState(false);
+  const otherUserOnline = isUserOnline(otherUserId);
+  const isNearBottomRef = useRef(true);
+  const scrolledToMessageIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    scrolledToMessageIdRef.current = null;
+  }, [id]);
 
   const markConversationRead = async (chatId: string) => {
     await markAsRead(chatId);
-    await refreshUnreadCount();
+    await refreshUnreadCountRef.current();
   };
 
 
@@ -180,51 +191,24 @@ const ChatScreen = () => {
     let cancelled = false;
 
     (async () => {
-      const [messages, currentUser, gameRows] = await Promise.all([
-        getMessages(id),
+      const [currentUser, gameRows] = await Promise.all([
         getCurrentUserId(),
         getGameInfo(id),
       ]);
 
+      if (cancelled) return;
       setCurrentUserId(currentUser?.id)
 
       const gameRow = gameRows?.[0] as GameRow | undefined;
-      if (!cancelled) {
-        console.log(gameRow)
-        setGame(gameRow ?? null);
-      }
+      setGame(gameRow ?? null);
 
       if (gameRow?.title && gameRow.id) {
         setGameTitle(gameRow?.title)
         setGameId(gameRow.id)
       }
 
-      if (messages) {
-        const fetchedMessages = messages.map((message: { id: any; sender_id: any; message: any; type: any; image: any; reply_to: any; is_reply: any; created_at: any; updated_at: any; is_edited: any; status: any; }) => {
-            return {
-              id: message.id,
-              sender_id: message.sender_id,
-              message: message.message,
-              type: message.type,
-              image: message.image,
-              reply_to: message.reply_to,
-              is_reply: message.is_reply,
-              created_at: message.created_at,
-              updated_at: message.updated_at,
-              is_edited: message.is_edited,
-              status: message.status
-            };
-          });
-
-        // The initial fetch and Realtime subscription can overlap. Merge them
-        // by database ID so a message is never rendered twice or dropped.
-        setMessages((current) => mergeMessagesById(fetchedMessages, current));
-      }
-
       // Mark read before peer profile lookups so unread never depends on them.
-      if (!cancelled && id) {
-        void markConversationRead(id);
-      }
+      void markConversationRead(id);
 
       const otherPlayerId = await findOtherPlayer(id);
       if (cancelled || !otherPlayerId) return;
@@ -237,39 +221,26 @@ const ChatScreen = () => {
       setAvatar(otherPlayer.profile_picture ?? DEFAULT_AVATAR);
     })();
 
-    // Subscribe to new messages in this chat
-    const subscription = supabase
-      .channel(`messages:${id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `chat_id=eq.${id}`
-      }, (payload) => {
-        if (cancelled) return;
-        const newMessage = payload.new as any;
-        setMessages(prev => mergeMessagesById(prev, [{
-          id: newMessage.id,
-          sender_id: newMessage.sender_id,
-          message: newMessage.message,
-          type: newMessage.type,
-          image: newMessage.image,
-          reply_to: newMessage.reply_to,
-          is_reply: newMessage.is_reply,
-          created_at: newMessage.created_at,
-          updated_at: newMessage.updated_at,
-          is_edited: newMessage.is_edited,
-          status: newMessage.status
-        }]));
-        void markConversationRead(id);
-      })
-      .subscribe();
-
     return () => {
       cancelled = true;
-      subscription.unsubscribe();
     };
-  }, [id, refreshUnreadCount]);
+  }, [id]);
+
+  // History and live updates come from the shared store, so mark read whenever
+  // this conversation's cached list grows. Gated on focus: pushing a second
+  // conversation on top leaves this one mounted, and it must not swallow the
+  // unread badge for messages the user never actually looked at.
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => setScreenFocused(false);
+    }, [])
+  );
+
+  useEffect(() => {
+    if (!id || !screenFocused || messages.length === 0) return;
+    void markConversationRead(id);
+  }, [id, messages.length, screenFocused]);
 
 
   const navigateToProfile = () => {
@@ -284,6 +255,10 @@ const ChatScreen = () => {
   const [replyInfo, setReplyInfo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<PendingPhoto | null>(null);
+  const [failedPhotoId, setFailedPhotoId] = useState<string | null>(null);
+  const pendingPhotoRef = useRef<PendingPhoto | null>(null);
   const [showContextMenu, setShowContextMenu] = useState({
     visible: false,
     message: null as Message | null,
@@ -291,6 +266,7 @@ const ChatScreen = () => {
   });
   const [showFullScreenImage, setShowFullScreenImage] = useState(false);
   const [showImage, setShowImage] = useState<string | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
@@ -298,7 +274,7 @@ const ChatScreen = () => {
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const hasConversationMessages = messages.length > 0;
-  const showConversationStarters = !editingMessage && !isReplying;
+  const showConversationStarters = !editingMessage && !isReplying && !keyboardVisible;
 
   const applySuggestion = (text: string) => {
     setInputText(text);
@@ -314,23 +290,213 @@ const ChatScreen = () => {
     setIsReplying(false);
   };
 
-  const scrollComposerToEnd = () => {
-    setTimeout(() => {
+  const setPhotoDraft = (photo: PendingPhoto | null) => {
+    pendingPhotoRef.current = photo;
+    setPendingPhoto(photo);
+  };
+
+  const clearPhotoDraft = () => setPhotoDraft(null);
+
+  const restoreComposerAfterFailedSend = (text: string, replyingTo: Message | null) => {
+    setInputText(text);
+    if (replyingTo) {
+      setReplyInfo(replyingTo);
+      setIsReplying(true);
+    }
+  };
+
+  const hasPendingMessageScroll =
+    Boolean(messageId) && scrolledToMessageIdRef.current !== messageId;
+
+  const scrollComposerToEnd = (force = false) => {
+    if (!force && !isNearBottomRef.current) {
+      return;
+    }
+    if (!force && hasPendingMessageScroll) {
+      return;
+    }
+    requestAnimationFrame(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    });
+  };
+
+  const scrollComposerToEndRef = useRef(scrollComposerToEnd);
+  scrollComposerToEndRef.current = scrollComposerToEnd;
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        scrollComposerToEndRef.current(false);
+      }
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showContextMenu.visible) {
+      return;
+    }
+    slideAnim.setValue(0);
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [showContextMenu.visible, slideAnim]);
+
+  useEffect(() => {
+    if (!messageId || messages.length === 0) {
+      return;
+    }
+
+    if (scrolledToMessageIdRef.current === messageId) {
+      return;
+    }
+
+    const messageIndex = messages.findIndex(
+      (message) => message.id === messageId
+    );
+
+    if (messageIndex === -1) {
+      return;
+    }
+
+    isNearBottomRef.current = false;
+    scrolledToMessageIdRef.current = messageId;
+
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToIndex({
+        index: messageIndex,
+        animated: true,
+        viewPosition: 0.5,
+      });
+    });
+  }, [messageId, messages]);
+
+  const handleMessagesScroll = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      contentSize: { height: number };
+      layoutMeasurement: { height: number };
+    };
+  }) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - contentOffset.y - layoutMeasurement.height;
+    isNearBottomRef.current = distanceFromBottom < 140;
+  };
+
+  const handleSendPhoto = async (pending: PendingPhoto) => {
+    if (!id || !currentUserId || isSending) return;
+
+    const optimisticMessage: Message = {
+      id: pending.messageId,
+      chat_id: id,
+      sender_id: currentUserId,
+      message: 'Photo',
+      type: 'image',
+      imageUrl: pending.asset.uri,
+      created_at: new Date().toISOString(),
+      status: 'uploading',
+    };
+
+    setIsSending(true);
+    setIsUploadingImage(true);
+    setPendingPhoto(null);
+    upsertMessages([optimisticMessage]);
+    scrollComposerToEnd(true);
+
+    try {
+      let uploadedPath = pending.uploadedPath;
+      if (!uploadedPath) {
+        const uploaded = await uploadChatImage(id, pending.messageId, pending.asset);
+        uploadedPath = uploaded.path;
+        pendingPhotoRef.current = { ...pending, uploadedPath };
+      }
+
+      const savedMessage = await sendMessage('Photo', 'image', id, uploadedPath, pending.messageId);
+      if (!savedMessage) throw new ChatImageError('upload');
+
+      patchMessage(pending.messageId, {
+        ...savedMessage,
+        status: 'sent',
+      });
+      setFailedPhotoId(null);
+      clearPhotoDraft();
+      void markConversationRead(id);
+    } catch {
+      setFailedPhotoId(pending.messageId);
+      patchMessage(pending.messageId, {
+        status: 'failed',
+        imageUrl: pending.asset.uri,
+      });
+      Alert.alert('Photo failed to send', 'Tap Retry on the photo to try again.');
+    } finally {
+      setIsUploadingImage(false);
+      setIsSending(false);
+    }
+  };
+
+  const handleRetryPhoto = () => {
+    const pending = pendingPhotoRef.current;
+    if (!pending) {
+      Alert.alert('Photo unavailable', 'Please choose the photo again.');
+      return;
+    }
+    void handleSendPhoto(pending);
+  };
+
+  const handleRemoveFailedPhoto = async (messageId: string) => {
+    const pending = pendingPhotoRef.current;
+    if (pending?.messageId !== messageId) {
+      if (failedPhotoId === messageId) setFailedPhotoId(null);
+      dropMessage(messageId);
+      return;
+    }
+
+    try {
+      if (pending.uploadedPath) await removeChatImage(pending.uploadedPath);
+    } catch {
+      Alert.alert('Could not remove photo', 'Please try again.');
+      return;
+    }
+
+    clearPhotoDraft();
+    setFailedPhotoId(null);
+    dropMessage(messageId);
   };
 
   const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || isSending) {
+    if (isSending) return;
+
+    const pending = pendingPhotoRef.current;
+    if (pending && !editingMessage && !isReplying) {
+      await handleSendPhoto(pending);
       return;
     }
+
+    const text = inputText.trim();
+    if (!text) return;
 
     const editing = editingMessage;
     const replyingTo = isReplying ? replyInfo : null;
 
-    // Clear edit/reply chrome immediately so the composer never gets stuck open.
-    clearComposer();
+    // Clear the composer immediately so the next message can be typed.
+    if (!editing) {
+      clearComposer();
+      isNearBottomRef.current = true;
+      scrollComposerToEnd(true);
+    }
+
     setIsSending(true);
 
     try {
@@ -340,52 +506,102 @@ const ChatScreen = () => {
           return;
         }
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === editing.id
-              ? { ...msg, message: text, is_edited: true }
-              : msg
-          )
-        );
-        await editMessage(editing.id, text);
+        const savedEdit = await editMessage(editing.id, text);
+        if (!savedEdit) {
+          Alert.alert('Could not edit message', 'Your original message was not changed. Please try again.');
+          return;
+        }
+
+        patchMessage(editing.id, {
+          message: savedEdit.message ?? text,
+          is_edited: true,
+        });
+        clearComposer();
         inputRef.current?.blur();
         return;
       }
 
       if (replyingTo) {
         if (!replyingTo.id || !id) {
+          restoreComposerAfterFailedSend(text, replyingTo);
           Alert.alert('Could not send reply', 'Please try again in a moment.');
           return;
         }
 
         const savedReply = await replyMessage(replyingTo.id, 'text', text, id);
         if (!savedReply) {
+          restoreComposerAfterFailedSend(text, replyingTo);
           Alert.alert('Could not send reply', 'Please try again.');
           return;
         }
 
-        setMessages((prev) => mergeMessagesById(prev, [savedReply]));
-        scrollComposerToEnd();
+        upsertMessages([savedReply]);
+        scrollComposerToEnd(true);
+        if (id) {
+          void markConversationRead(id);
+        }
         return;
       }
 
       if (!id) {
+        setInputText(text);
         return;
       }
 
       const savedMessage = await sendMessage(text, 'text', id);
       if (!savedMessage) {
+        setInputText(text);
         Alert.alert('Could not send message', 'Please try again.');
         return;
       }
 
-      setMessages((prev) => mergeMessagesById(prev, [savedMessage]));
-      scrollComposerToEnd();
+      upsertMessages([savedMessage]);
+      scrollComposerToEnd(true);
+      void markConversationRead(id);
     } catch (error) {
       console.log('handleSend error', error);
+      restoreComposerAfterFailedSend(text, editing ? null : replyingTo);
+      if (isUgcTextRejectedError(error)) {
+        Alert.alert(UGC_TEXT_REJECTED_COPY.title, UGC_TEXT_REJECTED_COPY.message);
+        return;
+      }
       Alert.alert('Could not send', 'Please try again.');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handlePickImage = async () => {
+    if (!id || isSending || pendingPhotoRef.current || failedPhotoId || editingMessage || isReplying) return;
+
+    try {
+      const asset = await pickChatImage();
+      if (!asset) return;
+      setPhotoDraft({ asset, messageId: newChatMessageId() });
+    } catch (error) {
+      const code = error instanceof ChatImageError ? error.code : 'upload';
+      if (code === 'permission') {
+        Alert.alert(
+          'Photo access is off',
+          'To share photos in chat, allow photo access for Sportiner in Settings.',
+        );
+      } else if (code === 'too-large') {
+        Alert.alert(
+          'Photo too large',
+          'This photo is still too large to upload after processing. Try a smaller image.',
+        );
+      } else if (code === 'invalid') {
+        Alert.alert('Couldn\'t use photo', 'We couldn\'t read this photo. Try choosing another image.');
+      } else if (code === 'processing') {
+        Alert.alert(
+          'Couldn\'t process photo',
+          'We couldn\'t prepare this photo for upload. Please try another photo.',
+        );
+      } else if (code === 'not-authenticated') {
+        Alert.alert('Could not send photo', 'Please sign in again and try again.');
+      } else {
+        Alert.alert('Couldn\'t upload photo', 'Check your connection and try again.');
+      }
     }
   };
 
@@ -398,7 +614,6 @@ const ChatScreen = () => {
     setEditingMessage(null);
     setReplyInfo(message);
     setIsReplying(true);
-    setInputText('');
     requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
@@ -451,8 +666,9 @@ const ChatScreen = () => {
     setSubmittingReport(true);
     const success = await submitModerationReport({
       reportedUserId: reportTarget.reportedUserId,
-      reportedPostId: reportTarget.reportedMessageId,
+      reportedMessageId: reportTarget.reportedMessageId,
       reason,
+      details,
     });
     setSubmittingReport(false);
 
@@ -489,7 +705,7 @@ const ChatScreen = () => {
               return;
             }
 
-            setMessages((current) => current.filter((message) => message.sender_id !== blockedUserId));
+            dropMessagesFromSender(blockedUserId);
             Alert.alert('User Blocked', 'You have successfully blocked this user.');
           },
         },
@@ -512,6 +728,15 @@ const ChatScreen = () => {
     router.push({ pathname: '/(tabs)/EventDetails', params: {id: gameId} })
   }
 
+  const handleHeaderNavigation = () => {
+    if (gameId) {
+      handleGameNavigation();
+      return;
+    }
+
+    navigateToProfile();
+  };
+
   
   const navigation = useNavigation();
 
@@ -526,20 +751,32 @@ const ChatScreen = () => {
           <Ionicons name="chevron-back" size={28} color="#111" />
         </TouchableOpacity>
 
-        { game &&
-        <TouchableOpacity onPress={() => handleGameNavigation()}>
-          <Image source={{ uri: game.image ?? undefined }} style={styles.avatar} />
+        <TouchableOpacity onPress={handleHeaderNavigation}>
+          <Image
+            source={{ uri: game?.image || avatar || DEFAULT_AVATAR }}
+            style={styles.avatar}
+          />
         </TouchableOpacity>
-        }
 
-        <TouchableOpacity onPress={() => handleGameNavigation()} style={styles.contactInfo}>
+        <TouchableOpacity onPress={handleHeaderNavigation} style={styles.contactInfo}>
           <View style={styles.contactNameRow}>
-            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactName}>{gameTitle}</Text>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactName}>
+              {gameTitle || name || 'Chat'}
+            </Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
-          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactSubtitle}>
-            {formatGameSubtitle(game)}
-          </Text>
+          <View style={styles.contactMetaRow}>
+            <View
+              accessibilityLabel={otherUserOnline ? 'User is online' : 'User is offline'}
+              style={[styles.presenceDot, !otherUserOnline && styles.presenceDotOffline]}
+            />
+            <Text style={styles.presenceText}>{otherUserOnline ? 'Online' : 'Offline'}</Text>
+            {game && (
+              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactSubtitle}>
+                {formatGameSubtitle(game)}
+              </Text>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
       <TouchableOpacity
@@ -611,20 +848,40 @@ const ChatScreen = () => {
                 </Text>
               </View>
             )}
-            {item.type === 'image' && (
-              <TouchableOpacity
-                onPress={() => {
-                  if (item.type === 'image' && item.image) {
-                    setShowImage(item.image);
+            {item.imageUrl && (
+              <View style={styles.imageMessageContainer}>
+                <TouchableOpacity
+                  disabled={item.status === 'uploading'}
+                  onLongPress={(e) => handleLongPress(item, e)}
+                  onPress={() => {
+                    setShowImage(item.imageUrl ?? null);
                     setShowFullScreenImage(true);
-                  }
-                }}
-              >
-                <Image source={{ uri: item.image }} style={styles.messageImage} />
-              </TouchableOpacity>
+                  }}
+                >
+                  <Image source={{ uri: item.imageUrl }} style={styles.messageImage} resizeMode="contain" />
+                  {item.status === 'uploading' ? (
+                    <View style={styles.imageStatusOverlay}>
+                      <ActivityIndicator color="#FFFFFF" />
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+                {item.status === 'failed' ? (
+                  <View style={styles.failedPhotoContainer}>
+                    <Text style={styles.failedPhotoText}>Failed to send</Text>
+                    <View style={styles.failedPhotoActions}>
+                      <TouchableOpacity onPress={handleRetryPhoto}>
+                        <Text style={styles.failedPhotoActionText}>Retry</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => void handleRemoveFailedPhoto(item.id ?? '')}>
+                        <Text style={styles.failedPhotoActionText}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
             )}
 
-            {item.type === 'text' ? (
+            {!item.image && item.type === 'text' ? (
               <Text style={[styles.messageText, isMe && styles.sentMessageText]}>{item.message}</Text>
             ) : null}
 
@@ -638,20 +895,12 @@ const ChatScreen = () => {
     );
   };
 
-  let inputStyling;
-  if (inputText) {
-    inputStyling = styles.inputPill;
-  } else {
-    inputStyling = styles.simpleInputPill
-  }
- 
-
   const renderReplyPreview = () => {
     if (!replyInfo) return null;
     
     return (
       <View style={styles.replyPreview}>
-        {replyInfo.image ?     
+        {replyInfo.imageUrl ?     
         <View style={styles.replyWrapper}>
           <View>
             <Text style={styles.replySender}>
@@ -660,7 +909,7 @@ const ChatScreen = () => {
                   Photo
               </Text>
             </View>
-            <Image source={{ uri: replyInfo.image}} style={styles.replyImage}/>
+            <Image source={{ uri: replyInfo.imageUrl}} style={styles.replyImage}/>
           </View>
         :     
         <><Text style={styles.replySender}>
@@ -682,7 +931,7 @@ const ChatScreen = () => {
   };
 
   const renderInput = () => (
-    <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.inputContainer, { paddingBottom: keyboardVisible ? 8 : insets.bottom }]}>
       {editingMessage ? (
         <View style={styles.editHeader}>
           <Text style={styles.editHeaderText}>Editing message</Text>
@@ -697,6 +946,29 @@ const ChatScreen = () => {
 
       {!editingMessage ? renderReplyPreview() : null}
 
+      {pendingPhoto ? (
+        <View style={styles.mediaPreview}>
+          <View style={styles.imagePreview}>
+            <Image source={{ uri: pendingPhoto.asset.uri }} style={styles.mediaThumbnail} />
+            <TouchableOpacity
+              style={styles.removeMediaButton}
+              onPress={clearPhotoDraft}
+              accessibilityRole="button"
+              accessibilityLabel="Remove selected photo"
+            >
+              <Ionicons name="close" size={14} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {isUploadingImage ? (
+        <View style={styles.uploadingImageStatus}>
+          <ActivityIndicator size="small" color="#22C55E" />
+          <Text style={styles.uploadingImageText}>Uploading photo...</Text>
+        </View>
+      ) : null}
+
       {showConversationStarters ? (
         <ConversationStarters
           suggestions={PRIVATE_CHAT_STARTERS}
@@ -707,25 +979,43 @@ const ChatScreen = () => {
 
     
       <View style={styles.simpleComposerPill}>
-        <View style={inputStyling}>
+        <View style={styles.inputPill}>
+
+            {!editingMessage && !isReplying ? (
+              <TouchableOpacity
+                style={styles.composerIconButton}
+                onPress={() => void handlePickImage()}
+                disabled={isSending || Boolean(pendingPhoto) || Boolean(failedPhotoId)}
+                accessibilityRole="button"
+                accessibilityLabel="Choose a photo"
+              >
+                {isUploadingImage ? (
+                  <ActivityIndicator size="small" color="#22C55E" />
+                ) : (
+                  <Ionicons name="image-outline" size={22} color="#22C55E" />
+                )}
+              </TouchableOpacity>
+            ) : null}
 
             <TextInput
               ref={inputRef}
               style={styles.composerInput}
               value={inputText}
               onChangeText={setInputText}
+              onContentSizeChange={() => scrollComposerToEnd(false)}
               placeholder={editingMessage ? 'Edit message...' : isReplying ? 'Write a reply...' : 'Type...'}
               placeholderTextColor="#6B7280"
-              multiline={false}
-              editable={!isSending}
+              multiline
+              blurOnSubmit={false}
+              returnKeyType="default"
             />
-            {inputText.trim() ? (
+            {inputText.trim() || pendingPhoto ? (
                       <TouchableOpacity
                         style={styles.sendButton}
                         onPress={() => void handleSend()}
-                        disabled={isSending || !inputText.trim()}
+                        disabled={isSending}
                       >
-                        <Ionicons name="send" size={22} color="#22C55E" />
+                        <Ionicons name="send" size={22} color={isSending ? '#86EFAC' : '#22C55E'} />
                       </TouchableOpacity>
                    ) : null}
             </View>
@@ -735,14 +1025,7 @@ const ChatScreen = () => {
 
   const renderContextMenu = () => {
     if (!showContextMenu.visible || !showContextMenu.message) return null;
-    
-  
-    Animated.timing(slideAnim, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-    
+
     const message = showContextMenu.message;
     const isOwnMessage = message.sender_id === currentUserId;
     const menuItems = [
@@ -797,7 +1080,7 @@ const ChatScreen = () => {
                                 if (message.id) {
                                   const deleted = await deleteMessage(message.id);
                                   if (deleted) {
-                                    setMessages(prev => prev.filter(m => m.id !== message.id));
+                                    dropMessage(message.id);
                                   } else {
                                     Alert.alert('Could not delete message', 'Please try again.');
                                   }
@@ -840,10 +1123,9 @@ const ChatScreen = () => {
       
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <TouchableWithoutFeedback onPress={closeContextMenu}>
           <FlatList
             ref={flatListRef}
             data={messages}
@@ -851,22 +1133,33 @@ const ChatScreen = () => {
             keyExtractor={(item, index) => item.id || `message-${index}`}
             contentContainerStyle={[
               styles.messagesContainer,
-              { paddingBottom: 80 + (replyInfo || editingMessage ? 60 : 0) + insets.bottom },
+              { paddingBottom: 24 + (replyInfo || editingMessage ? 56 : 0) },
             ]}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
+            onScroll={handleMessagesScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => scrollComposerToEnd(false)}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              flatListRef.current?.scrollToOffset({
+                offset: Math.max(0, averageItemLength * index),
+                animated: false,
+              });
+              requestAnimationFrame(() => {
+                flatListRef.current?.scrollToIndex({
+                  index,
+                  animated: true,
+                  viewPosition: 0.5,
+                });
+              });
+            }}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={closeContextMenu}
+            removeClippedSubviews={false}
+            maxToRenderPerBatch={12}
             updateCellsBatchingPeriod={50}
-            initialNumToRender={15}
-            windowSize={10}
-            getItemLayout={(data, index) => ({
-              length: 80, 
-              offset: 80 * index,
-              index,
-            })}
+            initialNumToRender={20}
+            windowSize={12}
           />
-        </TouchableWithoutFeedback>
         
         {renderInput()}
         {renderContextMenu()}
@@ -1002,9 +1295,31 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   contactSubtitle: {
+    flex: 1,
     color: '#6B7280',
     fontSize: 12,
+  },
+  contactMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
     marginTop: 2,
+    gap: 5,
+  },
+  presenceDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#16A34A',
+    flexShrink: 0,
+  },
+  presenceDotOffline: {
+    backgroundColor: '#9CA3AF',
+  },
+  presenceText: {
+    color: '#4B5563',
+    fontSize: 12,
+    flexShrink: 0,
   },
   messagesContainer: {
     paddingHorizontal: 14,
@@ -1048,6 +1363,35 @@ const styles = StyleSheet.create({
     height: 300,
     borderRadius: 8,
     marginBottom: 4,
+  },
+  imageMessageContainer: {
+    position: 'relative',
+  },
+  imageStatusOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
+  },
+  failedPhotoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingTop: 4,
+  },
+  failedPhotoText: {
+    color: '#B91C1C',
+    fontSize: 12,
+  },
+  failedPhotoActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  failedPhotoActionText: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '600',
   },
   videoContainer: {
     position: 'relative',
@@ -1242,6 +1586,17 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingHorizontal: 14,
   },
+  uploadingImageStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  uploadingImageText: {
+    color: '#4B5563',
+    fontSize: 13,
+  },
   composerPill: {
     flexDirection: 'column',
     alignItems: 'center',
@@ -1258,7 +1613,9 @@ const styles = StyleSheet.create({
     borderColor: '#D1D5DB',
     borderRadius: 24,
     paddingHorizontal: 12,
-    height: 40,
+    minHeight: 40,
+    maxHeight: 112,
+    paddingVertical: 4,
   },
   simpleInputPill: {
     flexDirection: 'row',
@@ -1273,18 +1630,21 @@ const styles = StyleSheet.create({
   },
   inputPill: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 4,
-    marginTop: 0.5
+    width: '100%',
   },
   composerIconButton: {
     paddingRight: 10,
+    paddingBottom: 6,
   },
   composerInput: {
     flex: 1,
     fontSize: 16,
     color: '#111',
-    paddingVertical: 0,
+    paddingTop: 6,
+    paddingBottom: 6,
+    maxHeight: 96,
   },
   sendButton: {
     marginTop: 1,
@@ -1300,7 +1660,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     paddingVertical: 8,
     paddingHorizontal: 12,
-    marginHorizontal: 14,
     marginBottom: 8,
     borderRadius: 8,
     borderLeftWidth: 3,
@@ -1429,4 +1788,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ChatScreen
+export default ChatScreen;

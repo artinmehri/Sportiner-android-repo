@@ -49,6 +49,7 @@ export default function GameConfirmation() {
   const params = useLocalSearchParams<{
     id?: string | string[];
     title?: string | string[];
+    gameType?: string | string[];
     date?: string | string[];
     location_name?: string | string[];
     level?: string | string[];
@@ -60,9 +61,13 @@ export default function GameConfirmation() {
   const gameId = paramValue(params.id);
   const publicId = paramValue(params.publicId);
   const title = paramValue(params.title) || 'Your game';
+  const gameTypeParam = paramValue(params.gameType);
+  const gameType = gameTypeParam === '1v1' || gameTypeParam === 'Group' ? gameTypeParam : null;
   const dateIso = paramValue(params.date);
-  const locationName = paramValue(params.location_name) || 'Tennis court';
-  const level = paramValue(params.level) || 'Intermediate';
+  const shareLocation = paramValue(params.location_name);
+  const shareLevel = paramValue(params.level);
+  const locationName = shareLocation || 'Tennis court';
+  const level = shareLevel || 'Intermediate';
   const capacity = Number(paramValue(params.capacity) || '4') || 4;
   const playersEnrolled = Number(paramValue(params.players_enrolled) || '1') || 1;
 
@@ -139,13 +144,21 @@ export default function GameConfirmation() {
 
   const handleInvitePlayers = async () => {
     try {
+      if (!gameType) {
+        Alert.alert('Game link unavailable', 'This game is missing its game type. Please open the game and try again.');
+        return;
+      }
+
       const shared = await shareGame(
         {
           publicId,
           title,
-          time: scheduleLabel,
-          location: locationName,
-          level,
+          gameType,
+          startsAt: dateIso,
+          location: shareLocation,
+          level: shareLevel,
+          capacity,
+          playersEnrolled,
         },
         'creation_success',
       );

@@ -46,6 +46,8 @@
 	<string>12.0</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -62,7 +64,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Sportiner uses your location to show nearby tennis games and courts when you choose to use nearby discovery.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Sportiner uses your photo library when you choose a profile photo.</string>
+	<string>Allow Sportiner to access photos you choose for your profile or to share with other players in private and group chats.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Sportiner uses reminders access only when you choose to save a reminder for a tennis game.</string>
 	<key>NSRemindersUsageDescription</key>

@@ -1,9 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { getCurrentUserId } from '@/context/AuthContext';
 import { useAuth, getBlockedUserIds } from '@/context/AuthContext';
 import {
   createGameRow,
   fetchAllGameRows,
+  fetchGameRowById,
   fetchGameRowsForHost,
   fetchHostProfiles,
   fetchPastGamesForUser,
@@ -29,8 +30,10 @@ import {
   type UserRow,
 } from '@/lib/gamesDb';
 import { parseGameMeta } from '@/lib/gameMeta';
+import { isUpcomingGameTime } from '@/lib/gameTime';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { refreshLatestLocation } from '@/lib/latestLocation';
+import { isUgcTextRejectedError } from '@/lib/ugcModeration';
 
 export type { JoinResult, GameRow };
 
@@ -99,6 +102,7 @@ interface GameContextType {
   error: string | null;
   refreshGames: () => Promise<void>;
   getGameById: (id: string) => Game | undefined;
+  ensureGameById: (id: string) => Promise<Game | undefined>;
   getAllGames: () => Promise<Game[]>;
   getMyGames: () => Promise<Game[]>;
   getMyPlayingGames: () => Promise<Game[]>;
@@ -131,18 +135,14 @@ export function getDistanceKm(from: GeoCoords, to: GeoCoords): number {
   return R * c;
 }
 
-function getCutoffTime(): Date {
-  return new Date(Date.now() + 2 * 60 * 60 * 1000);
+function isPastGame(gameTime: string, now: Date = new Date()): boolean {
+  if (!gameTime) return false;
+  const parsed = Date.parse(gameTime);
+  return Number.isFinite(parsed) && parsed < now.getTime();
 }
 
-function isPastGame(gameTime: string): boolean {
-  if (!gameTime) return false;
-  return new Date(gameTime) < getCutoffTime();
-}
-
-function isUpcomingGame(gameTime: string): boolean {
-  if (!gameTime) return false;
-  return new Date(gameTime) >= getCutoffTime();
+function isUpcomingGame(gameTime: string, now: Date = new Date()): boolean {
+  return isUpcomingGameTime(gameTime, now);
 }
 
 
@@ -327,6 +327,7 @@ export async function addGame(
     }).select().single();
 
     if (error) {
+      if (isUgcTextRejectedError(error)) throw error;
       console.log('error while adding game to the database');
       console.log(error.message);
       return null;
@@ -418,6 +419,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [pendingGameIds, setPendingGameIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const gamesRef = useRef<Game[]>([]);
+  gamesRef.current = games;
 
   const refreshMembership = useCallback(async () => {
     if (!isSupabaseConfigured || !authUserId) {
@@ -461,6 +464,50 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const getGameById = useCallback(
     (id: string) => games.find((game) => game.id === id),
     [games]
+  );
+
+  const ensureGameById = useCallback(
+    async (id: string): Promise<Game | undefined> => {
+      const normalizedId = id.trim();
+      if (!normalizedId) {
+        return undefined;
+      }
+
+      // Read from ref so this callback stays stable across browse-list refreshes.
+      const existing = gamesRef.current.find((game) => game.id === normalizedId);
+      if (existing) {
+        return existing;
+      }
+
+      if (!isSupabaseConfigured) {
+        return undefined;
+      }
+
+      const row = await fetchGameRowById(normalizedId);
+      if (!row) {
+        return undefined;
+      }
+
+      const [mapped] = await mapRowsToGames([row]);
+      if (!mapped) {
+        return undefined;
+      }
+
+      const blockedUserIds = await getBlockedUserIds();
+      if (blockedUserIds.includes(mapped.hostId)) {
+        return undefined;
+      }
+
+      setGames((current) => {
+        if (current.some((game) => game.id === mapped.id)) {
+          return current;
+        }
+        return [...current, mapped];
+      });
+
+      return mapped;
+    },
+    []
   );
 
   const getAllGames = useCallback(async (): Promise<Game[]> => {
@@ -652,6 +699,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         error,
         refreshGames,
         getGameById,
+        ensureGameById,
         getAllGames,
         getMyGames,
         getMyPlayingGames,

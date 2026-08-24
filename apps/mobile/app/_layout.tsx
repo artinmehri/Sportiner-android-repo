@@ -1,14 +1,24 @@
 import 'react-native-reanimated';
 import { useEffect, useState, useRef } from 'react';
-import { Linking } from 'react-native';
-import { isOnboarding, isPasswordRecovery, supabase } from '@/context/AuthContext';
-import { Slot, useRouter } from 'expo-router';
+import { Alert, Linking, Platform } from 'react-native';
+import * as Application from 'expo-application';
+import {
+    getOnboardingStatus,
+    onboardingStatusToStep,
+    isOnboarding,
+    isPasswordRecovery,
+    supabase,
+} from '@/context/AuthContext';
+import { Stack, useRouter } from 'expo-router';
 import type { Session } from '@supabase/supabase-js';
 import { GameTicketsProvider } from '@/context/GameTicketsContext';
 import { GameProvider } from '@/context/GameContext';
 import { LatestLocationProvider } from '@/context/LatestLocationContext';
 import { NotificationProvider } from '@/context/NotificationContext';
 import { UnreadMessagesProvider } from '@/context/UnreadMessagesContext';
+import { MessagesProvider } from '@/context/MessagesContext';
+import { HostedGameJoinsProvider } from '@/context/HostedGameJoinsContext';
+import { OnlinePresenceProvider } from '@/context/OnlinePresenceContext';
 import * as SplashScreen from 'expo-splash-screen';
 import {
     hasCurrentLocalTermsAcceptance,
@@ -16,12 +26,23 @@ import {
     persistTermsAcceptanceForUser,
     userHasAcceptedCurrentTerms,
 } from '@/lib/termsAcceptance';
+import { inboundDeepLinkPath, resolveStartupRoute } from '@/lib/startupDeepLink';
+import { isAppUpdateAvailable, shouldStartUpdateCheck } from '@/lib/appUpdate';
+import { APP_STORE_URL } from '@/constants/appStore';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const STARTUP_STEP_TIMEOUT_MS = 5_000;
 const STARTUP_FALLBACK_TIMEOUT_MS = 8_000;
-type InitialRoute = 'agreement-signup' | 'agreement-tabs' | 'signup' | 'tabs' | 'password-reset';
+type InitialRoute =
+    | 'agreement-signup'
+    | 'agreement-tabs'
+    | 'agreement-onboarding'
+    | 'signup'
+    | 'onboarding'
+    | 'tabs'
+    | 'password-reset'
+    | 'game-link';
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T | null> {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -134,20 +155,47 @@ export default function RootLayout() {
     const [initialRoute, setInitialRoute] = useState<InitialRoute | null>(null);
     const [initialNavigationComplete, setInitialNavigationComplete] = useState(false);
     const [authUserId, setAuthUserId] = useState<string | null>(null);
+    const [onboardingStep, setOnboardingStep] = useState(1);
     const router = useRouter();
+    const routerRef = useRef(router);
+    routerRef.current = router;
     const splashHidden = useRef(false);
+    const startupHasGameLink = useRef(false);
+    const pendingGameLinkPath = useRef<string | null>(null);
+    const updateCheckStarted = useRef(false);
 
     useEffect(() => {
         let isMounted = true;
         let startupFallback: ReturnType<typeof setTimeout> | undefined;
 
-        const chooseInitialRoute = (route: InitialRoute) => {
-            if (isMounted) {
-                if (startupFallback) {
-                    clearTimeout(startupFallback);
-                }
-                setInitialRoute((currentRoute) => currentRoute ?? route);
+        const rememberGameLink = (url: string | null): string | null => {
+            const path = inboundDeepLinkPath(url);
+            if (!path) {
+                return null;
             }
+
+            pendingGameLinkPath.current = path;
+            startupHasGameLink.current = true;
+            return path;
+        };
+
+        const chooseInitialRoute = (route: InitialRoute) => {
+            if (!isMounted) {
+                return;
+            }
+
+            if (startupFallback) {
+                clearTimeout(startupFallback);
+            }
+
+            setInitialRoute((currentRoute) =>
+                resolveStartupRoute(route, currentRoute, startupHasGameLink.current),
+            );
+        };
+
+        const chooseOnboardingRoute = (status: string | null | undefined) => {
+            setOnboardingStep(onboardingStatusToStep(status));
+            chooseInitialRoute('onboarding');
         };
 
         startupFallback = setTimeout(() => {
@@ -161,6 +209,7 @@ export default function RootLayout() {
                     Linking.getInitialURL(),
                     STARTUP_STEP_TIMEOUT_MS,
                 );
+                rememberGameLink(initialUrl);
 
                 if (isPasswordResetUrl(initialUrl)) {
                     isPasswordRecovery.current = true;
@@ -194,13 +243,34 @@ export default function RootLayout() {
                 if (!session) {
                     setAuthUserId(null);
                     const hasSeenTerms = await hasCurrentLocalTermsAcceptance();
-                    chooseInitialRoute(hasSeenTerms ? 'signup' : 'agreement-signup');
+                    // Keep /g/[id] when Expo Router already opened the shared link for a signed-out user.
+                    chooseInitialRoute(
+                        startupHasGameLink.current
+                            ? 'game-link'
+                            : hasSeenTerms
+                              ? 'signup'
+                              : 'agreement-signup',
+                    );
                     return;
                 }
 
                 setAuthUserId(session.user.id);
                 const acceptedTerms = await userHasAcceptedTerms(session);
-                chooseInitialRoute(acceptedTerms ? 'tabs' : 'agreement-tabs');
+                const onboardingStatus = await getOnboardingStatus(session.user.id);
+                if (!acceptedTerms) {
+                    setOnboardingStep(onboardingStatusToStep(onboardingStatus));
+                    chooseInitialRoute(
+                        onboardingStatus === 'Completed'
+                            ? 'agreement-tabs'
+                            : 'agreement-onboarding',
+                    );
+                } else if (onboardingStatus === 'Completed') {
+                    chooseInitialRoute(
+                        startupHasGameLink.current ? 'game-link' : 'tabs',
+                    );
+                } else {
+                    chooseOnboardingRoute(onboardingStatus);
+                }
             } catch (error) {
                 console.warn('Unable to initialize the app:', error);
                 chooseInitialRoute('agreement-signup');
@@ -210,6 +280,15 @@ export default function RootLayout() {
         void restoreInitialRoute();
 
         const linkingSubscription = Linking.addEventListener('url', async ({ url }) => {
+            const gamePath = rememberGameLink(url);
+            if (gamePath) {
+                // Explicitly open the shared game even if a prior startup navigation
+                // already replaced Expo Router away from the incoming /g route.
+                setInitialRoute('game-link');
+                routerRef.current.replace(gamePath as never);
+                return;
+            }
+
             if (isPasswordResetUrl(url)) {
                 isPasswordRecovery.current = true;
                 const exchangeSuccess = await handlePasswordResetUrl(url);
@@ -234,13 +313,27 @@ export default function RootLayout() {
 
                 setTimeout(async () => {
                     const acceptedTerms = await userHasAcceptedTerms(session);
+                    const onboardingStatus = session?.user?.id
+                        ? await getOnboardingStatus(session.user.id)
+                        : 'Not Started';
 
                     if (!acceptedTerms) {
-                        setInitialRoute('agreement-tabs');
+                        setOnboardingStep(onboardingStatusToStep(onboardingStatus));
+                        setInitialRoute(
+                            onboardingStatus === 'Completed'
+                                ? 'agreement-tabs'
+                                : 'agreement-onboarding',
+                        );
                         return;
                     }
 
-                    setInitialRoute('tabs');
+                    if (onboardingStatus !== 'Completed') {
+                        setOnboardingStep(onboardingStatusToStep(onboardingStatus));
+                        setInitialRoute('onboarding');
+                        return;
+                    }
+
+                    chooseInitialRoute(startupHasGameLink.current ? 'game-link' : 'tabs');
                 }, 0);
 
                 return;
@@ -249,6 +342,8 @@ export default function RootLayout() {
             if (event === 'SIGNED_OUT') {
                 isOnboarding.current = false;
                 isPasswordRecovery.current = false;
+                startupHasGameLink.current = false;
+                pendingGameLinkPath.current = null;
                 setAuthUserId(null);
                 setInitialRoute('signup');
             }
@@ -265,6 +360,47 @@ export default function RootLayout() {
     }, []);
 
     useEffect(() => {
+        if (!shouldStartUpdateCheck(
+            Platform.OS,
+            initialNavigationComplete,
+            updateCheckStarted.current,
+        )) {
+            return;
+        }
+
+        updateCheckStarted.current = true;
+
+        const checkForUpdate = async () => {
+            const updateAvailable = await isAppUpdateAvailable(
+                Application.nativeApplicationVersion,
+            );
+            if (!updateAvailable) return;
+
+            Alert.alert(
+                'A new Sportiner update is available 🎾',
+                "We've made some improvements. Update Sportiner to get the latest version.",
+                [
+                    { text: 'Later', style: 'cancel' },
+                    {
+                        text: 'Update',
+                        onPress: () => {
+                            void Linking.openURL(APP_STORE_URL).catch((error) => {
+                                console.warn('Could not open Sportiner on the App Store', error);
+                                Alert.alert(
+                                    'App Store unavailable',
+                                    'We could not open Sportiner on the App Store. Please try again later.',
+                                );
+                            });
+                        },
+                    },
+                ],
+            );
+        };
+
+        void checkForUpdate();
+    }, [initialNavigationComplete]);
+
+    useEffect(() => {
         if (initialRoute === null) return;
 
         let isCancelled = false;
@@ -272,16 +408,42 @@ export default function RootLayout() {
         const navigate = async () => {
             try {
                 setInitialNavigationComplete(false);
-                if (initialRoute === 'tabs') {
-                    router.replace('/(tabs)');
+                if (initialRoute === 'game-link') {
+                    const path = pendingGameLinkPath.current;
+                    if (path) {
+                        router.replace(path as never);
+                    }
+                    // If Expo Router already holds /g/[id] and we only know a boolean flag,
+                    // leave the current route alone rather than bouncing to tabs.
+                } else if (initialRoute === 'tabs') {
+                    if (startupHasGameLink.current && pendingGameLinkPath.current) {
+                        router.replace(pendingGameLinkPath.current as never);
+                    } else {
+                        router.replace('/(tabs)');
+                    }
                 } else if (initialRoute === 'password-reset') {
                     router.replace('/(auth)/reset-password' as never);
                 } else if (initialRoute === 'signup') {
                     router.replace('/(auth)/SignUp');
+                } else if (initialRoute === 'onboarding') {
+                    router.replace({
+                        pathname: '/(auth)/SignupFlow' as never,
+                        params: { resumeStep: String(onboardingStep) },
+                    });
                 } else {
                     router.replace({
                         pathname: '/(auth)/user-agreement' as never,
-                        params: { next: initialRoute === 'agreement-tabs' ? 'tabs' : 'signup' },
+                        params: {
+                            next:
+                                initialRoute === 'agreement-tabs'
+                                    ? 'tabs'
+                                    : initialRoute === 'agreement-onboarding'
+                                      ? 'onboarding'
+                                      : 'signup',
+                            ...(initialRoute === 'agreement-onboarding'
+                                ? { resumeStep: String(onboardingStep) }
+                                : {}),
+                        },
                     });
                 }
 
@@ -306,24 +468,53 @@ export default function RootLayout() {
         return () => {
             isCancelled = true;
         };
-    }, [initialRoute, router]);
+    }, [initialRoute, onboardingStep, router]);
 
     if (initialRoute === null) return null;
 
     return (
-        <LatestLocationProvider userId={authUserId}>
-            <NotificationProvider
-                navigationReady={initialNavigationComplete}
-                userId={authUserId}
-            >
-                <GameProvider key={authUserId ?? 'signed-out'}>
-                    <UnreadMessagesProvider>
-                        <GameTicketsProvider key={authUserId ?? 'signed-out'}>
-                            <Slot />
-                        </GameTicketsProvider>
-                    </UnreadMessagesProvider>
-                </GameProvider>
-            </NotificationProvider>
-        </LatestLocationProvider>
+        <OnlinePresenceProvider userId={authUserId}>
+            <LatestLocationProvider userId={authUserId}>
+                <NotificationProvider
+                    navigationReady={initialNavigationComplete}
+                    userId={authUserId}
+                >
+                    <GameProvider key={authUserId ?? 'signed-out'}>
+                        <UnreadMessagesProvider>
+                            <MessagesProvider>
+                                <HostedGameJoinsProvider>
+                                    <GameTicketsProvider key={authUserId ?? 'signed-out'}>
+                                        {/* Conversations push onto the stack, so each chat is
+                                            its own screen instance instead of one reused tab. */}
+                                        <Stack
+                                            screenOptions={{
+                                                headerShown: false,
+                                                animation: 'none',
+                                                gestureEnabled: false,
+                                            }}
+                                        >
+                                            <Stack.Screen
+                                                name="chat/[id]"
+                                                options={{
+                                                    animation: 'slide_from_right',
+                                                    gestureEnabled: true,
+                                                }}
+                                            />
+                                            <Stack.Screen
+                                                name="groupchat/[id]"
+                                                options={{
+                                                    animation: 'slide_from_right',
+                                                    gestureEnabled: true,
+                                                }}
+                                            />
+                                        </Stack>
+                                    </GameTicketsProvider>
+                                </HostedGameJoinsProvider>
+                            </MessagesProvider>
+                        </UnreadMessagesProvider>
+                    </GameProvider>
+                </NotificationProvider>
+            </LatestLocationProvider>
+        </OnlinePresenceProvider>
     );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
@@ -14,38 +15,51 @@ import {
   Dimensions,
   Animated,
   Image,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { PanGestureHandler, GestureHandlerRootView, State, GestureDetector } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
-import { blockUser, deleteMessage, editMessage, getGameInfo, getMessages, markAsRead, replyMessage, sendMessage, submitModerationReport } from '@/context/ChatContext';
-import { getCurrentUserId, getUser, supabase } from '@/context/AuthContext';
+import { blockUser, deleteMessage, editMessage, getConversationMemberIds, getGameInfo, markAsRead, replyMessage, sendMessage, submitModerationReport } from '@/context/ChatContext';
+import { getCurrentUserId, getUser } from '@/context/AuthContext';
 import { formatGameSubtitle, GameRow } from '@/context/GameContext';
 import { useUnreadMessages } from '@/context/UnreadMessagesContext';
-import { Timestamp } from 'react-native-reanimated/lib/typescript/commonTypes';
 import ReportModal from '@/components/ReportModal';
 import ConversationStarters, {
   GROUP_CHAT_STARTERS,
 } from '@/components/ConversationStarters';
+import { useOnlinePresence } from '@/context/OnlinePresenceContext';
+import { useChatMessages } from '@/context/MessagesContext';
+import type { ChatMessage } from '@/lib/chatMessages';
+import {
+  ChatImageError,
+  newChatMessageId,
+  pickChatImage,
+  removeChatImage,
+  uploadChatImage,
+  type ChatImageAsset,
+} from '@/lib/chatImages';
+import {
+  isUgcTextRejectedError,
+  UGC_TEXT_REJECTED_COPY,
+} from '@/lib/ugcModeration';
 const { width, height } = Dimensions.get('window');
 import { Gesture } from 'react-native-gesture-handler';
-import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming, useDerivedValue } from 'react-native-reanimated';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80';
 
 
-type Message = {
-  id?: string;
-  sender_id: string;
-  message: string
-  image?: string;
-  type: string;
-  reply_to?: string;
-  is_reply?: boolean,
-  created_at?: Timestamp;
-  updated_at?: Timestamp;
-  is_edited?: boolean;
-  status?: string
+type Message = ChatMessage;
+
+type PendingPhoto = {
+  asset: ChatImageAsset;
+  messageId: string;
+  uploadedPath?: string;
 };
 
 type ReportTarget = {
@@ -69,6 +83,7 @@ const SwipeableMessage = ({ message, onReply, children }: SwipeableMessageProps)
 
   const panGesture = Gesture.Pan()
     .activeOffsetX(20)
+    .failOffsetY([-12, 12])
     .onUpdate((e) => {
       if (e.translationX >= 0) {
         translateX.value = e.translationX;
@@ -94,19 +109,40 @@ const SwipeableMessage = ({ message, onReply, children }: SwipeableMessageProps)
 
 
 const GroupChatScreen = () => {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, messageId: messageIdParam } = useLocalSearchParams<{
+    id: string;
+    messageId?: string;
+  }>();
+  const messageId = Array.isArray(messageIdParam) ? messageIdParam[0] : messageIdParam;
   const { refreshUnreadCount } = useUnreadMessages();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const refreshUnreadCountRef = useRef(refreshUnreadCount);
+  refreshUnreadCountRef.current = refreshUnreadCount;
+  const { isUserOnline } = useOnlinePresence();
+  const {
+    messages,
+    upsertMessages,
+    patchMessage,
+    dropMessage,
+    dropMessagesFromSender,
+  } = useChatMessages(id);
+  const [screenFocused, setScreenFocused] = useState(true);
   const [gameTitle, setGameTitle] = useState('');
   const [gameId, setGameId] = useState('');
   const [userNames, setUserNames] = useState<Record<string, string>>({});
   const [userAvatars, setUserAvatars] = useState<Record<string, string>>({});
   const [userLevels, setUserLevels] = useState<Record<string, string>>({});
   const [userColors, setUserColors] = useState<Record<string, string>>({});
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+  const isNearBottomRef = useRef(true);
+  const scrolledToMessageIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    scrolledToMessageIdRef.current = null;
+  }, [id]);
 
   const markConversationRead = async (chatId: string) => {
     await markAsRead(chatId);
-    await refreshUnreadCount();
+    await refreshUnreadCountRef.current();
   };
 
   
@@ -130,7 +166,7 @@ const GroupChatScreen = () => {
       users.forEach(user => {
         if (user) {
           newNames[user.id] = user.name;
-          newAvatars[user.id] = user.profile_picture ?? 'DEFAULT_AVATAR';
+          newAvatars[user.id] = user.profile_picture || DEFAULT_AVATAR;
           newLevels[user.id] = user.level ?? '';
           newColors[user.id] = user.color ?? '';
         }
@@ -139,7 +175,7 @@ const GroupChatScreen = () => {
       setUserNames(prev => ({ ...prev, ...newNames }));
       setUserAvatars(prev => ({ ...prev, ...newAvatars }));
       setUserLevels(prev => ({ ...prev, ...newLevels }));
-      setUserColors(prev => ({ ...prev, ...newLevels }))
+      setUserColors(prev => ({ ...prev, ...newColors }));
     };
   
     console.log("game title is: ", gameTitle)
@@ -153,13 +189,15 @@ const GroupChatScreen = () => {
     let cancelled = false;
 
     (async () => {
-      const [messages, currentUser, gameRows] = await Promise.all([
-        getMessages(id),
+      const [currentUser, gameRows, conversationMemberIds] = await Promise.all([
         getCurrentUserId(),
         getGameInfo(id),
+        getConversationMemberIds(id),
       ]);
 
+      if (cancelled) return;
       setCurrentUserId(currentUser?.id)
+      setMemberIds(conversationMemberIds);
 
       if (currentUser?.id) {
         const profile = await getUser(currentUser.id);
@@ -168,75 +206,39 @@ const GroupChatScreen = () => {
         }
       }
 
+      if (cancelled) return;
+
       const gameRow = gameRows?.[0] as GameRow | undefined;
-      if (!cancelled) {
-        setGame(gameRow ?? null);
-        console.log('this is group chat')
-      }
+      setGame(gameRow ?? null);
 
       if (gameRow?.title && gameRow.id) {
         setGameTitle(gameRow?.title)
         setGameId(gameRow.id)
       }
 
-      if (messages) {
-        setMessages(
-          messages.map((message) => {
-            return {
-              id: message.id,
-              sender_id: message.sender_id,
-              message: message.message,
-              type: message.type,
-              image: message.image,
-              reply_to: message.reply_to,
-              is_reply: message.is_reply,
-              created_at: message.created_at,
-              updated_at: message.updated_at,
-              is_edited: message.is_edited,
-              status: message.status
-            };
-          })
-        );
-      }
-
-      if (!cancelled && id) {
-        void markConversationRead(id);
-      }
+      void markConversationRead(id);
     })();
-
-    // Subscribe to new messages in this chat
-    const subscription = supabase
-      .channel(`messages:${id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `chat_id=eq.${id}`
-      }, (payload) => {
-        if (cancelled) return;
-        const newMessage = payload.new as any;
-        setMessages(prev => [...prev, {
-          id: newMessage.id,
-          sender_id: newMessage.sender_id,
-          message: newMessage.message,
-          type: newMessage.type,
-          image: newMessage.image,
-          reply_to: newMessage.reply_to,
-          is_reply: newMessage.is_reply,
-          created_at: newMessage.created_at,
-          updated_at: newMessage.updated_at,
-          is_edited: newMessage.is_edited,
-          status: newMessage.status
-        }]);
-        void markConversationRead(id);
-      })
-      .subscribe();
 
     return () => {
       cancelled = true;
-      subscription.unsubscribe();
     };
-  }, [id, refreshUnreadCount]);
+  }, [id]);
+
+  // History and live updates come from the shared store, so mark read whenever
+  // this conversation's cached list grows. Gated on focus: pushing a second
+  // conversation on top leaves this one mounted, and it must not swallow the
+  // unread badge for messages the user never actually looked at.
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => setScreenFocused(false);
+    }, [])
+  );
+
+  useEffect(() => {
+    if (!id || !screenFocused || messages.length === 0) return;
+    void markConversationRead(id);
+  }, [id, messages.length, screenFocused]);
 
 
   const handleGameNavigation = () => {
@@ -258,6 +260,13 @@ const GroupChatScreen = () => {
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [submittingReport, setSubmittingReport] = useState(false);
   const [currentUserName, setCurrentUserName] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<PendingPhoto | null>(null);
+  const [failedPhotoId, setFailedPhotoId] = useState<string | null>(null);
+  const pendingPhotoRef = useRef<PendingPhoto | null>(null);
+  const [showFullScreenImage, setShowFullScreenImage] = useState(false);
+  const [showImage, setShowImage] = useState<string | null>(null);
 
 
   const flatListRef = useRef<FlatList>(null);
@@ -266,7 +275,7 @@ const GroupChatScreen = () => {
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const hasConversationMessages = messages.length > 0;
-  const showConversationStarters = !editingMessage && !isReplying;
+  const showConversationStarters = !editingMessage && !isReplying && !keyboardVisible;
 
   const applySuggestion = (text: string) => {
     setInputText(text);
@@ -282,23 +291,212 @@ const GroupChatScreen = () => {
     setIsReplying(false);
   };
 
-  const scrollComposerToEnd = () => {
-    setTimeout(() => {
+  const setPhotoDraft = (photo: PendingPhoto | null) => {
+    pendingPhotoRef.current = photo;
+    setPendingPhoto(photo);
+  };
+
+  const clearPhotoDraft = () => setPhotoDraft(null);
+
+  const restoreComposerAfterFailedSend = (text: string, replyingTo: Message | null) => {
+    setInputText(text);
+    if (replyingTo) {
+      setReplyInfo(replyingTo);
+      setIsReplying(true);
+    }
+  };
+
+  const hasPendingMessageScroll =
+    Boolean(messageId) && scrolledToMessageIdRef.current !== messageId;
+
+  const scrollComposerToEnd = (force = false) => {
+    if (!force && !isNearBottomRef.current) {
+      return;
+    }
+    if (!force && hasPendingMessageScroll) {
+      return;
+    }
+    requestAnimationFrame(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    });
+  };
+
+  const scrollComposerToEndRef = useRef(scrollComposerToEnd);
+  scrollComposerToEndRef.current = scrollComposerToEnd;
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        scrollComposerToEndRef.current(false);
+      }
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showContextMenu.visible) {
+      return;
+    }
+    slideAnim.setValue(0);
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [showContextMenu.visible, slideAnim]);
+
+  useEffect(() => {
+    if (!messageId || messages.length === 0) {
+      return;
+    }
+
+    if (scrolledToMessageIdRef.current === messageId) {
+      return;
+    }
+
+    const messageIndex = messages.findIndex(
+      (message) => message.id === messageId
+    );
+
+    if (messageIndex === -1) {
+      return;
+    }
+
+    isNearBottomRef.current = false;
+    scrolledToMessageIdRef.current = messageId;
+
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToIndex({
+        index: messageIndex,
+        animated: true,
+        viewPosition: 0.5,
+      });
+    });
+  }, [messageId, messages]);
+
+  const handleMessagesScroll = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      contentSize: { height: number };
+      layoutMeasurement: { height: number };
+    };
+  }) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - contentOffset.y - layoutMeasurement.height;
+    isNearBottomRef.current = distanceFromBottom < 140;
+  };
+
+  const handleSendPhoto = async (pending: PendingPhoto) => {
+    if (!id || !currentUserId || isSending) return;
+
+    const optimisticMessage: Message = {
+      id: pending.messageId,
+      chat_id: id,
+      sender_id: currentUserId,
+      message: 'Photo',
+      type: 'image',
+      imageUrl: pending.asset.uri,
+      created_at: new Date().toISOString(),
+      status: 'uploading',
+    };
+
+    setIsSending(true);
+    setIsUploadingImage(true);
+    setPendingPhoto(null);
+    upsertMessages([optimisticMessage]);
+    scrollComposerToEnd(true);
+
+    try {
+      let uploadedPath = pending.uploadedPath;
+      if (!uploadedPath) {
+        const uploaded = await uploadChatImage(id, pending.messageId, pending.asset);
+        uploadedPath = uploaded.path;
+        pendingPhotoRef.current = { ...pending, uploadedPath };
+      }
+
+      const savedMessage = await sendMessage('Photo', 'image', id, uploadedPath, pending.messageId);
+      if (!savedMessage) throw new ChatImageError('upload');
+
+      patchMessage(pending.messageId, {
+        ...savedMessage,
+        status: 'sent',
+      });
+      setFailedPhotoId(null);
+      clearPhotoDraft();
+      void markConversationRead(id);
+    } catch {
+      setFailedPhotoId(pending.messageId);
+      patchMessage(pending.messageId, {
+        status: 'failed',
+        imageUrl: pending.asset.uri,
+      });
+      Alert.alert('Photo failed to send', 'Tap Retry on the photo to try again.');
+    } finally {
+      setIsUploadingImage(false);
+      setIsSending(false);
+    }
+  };
+
+  const handleRetryPhoto = () => {
+    const pending = pendingPhotoRef.current;
+    if (!pending) {
+      Alert.alert('Photo unavailable', 'Please choose the photo again.');
+      return;
+    }
+    void handleSendPhoto(pending);
+  };
+
+  const handleRemoveFailedPhoto = async (messageId: string) => {
+    const pending = pendingPhotoRef.current;
+    if (pending?.messageId !== messageId) {
+      if (failedPhotoId === messageId) setFailedPhotoId(null);
+      dropMessage(messageId);
+      return;
+    }
+
+    try {
+      if (pending.uploadedPath) await removeChatImage(pending.uploadedPath);
+    } catch {
+      Alert.alert('Could not remove photo', 'Please try again.');
+      return;
+    }
+
+    clearPhotoDraft();
+    setFailedPhotoId(null);
+    dropMessage(messageId);
   };
 
   const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || isSending) {
+    if (isSending) return;
+
+    const pending = pendingPhotoRef.current;
+    if (pending && !editingMessage && !isReplying) {
+      await handleSendPhoto(pending);
       return;
     }
+
+    const text = inputText.trim();
+    if (!text) return;
 
     const editing = editingMessage;
     const replyingTo = isReplying ? replyInfo : null;
 
-    // Clear edit/reply chrome immediately so the composer never gets stuck open.
-    clearComposer();
+    if (!editing) {
+      clearComposer();
+      isNearBottomRef.current = true;
+      scrollComposerToEnd(true);
+    }
+
     setIsSending(true);
 
     try {
@@ -308,62 +506,102 @@ const GroupChatScreen = () => {
           return;
         }
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === editing.id
-              ? { ...msg, message: text, is_edited: true }
-              : msg
-          )
-        );
-        await editMessage(editing.id, text);
+        const savedEdit = await editMessage(editing.id, text);
+        if (!savedEdit) {
+          Alert.alert('Could not edit message', 'Your original message was not changed. Please try again.');
+          return;
+        }
+
+        patchMessage(editing.id, {
+          message: savedEdit.message ?? text,
+          is_edited: true,
+        });
+        clearComposer();
         inputRef.current?.blur();
         return;
       }
 
       if (replyingTo) {
         if (!replyingTo.id || !id) {
+          restoreComposerAfterFailedSend(text, replyingTo);
           Alert.alert('Could not send reply', 'Please try again in a moment.');
           return;
         }
 
         const savedReply = await replyMessage(replyingTo.id, 'text', text, id);
         if (!savedReply) {
+          restoreComposerAfterFailedSend(text, replyingTo);
           Alert.alert('Could not send reply', 'Please try again.');
           return;
         }
 
-        setMessages((prev) => {
-          if (prev.some((message) => message.id === savedReply.id)) {
-            return prev;
-          }
-          return [...prev, savedReply];
-        });
-        scrollComposerToEnd();
+        upsertMessages([savedReply]);
+        scrollComposerToEnd(true);
+        if (id) {
+          void markConversationRead(id);
+        }
         return;
       }
 
       if (!id) {
+        setInputText(text);
         return;
       }
 
       const savedMessage = await sendMessage(text, 'text', id);
       if (!savedMessage) {
+        setInputText(text);
         Alert.alert('Could not send message', 'Please try again.');
         return;
       }
 
-      setMessages((prev) => {
-        if (prev.some((message) => message.id === savedMessage.id)) {
-          return prev;
-        }
-        return [...prev, savedMessage];
-      });
-      scrollComposerToEnd();
+      upsertMessages([savedMessage]);
+      scrollComposerToEnd(true);
+      void markConversationRead(id);
     } catch (error) {
       console.log('handleSend error', error);
+      restoreComposerAfterFailedSend(text, editing ? null : replyingTo);
+      if (isUgcTextRejectedError(error)) {
+        Alert.alert(UGC_TEXT_REJECTED_COPY.title, UGC_TEXT_REJECTED_COPY.message);
+        return;
+      }
       Alert.alert('Could not send', 'Please try again.');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handlePickImage = async () => {
+    if (!id || isSending || pendingPhotoRef.current || failedPhotoId || editingMessage || isReplying) return;
+
+    try {
+      const asset = await pickChatImage();
+      if (!asset) return;
+      setPhotoDraft({ asset, messageId: newChatMessageId() });
+    } catch (error) {
+      const code = error instanceof ChatImageError ? error.code : 'upload';
+      if (code === 'permission') {
+        Alert.alert(
+          'Photo access is off',
+          'To share photos in chat, allow photo access for Sportiner in Settings.',
+        );
+      } else if (code === 'too-large') {
+        Alert.alert(
+          'Photo too large',
+          'This photo is still too large to upload after processing. Try a smaller image.',
+        );
+      } else if (code === 'invalid') {
+        Alert.alert('Couldn\'t use photo', 'We couldn\'t read this photo. Try choosing another image.');
+      } else if (code === 'processing') {
+        Alert.alert(
+          'Couldn\'t process photo',
+          'We couldn\'t prepare this photo for upload. Please try another photo.',
+        );
+      } else if (code === 'not-authenticated') {
+        Alert.alert('Could not send photo', 'Please sign in again and try again.');
+      } else {
+        Alert.alert('Couldn\'t upload photo', 'Check your connection and try again.');
+      }
     }
   };
 
@@ -376,7 +614,6 @@ const GroupChatScreen = () => {
     setEditingMessage(null);
     setReplyInfo(message);
     setIsReplying(true);
-    setInputText('');
     requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
@@ -429,8 +666,9 @@ const handleSubmitReport = async (reason: string, details: string) => {
   setSubmittingReport(true);
   const success = await submitModerationReport({
     reportedUserId: reportTarget.reportedUserId,
-    reportedPostId: reportTarget.reportedMessageId,
+    reportedMessageId: reportTarget.reportedMessageId,
     reason,
+    details,
   });
   setSubmittingReport(false);
 
@@ -466,7 +704,7 @@ const handleBlockUser = (blockedUserId: string) => {
             return;
           }
 
-          setMessages((current) => current.filter((message) => message.sender_id !== blockedUserId));
+          dropMessagesFromSender(blockedUserId);
           Alert.alert('User Blocked', 'You have successfully blocked this user.');
         },
       },
@@ -486,53 +724,131 @@ const handleBlockUser = (blockedUserId: string) => {
     });
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const isMe = item.sender_id === currentUserId;
     const repliedMessage = !!item.reply_to;
+    const senderName = userNames[item.sender_id] || 'User';
+    const senderAvatar = userAvatars[item.sender_id] || DEFAULT_AVATAR;
+    const previousSenderId = index > 0 ? messages[index - 1]?.sender_id : null;
+    const nextSenderId = index < messages.length - 1 ? messages[index + 1]?.sender_id : null;
+    // WhatsApp: name on first message in a streak, avatar on the last.
+    const showSenderName = !isMe && previousSenderId !== item.sender_id;
+    const showSenderAvatar = !isMe && nextSenderId !== item.sender_id;
 
     return (
       <SwipeableMessage message={item} onReply={handleReply}>
-        <View style={styles.messageContainer}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onLongPress={(e) => handleLongPress(item, e)}
-            style={[
-              styles.messageBubble,
-              isMe ? styles.sentMessage : styles.receivedMessage,
-            ]}
-          >
-            {repliedMessage && item.reply_to && (
-              <View style={styles.messageReplyPreview}>
-                <Text style={styles.messageReplyText}>
-                  {(() => {
-                    const original = messages.find(m => m.id === item.reply_to);
-                    const originalSender = userNames[original?.sender_id ?? ''] || 'User';
-                    return `${originalSender}: "${getOriginalMessage(item.reply_to)}"`;
-                  })()}
-                </Text>
-              </View>
-            )}
+        <View
+          style={[
+            styles.messageContainer,
+            isMe ? styles.messageContainerSent : styles.messageContainerReceived,
+            !showSenderName && !isMe && styles.messageContainerGrouped,
+          ]}
+        >
+          {!isMe ? (
+            <View style={styles.messageAvatarSlot}>
+              {showSenderAvatar ? (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(tabs)/profileDetails',
+                      params: { id: item.sender_id },
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`View ${senderName}'s profile`}
+                >
+                  <Image source={{ uri: senderAvatar }} style={styles.messageAvatar} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
 
-            <Text style={[styles.messageText, isMe && styles.sentMessageText]}>
-              {item.message}
-            </Text>
-          </TouchableOpacity>
+          <View style={[styles.messageContent, isMe && styles.messageContentSent]}>
+            {showSenderName ? (
+              <Text style={styles.senderName} numberOfLines={1}>
+                {senderName}
+              </Text>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onLongPress={(e) => handleLongPress(item, e)}
+              style={[
+                styles.messageBubble,
+                isMe ? styles.sentMessage : styles.receivedMessage,
+                showSenderName && styles.receivedMessageWithName,
+              ]}
+            >
+              {repliedMessage && item.reply_to && (
+                <View style={styles.messageReplyPreview}>
+                  <Text style={styles.messageReplyText}>
+                    {(() => {
+                      const original = messages.find(m => m.id === item.reply_to);
+                      const originalSender = userNames[original?.sender_id ?? ''] || 'User';
+                      return `${originalSender}: "${getOriginalMessage(item.reply_to)}"`;
+                    })()}
+                  </Text>
+                </View>
+              )}
+
+              {item.imageUrl ? (
+                <View style={styles.imageMessageContainer}>
+                  <TouchableOpacity
+                    disabled={item.status === 'uploading'}
+                    onLongPress={(e) => handleLongPress(item, e)}
+                    onPress={() => {
+                      setShowImage(item.imageUrl ?? null);
+                      setShowFullScreenImage(true);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="View photo"
+                  >
+                    <Image
+                      source={{ uri: item.imageUrl }}
+                      style={styles.messageImage}
+                      resizeMode="contain"
+                    />
+                    {item.status === 'uploading' ? (
+                      <View style={styles.imageStatusOverlay}>
+                        <ActivityIndicator color="#FFFFFF" />
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                  {item.status === 'failed' ? (
+                    <View style={styles.failedPhotoContainer}>
+                      <Text style={styles.failedPhotoText}>Failed to send</Text>
+                      <View style={styles.failedPhotoActions}>
+                        <TouchableOpacity onPress={handleRetryPhoto}>
+                          <Text style={styles.failedPhotoActionText}>Retry</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => void handleRemoveFailedPhoto(item.id ?? '')}>
+                          <Text style={styles.failedPhotoActionText}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              ) : item.type === 'text' ? (
+                <Text style={[styles.messageText, isMe && styles.sentMessageText]}>
+                  {item.message}
+                </Text>
+              ) : null}
+
+              {item.is_edited ? (
+                <Text style={[styles.editedLabel, isMe && styles.editedLabelSent]}>edited</Text>
+              ) : null}
+            </TouchableOpacity>
+          </View>
         </View>
       </SwipeableMessage>
     );
   };
 
-  let inputStyling;
-  // If only text is typing, go with inputPill
-  if (inputText) {
-    inputStyling = styles.inputPill;
-    // If both media and text are selcted go with inputNMedia
-    // Otherwise if nothing is selected go with simple one
-  } else {
-    inputStyling = styles.simpleInputPill
-  }
-
   const navigation = useNavigation()
+  const onlineMemberCount = memberIds.filter(
+    (memberId) => memberId !== currentUserId && isUserOnline(memberId)
+  ).length;
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -555,9 +871,18 @@ const handleBlockUser = (blockedUserId: string) => {
             <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactName}>{gameTitle}</Text>
             <Ionicons name="chevron-forward" size={16} color="#111" style={styles.contactNameChevron} />
           </View>
-          <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactSubtitle}>
-            {formatGameSubtitle(game)}
-          </Text>
+          <View style={styles.contactMetaRow}>
+            <View
+              accessibilityLabel={`${onlineMemberCount} other players online`}
+              style={[styles.presenceDot, onlineMemberCount === 0 && styles.presenceDotOffline]}
+            />
+            <Text style={styles.presenceText}>
+              {onlineMemberCount > 0 ? `${onlineMemberCount} online` : 'No one else online'}
+            </Text>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contactSubtitle}>
+              {formatGameSubtitle(game)}
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
     </View>
@@ -569,7 +894,7 @@ const handleBlockUser = (blockedUserId: string) => {
     
     return (
       <View style={styles.replyPreview}>
-        {replyInfo.image ?     
+        {replyInfo.imageUrl ?     
         <View style={styles.replyWrapper}>
           <View>
             <Text style={styles.replySender}>
@@ -579,7 +904,7 @@ const handleBlockUser = (blockedUserId: string) => {
                   Photo
               </Text>
             </View>
-            <Image source={{ uri: replyInfo.image}} style={styles.replyImage}/>
+            <Image source={{ uri: replyInfo.imageUrl}} style={styles.replyImage}/>
           </View>
         :     
         <><Text style={styles.replySender}>
@@ -601,7 +926,7 @@ const handleBlockUser = (blockedUserId: string) => {
   };
 
   const renderInput = () => (
-    <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.inputContainer, { paddingBottom: keyboardVisible ? 8 : insets.bottom }]}>
       {editingMessage ? (
         <View style={styles.editHeader}>
           <Text style={styles.editHeaderText}>Editing message</Text>
@@ -615,6 +940,29 @@ const handleBlockUser = (blockedUserId: string) => {
       ) : null}
 
       {!editingMessage ? renderReplyPreview() : null}
+
+      {pendingPhoto ? (
+        <View style={styles.mediaPreview}>
+          <View style={styles.imagePreview}>
+            <Image source={{ uri: pendingPhoto.asset.uri }} style={styles.mediaThumbnail} />
+            <TouchableOpacity
+              style={styles.removeMediaButton}
+              onPress={clearPhotoDraft}
+              accessibilityRole="button"
+              accessibilityLabel="Remove selected photo"
+            >
+              <Ionicons name="close" size={14} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {isUploadingImage ? (
+        <View style={styles.uploadingImageStatus}>
+          <ActivityIndicator size="small" color="#22C55E" />
+          <Text style={styles.uploadingImageText}>Uploading photo...</Text>
+        </View>
+      ) : null}
 
       {showConversationStarters ? (
         <ConversationStarters
@@ -631,24 +979,41 @@ const handleBlockUser = (blockedUserId: string) => {
 
     
       <View style={styles.simpleComposerPill}>
-        <View style={inputStyling}>
+        <View style={styles.inputPill}>
+            {!editingMessage && !isReplying ? (
+              <TouchableOpacity
+                style={styles.composerIconButton}
+                onPress={() => void handlePickImage()}
+                disabled={isSending || Boolean(pendingPhoto) || Boolean(failedPhotoId)}
+                accessibilityRole="button"
+                accessibilityLabel="Choose a photo"
+              >
+                {isUploadingImage ? (
+                  <ActivityIndicator size="small" color="#22C55E" />
+                ) : (
+                  <Ionicons name="image-outline" size={22} color="#22C55E" />
+                )}
+              </TouchableOpacity>
+            ) : null}
             <TextInput
               ref={inputRef}
               style={styles.composerInput}
               value={inputText}
               onChangeText={setInputText}
+              onContentSizeChange={() => scrollComposerToEnd(false)}
               placeholder={editingMessage ? 'Edit message...' : isReplying ? 'Write a reply...' : 'Type...'}
               placeholderTextColor="#6B7280"
-              multiline={false}
-              editable={!isSending}
+              multiline
+              blurOnSubmit={false}
+              returnKeyType="default"
             />
-            {inputText.trim() ? (
+            {inputText.trim() || pendingPhoto ? (
                       <TouchableOpacity
                         style={styles.sendButton}
                         onPress={() => void handleSend()}
-                        disabled={isSending || !inputText.trim()}
+                        disabled={isSending}
                       >
-                        <Ionicons name="send" size={22} color="#22C55E" />
+                        <Ionicons name="send" size={22} color={isSending ? '#86EFAC' : '#22C55E'} />
                       </TouchableOpacity>
                    ) : null}
             </View>
@@ -658,13 +1023,6 @@ const handleBlockUser = (blockedUserId: string) => {
 
   const renderContextMenu = () => {
     if (!showContextMenu.visible || !showContextMenu.message) return null;
-    
-  
-    Animated.timing(slideAnim, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
 
     //copy to clipboard function
     const copyToClipboard = async (text: string) => {
@@ -725,7 +1083,7 @@ const handleBlockUser = (blockedUserId: string) => {
                                 if (message.id) {
                                   const deleted = await deleteMessage(message.id);
                                   if (deleted) {
-                                    setMessages(prev => prev.filter(m => m.id !== message.id));
+                                    dropMessage(message.id);
                                   } else {
                                     Alert.alert('Could not delete message', 'Please try again.');
                                   }
@@ -767,10 +1125,9 @@ const handleBlockUser = (blockedUserId: string) => {
       
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <TouchableWithoutFeedback onPress={closeContextMenu}>
           <FlatList
             ref={flatListRef}
             data={messages}
@@ -778,22 +1135,33 @@ const handleBlockUser = (blockedUserId: string) => {
             keyExtractor={(item, index) => item.id || `message-${index}`}
             contentContainerStyle={[
               styles.messagesContainer,
-              { paddingBottom: 80 + (replyInfo || editingMessage ? 60 : 0) + insets.bottom },
+              { paddingBottom: 24 + (replyInfo || editingMessage ? 56 : 0) },
             ]}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
+            onScroll={handleMessagesScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => scrollComposerToEnd(false)}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              flatListRef.current?.scrollToOffset({
+                offset: Math.max(0, averageItemLength * index),
+                animated: false,
+              });
+              requestAnimationFrame(() => {
+                flatListRef.current?.scrollToIndex({
+                  index,
+                  animated: true,
+                  viewPosition: 0.5,
+                });
+              });
+            }}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={closeContextMenu}
+            removeClippedSubviews={false}
+            maxToRenderPerBatch={12}
             updateCellsBatchingPeriod={50}
-            initialNumToRender={15}
-            windowSize={10}
-            getItemLayout={(data, index) => ({
-              length: 100, 
-              offset: 100 * index,
-              index,
-            })}
+            initialNumToRender={20}
+            windowSize={12}
           />
-        </TouchableWithoutFeedback>
         
         {renderInput()}
         {renderContextMenu()}
@@ -804,6 +1172,26 @@ const handleBlockUser = (blockedUserId: string) => {
           onClose={() => setReportTarget(null)}
           onSubmit={handleSubmitReport}
         />
+        <Modal
+          visible={showFullScreenImage}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowFullScreenImage(false)}
+        >
+          <View style={styles.modalContainer}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowFullScreenImage(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close photo"
+            >
+              <Ionicons name="close" size={28} color="white" />
+            </TouchableOpacity>
+            {showImage ? (
+              <Image source={{ uri: showImage }} style={styles.fullScreenImage} resizeMode="contain" />
+            ) : null}
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </GestureHandlerRootView>
   );
@@ -867,12 +1255,66 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   contactSubtitle: {
+    flex: 1,
     color: '#6B7280',
     fontSize: 12,
+  },
+  contactMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
     marginTop: 2,
+    gap: 5,
+  },
+  presenceDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#16A34A',
+    flexShrink: 0,
+  },
+  presenceDotOffline: {
+    backgroundColor: '#9CA3AF',
+  },
+  presenceText: {
+    color: '#4B5563',
+    fontSize: 12,
+    flexShrink: 0,
   },
   messageContainer: {
-    marginBottom: 16,
+    marginBottom: 8,
+    width: '100%',
+  },
+  messageContainerSent: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  messageContainerReceived: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+  },
+  messageContainerGrouped: {
+    marginBottom: 2,
+  },
+  messageAvatarSlot: {
+    width: 34,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  messageAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#D1D5DB',
+  },
+  messageContent: {
+    flexShrink: 1,
+    maxWidth: '78%',
+  },
+  messageContentSent: {
+    alignItems: 'flex-end',
   },
   messageHeader: {
     flexDirection: 'row',
@@ -895,9 +1337,11 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   senderName: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
+    fontSize: 13,
+    color: '#16A34A',
+    fontWeight: '600',
+    marginBottom: 4,
+    marginLeft: 4,
   },
   senderLevel: {
     fontSize: 12,
@@ -917,19 +1361,21 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   messageBubble: {
-    maxWidth: '78%',
+    maxWidth: '100%',
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 14,
-    marginBottom: 12,
   },
   sentMessage: {
     backgroundColor: '#22C55E',
-    marginLeft: 'auto',
+    borderBottomRightRadius: 4,
   },
   receivedMessage: {
     backgroundColor: '#F3F4F6',
-    marginRight: 'auto',
+    borderBottomLeftRadius: 4,
+  },
+  receivedMessageWithName: {
+    borderTopLeftRadius: 14,
   },
   messageText: {
     fontSize: 16,
@@ -939,11 +1385,49 @@ const styles = StyleSheet.create({
   sentMessageText: {
     color: '#fff',
   },
+  editedLabel: {
+    fontSize: 11,
+    color: 'rgba(0, 0, 0, 0.35)',
+    marginTop: 3,
+    alignSelf: 'flex-end',
+  },
+  editedLabelSent: {
+    color: 'rgba(255, 255, 255, 0.55)',
+  },
   messageImage: {
     width: 200,
     height: 150,
     borderRadius: 8,
     marginBottom: 4,
+  },
+  imageMessageContainer: {
+    position: 'relative',
+  },
+  imageStatusOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
+  },
+  failedPhotoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingTop: 4,
+  },
+  failedPhotoText: {
+    color: '#B91C1C',
+    fontSize: 12,
+  },
+  failedPhotoActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  failedPhotoActionText: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '600',
   },
   videoContainer: {
     position: 'relative',
@@ -1028,6 +1512,17 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingHorizontal: 14,
   },
+  uploadingImageStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  uploadingImageText: {
+    color: '#4B5563',
+    fontSize: 13,
+  },
     simpleInputPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1041,9 +1536,9 @@ const styles = StyleSheet.create({
   },
   inputPill: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 4,
-    marginTop: 0.5
+    width: '100%',
   },
   composerPill: {
     flexDirection: 'row',
@@ -1061,16 +1556,21 @@ const styles = StyleSheet.create({
     borderColor: '#D1D5DB',
     borderRadius: 24,
     paddingHorizontal: 12,
-    height: 40,
+    minHeight: 40,
+    maxHeight: 112,
+    paddingVertical: 4,
   },
   composerIconButton: {
     paddingRight: 10,
+    paddingBottom: 6,
   },
   composerInput: {
     flex: 1,
     fontSize: 16,
     color: '#111',
-    paddingVertical: 0,
+    paddingTop: 6,
+    paddingBottom: 6,
+    maxHeight: 96,
   },
   sendButton: {
     width: 36,
@@ -1083,7 +1583,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     paddingVertical: 8,
     paddingHorizontal: 12,
-    marginHorizontal: 14,
     marginBottom: 8,
     borderRadius: 8,
     borderLeftWidth: 3,
@@ -1203,6 +1702,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 58,
+    right: 20,
+    zIndex: 1,
+    padding: 8,
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '80%',
   },
 });
 

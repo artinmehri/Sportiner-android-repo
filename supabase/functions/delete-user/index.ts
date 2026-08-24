@@ -1,10 +1,12 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7"
+import { revokeAppleRefreshToken } from "../_shared/apple.ts"
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "https://prswdcjmowfdvalyutlu.supabase.co"
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 const filesBucket = Deno.env.get("PROFILE_PHOTO_BUCKET") ?? "files"
+const chatImagesBucket = Deno.env.get("CHAT_IMAGE_BUCKET") ?? "chat-images"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,6 +86,67 @@ function extractStoragePath(value: string | null | undefined, userId: string) {
   }
 }
 
+function extractChatImageReference(value: string | null | undefined) {
+  if (!value) return null
+
+  if (!value.startsWith("http://") && !value.startsWith("https://")) {
+    return { bucket: chatImagesBucket, path: value }
+  }
+
+  try {
+    const url = new URL(value)
+    for (const bucket of [chatImagesBucket, filesBucket]) {
+      for (const prefix of [
+        `/storage/v1/object/public/${bucket}/`,
+        `/storage/v1/object/sign/${bucket}/`,
+      ]) {
+        if (url.pathname.startsWith(prefix)) {
+          return {
+            bucket,
+            path: decodeURIComponent(url.pathname.slice(prefix.length)),
+          }
+        }
+      }
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+async function deleteUserMessageImages(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("image")
+    .eq("sender_id", userId)
+
+  if (error) {
+    throw new Error(`load user chat image references failed: ${error.message}`)
+  }
+
+  const references = new Map<string, Set<string>>([
+    [chatImagesBucket, new Set<string>()],
+    [filesBucket, new Set<string>()],
+  ])
+
+  for (const row of data ?? []) {
+    const reference = extractChatImageReference(row?.image)
+    if (reference) references.get(reference.bucket)?.add(reference.path)
+  }
+
+  for (const [bucket, paths] of references) {
+    if (paths.size === 0) continue
+    const { error: removeError } = await supabase.storage.from(bucket).remove(Array.from(paths))
+    if (removeError) {
+      throw new Error(`delete user chat images failed: ${removeError.message}`)
+    }
+  }
+}
+
 async function deleteProfilePhotos(supabase: ReturnType<typeof createClient>, profilePicture: string | null, userId: string) {
   const paths = new Set<string>()
   const explicitPath = extractStoragePath(profilePicture, userId)
@@ -158,7 +221,12 @@ async function anonymizeOrDeleteIn(
   }
 }
 
-async function revokeAppleTokenIfAvailable(user: any) {
+class AppleReauthRequiredError extends Error {}
+
+async function revokeAppleCredential(
+  supabase: ReturnType<typeof createClient>,
+  user: any,
+) {
   const provider = user?.app_metadata?.provider
   const appleIdentity = user?.identities?.find((identity: any) => identity?.provider === "apple")
 
@@ -166,38 +234,45 @@ async function revokeAppleTokenIfAvailable(user: any) {
     return
   }
 
-  const token =
-    Deno.env.get("APPLE_REVOKE_TOKEN") ??
-    user?.app_metadata?.provider_token ??
-    user?.user_metadata?.provider_token ??
-    appleIdentity?.identity_data?.provider_token ??
-    appleIdentity?.identity_data?.access_token ??
-    appleIdentity?.identity_data?.refresh_token
+  const { data: refreshToken, error: loadError } = await supabase.rpc(
+    "get_apple_refresh_token_v1",
+    { p_user_id: user.id },
+  )
+  if (loadError) {
+    throw new Error(`load Apple revocation credential failed: ${loadError.message}`)
+  }
 
-  const clientId = Deno.env.get("APPLE_CLIENT_ID")
-  const clientSecret = Deno.env.get("APPLE_CLIENT_SECRET")
-
-  if (!token || !clientId || !clientSecret) {
-    console.warn("Apple token revocation skipped because no Apple revocation token/client credentials are available.")
+  if (user?.app_metadata?.apple_revocation_status === "revoked") {
+    const { error: deleteError } = await supabase.rpc("delete_apple_refresh_token_v1", {
+      p_user_id: user.id,
+    })
+    if (deleteError) {
+      throw new Error(`delete Apple revocation credential failed: ${deleteError.message}`)
+    }
     return
   }
 
-  const body = new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    token,
-    token_type_hint: appleIdentity?.identity_data?.refresh_token ? "refresh_token" : "access_token",
-  })
+  if (typeof refreshToken !== "string" || !refreshToken) {
+    throw new AppleReauthRequiredError()
+  }
 
-  const response = await fetch("https://appleid.apple.com/auth/revoke", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  })
+  await revokeAppleRefreshToken(refreshToken)
 
-  if (!response.ok) {
-    const errorBody = await response.text()
-    throw new Error(`Apple token revocation failed: ${response.status} ${errorBody}`)
+  const { error: metadataError } = await supabase.auth.admin.updateUserById(user.id, {
+    app_metadata: {
+      ...user.app_metadata,
+      apple_revocation_status: "revoked",
+    },
+  })
+  if (metadataError) {
+    throw new Error(`update Apple revocation status failed: ${metadataError.message}`)
+  }
+
+  const { error: deleteError } = await supabase.rpc("delete_apple_refresh_token_v1", {
+    p_user_id: user.id,
+  })
+  if (deleteError) {
+    throw new Error(`delete Apple revocation credential failed: ${deleteError.message}`)
   }
 }
 
@@ -285,9 +360,10 @@ serve(async (req) => {
       ])
     }
 
-    await deleteProfilePhotos(supabase, userData?.profile_picture ?? null, userId)
+    await revokeAppleCredential(supabase, user)
 
-    await revokeAppleTokenIfAvailable(user)
+    await deleteUserMessageImages(supabase, userId)
+    await deleteProfilePhotos(supabase, userData?.profile_picture ?? null, userId)
 
     await requireSuccess("clear chat last message references", () =>
       supabase
@@ -386,6 +462,12 @@ serve(async (req) => {
 
     return json({ message: "Account deleted successfully" })
   } catch (error) {
+    if (error instanceof AppleReauthRequiredError) {
+      return json({
+        error: "Sign in with Apple authorization is required before account deletion.",
+        code: "APPLE_REAUTH_REQUIRED",
+      }, 409)
+    }
     console.error("delete-user failed:", error)
     return json({ error: "Unable to delete your account. Please try again later or contact support." }, 500)
   }

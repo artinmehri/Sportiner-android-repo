@@ -4,7 +4,12 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/scripts/GoogleIcon'
-import { isOnboarding, supabase, userExists } from '@/context/AuthContext';
+import {
+  getOnboardingStatus,
+  onboardingStatusToStep,
+  isOnboarding,
+  supabase,
+} from '@/context/AuthContext';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto'
@@ -13,6 +18,7 @@ import {
   persistTermsAcceptanceForUser,
   userHasAcceptedCurrentTerms,
 } from '@/lib/termsAcceptance';
+import { storeAppleAuthorizationCode } from '@/lib/appleAuth';
 
 const PASSWORD_RESET_REDIRECT_URL = 'sportiner://reset-password';
 const PASSWORD_RESET_CONFIRMATION_COPY = 'If an account exists for this email, we sent password reset instructions.';
@@ -53,6 +59,48 @@ export default function Login () {
   const [resetModalVisible, setResetModalVisible] = useState(false);
   const [resetPending, setResetPending] = useState(false);
   const [resetConfirmation, setResetConfirmation] = useState('');
+
+  const routeToAgreement = (params: Record<string, string>) => {
+    router.replace({
+      pathname: '/(auth)/user-agreement' as never,
+      params,
+    });
+  };
+
+  const routeToSignupFlow = (params: Record<string, string>) => {
+    router.replace({
+      pathname: '/(auth)/SignupFlow' as never,
+      params,
+    });
+  };
+
+  const routeAuthenticatedUser = async (userId: string) => {
+    const status = await getOnboardingStatus(userId);
+    const acceptedTerms = await hasAcceptedTermsForCurrentUser();
+
+    if (status === 'Completed') {
+      if (!acceptedTerms) {
+        isOnboarding.current = true;
+        routeToAgreement({ next: 'tabs' });
+        return;
+      }
+
+      isOnboarding.current = false;
+      router.replace('/(tabs)');
+      return;
+    }
+
+    isOnboarding.current = true;
+    const params = {
+      resumeStep: String(onboardingStatusToStep(status)),
+    };
+
+    if (acceptedTerms) {
+      routeToSignupFlow(params);
+    } else {
+      routeToAgreement({ ...params, next: 'onboarding' });
+    }
+  };
   
 
   const handleGoogleLogin = async () => {
@@ -78,38 +126,7 @@ export default function Login () {
         return;
       }
   
-      const response = await userExists()
-   
-    if (response === true) {
-      console.log("user exists from google login in login.tsx!");
-      const acceptedTerms = await hasAcceptedTermsForCurrentUser();
-
-      if (!acceptedTerms) {
-        isOnboarding.current = true;
-        router.replace({
-          pathname: '/(auth)/user-agreement' as never,
-          params: { next: 'tabs' },
-        });
-        return;
-      }
-
-      isOnboarding.current = false;
-      router.replace('/(tabs)');
-    } else {
-      console.log("user doesn't exist from google login in login.tsx!");
-      isOnboarding.current = true;
-      if (await bindLocalTermsAcceptanceToUser(authData.user.id)) {
-        router.replace({
-          pathname: '/(auth)/SignupFlow' as never,
-          params: { method: 'google' },
-        });
-      } else {
-        router.replace({
-          pathname: '/(auth)/user-agreement' as never,
-          params: { method: 'google' },
-        });
-      }
-    }     
+      await routeAuthenticatedUser(authData.user.id);
     
     } catch {
       Alert.alert('Error', 'Google login failed');
@@ -154,6 +171,13 @@ export default function Login () {
         return;
       }
 
+      try {
+        await storeAppleAuthorizationCode(credential.authorizationCode);
+      } catch (captureError) {
+        await supabase.auth.signOut({ scope: 'local' });
+        throw captureError;
+      }
+
       const { data: userData } = await supabase.auth.getUser();
       const user = userData?.user;
 
@@ -162,53 +186,10 @@ export default function Login () {
         return;
       }
 
-      const response = await userExists()
-
-      if (response === true) {
-        console.log("user exists from apple login in login.tsx!");
-        const acceptedTerms = await hasAcceptedTermsForCurrentUser();
-
-        if (!acceptedTerms) {
-          isOnboarding.current = true;
-          router.replace({
-            pathname: '/(auth)/user-agreement' as never,
-            params: { next: 'tabs' },
-          });
-          return;
-        }
-
-        isOnboarding.current = false;
-        router.replace('/(tabs)');
-      } else {
-        console.log("user doesn't exist in apple login from login.tsx");
-        isOnboarding.current = true;
-
-        const appleDisplayName = [credential.fullName?.givenName, credential.fullName?.familyName]
-          .filter(Boolean)
-          .join(' ')
-          .trim();
-        const appleEmail = credential.email?.trim() ?? '';
-
-        const params = {
-          method: 'apple',
-          providerName: appleDisplayName,
-          providerEmail: appleEmail,
-        };
-
-        if (await bindLocalTermsAcceptanceToUser(user.id)) {
-          router.replace({
-            pathname: '/(auth)/SignupFlow' as never,
-            params,
-          });
-        } else {
-          router.replace({
-            pathname: '/(auth)/user-agreement' as never,
-            params,
-          });
-        }
-      }
+      await routeAuthenticatedUser(user.id);
     } catch (error: any) {
-        console.log('Apple error:', error);
+      console.log('Apple error:', error?.message ?? error);
+      Alert.alert('Apple sign in failed', 'Please try again.');
     }
   };
 
@@ -230,20 +211,7 @@ export default function Login () {
         Alert.alert("You don't seem to have an account, please make one!")
       }
     } else {
-      console.log('signed in', data.session);
-      const acceptedTerms = await hasAcceptedTermsForCurrentUser();
-
-      if (!acceptedTerms) {
-        isOnboarding.current = true;
-        router.replace({
-          pathname: '/(auth)/user-agreement' as never,
-          params: { next: 'tabs' },
-        });
-        return;
-      }
-
-      isOnboarding.current = false;
-      router.replace('/(tabs)');
+      await routeAuthenticatedUser(data.user.id);
     }
   };
 

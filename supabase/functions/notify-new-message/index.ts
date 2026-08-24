@@ -1,10 +1,17 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
 import {
-  createAndSendNotification,
   getAdminClient,
   jsonResponse,
   requireWebhookSecret,
   WebhookPayload,
 } from "../_shared/common.ts";
+import {
+  checkDeliveryAndRetry,
+  findPushToken,
+  sendEmailFallback,
+  sendPushNotification,
+} from "../_shared/message-style-delivery.ts";
 
 type MessageRecord = {
   id: string;
@@ -21,6 +28,15 @@ type ConversationMemberRecord = {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      String((error as { code?: unknown }).code) === "23505",
+  );
 }
 
 Deno.serve(async (req: Request) => {
@@ -142,37 +158,183 @@ Deno.serve(async (req: Request) => {
       : message.image
         ? "Sent an image"
         : "Sent a message";
-    // DB uniqueness key only — clients must not navigate from this string.
+    // DB uniqueness key only. Clients must not navigate from this string.
     const destination = `new_message:${message.id}`;
     const chatKind = chatResult.data?.type === "group" ? "group" : "private";
+    const title = senderName;
+    const body = preview;
+    const data = {
+      type: "new_message",
+      chatId: message.chat_id,
+      chatKind,
+      messageId: message.id,
+      senderId: message.sender_id,
+    };
+    const ctaUrl =
+      `https://sportiner.com/open/message` +
+      `?chatId=${encodeURIComponent(message.chat_id)}` +
+      `&messageId=${encodeURIComponent(message.id)}`;
 
     const results = await Promise.allSettled(
-      recipientUserIds.map((recipientUserId) =>
-        createAndSendNotification(supabase, {
-          userId: recipientUserId,
-          type: "new_message",
-          content: `${senderName}: ${preview}`,
-          destination,
-          title: senderName,
-          body: preview,
-          data: {
-            type: "new_message",
-            chatId: message.chat_id,
-            chatKind,
+      recipientUserIds.map(async (recipientUserId) => {
+        const { data: preference, error: preferenceError } = await supabase
+          .from("notification_preferences")
+          .select("chat_messages")
+          .eq("user_id", recipientUserId)
+          .maybeSingle();
+
+        if (preferenceError) {
+          console.warn("Could not load chat notification preference", {
             messageId: message.id,
-            senderId: message.sender_id,
-          },
-        }),
-      ),
+            recipientUserId,
+            code: preferenceError.code,
+          });
+        }
+
+        const pushEnabled = preference?.chat_messages ?? true;
+        const pushToken = pushEnabled
+          ? await findPushToken(supabase, recipientUserId)
+          : null;
+        const { data: notification, error: notificationError } = await supabase
+          .from("notifications")
+          .insert({
+            user_id: recipientUserId,
+            type: "new_message",
+            content: `${senderName}: ${preview}`,
+            destination,
+            push_token_id: pushToken?.id ?? null,
+            attempt_count: pushToken ? 1 : 0,
+            last_attempt_at: pushToken ? new Date().toISOString() : null,
+            read: false,
+            push_sent: false,
+          })
+          .select("id")
+          .single();
+
+        if (notificationError || !notification) {
+          if (isUniqueViolation(notificationError)) {
+            console.info("Message notification skipped", {
+              messageId: message.id,
+              recipientUserId,
+              reason: "Duplicate webhook delivery",
+            });
+            return {
+              notificationId: null,
+              pushSent: false,
+              pushAttemptCount: 0,
+            };
+          }
+          throw notificationError ?? new Error("Could not create notification");
+        }
+
+        const emailSubject = `New message from ${senderName}`;
+        const emailMessage =
+          `${senderName} sent you a new message. Open Sportiner to read it and reply.`;
+
+        if (!pushEnabled) {
+          EdgeRuntime.waitUntil(
+            sendEmailFallback(
+              supabase,
+              recipientUserId,
+              emailSubject,
+              "New message on Sportiner",
+              emailMessage,
+              ctaUrl,
+              "View Message",
+            ),
+          );
+
+          return {
+            notificationId: notification.id,
+            pushSent: false,
+            pushAttemptCount: 0,
+          };
+        }
+
+        if (!pushToken) {
+          await sendEmailFallback(
+            supabase,
+            recipientUserId,
+            emailSubject,
+            "New message on Sportiner",
+            emailMessage,
+            ctaUrl,
+            "View Message",
+          );
+
+          return {
+            notificationId: notification.id,
+            pushSent: false,
+            pushAttemptCount: 0,
+          };
+        }
+
+        const pushAccepted = await sendPushNotification(
+          supabase,
+          pushToken,
+          title,
+          body,
+          notification.id,
+          data,
+          "sportiner-message.wav",
+        );
+
+        if (pushAccepted) {
+          const { error: pushUpdateError } = await supabase
+            .from("notifications")
+            .update({
+              push_sent: true,
+              pushed_at: new Date().toISOString(),
+            })
+            .eq("id", notification.id);
+
+          if (pushUpdateError) {
+            console.warn("Could not mark message push as sent", {
+              messageId: message.id,
+              recipientUserId,
+              code: pushUpdateError.code,
+            });
+          }
+        }
+
+        EdgeRuntime.waitUntil(
+          checkDeliveryAndRetry(supabase, {
+            notificationId: notification.id,
+            initialPushAccepted: pushAccepted,
+            receiverId: recipientUserId,
+            pushToken,
+            title,
+            body,
+            data,
+            emailSubject,
+            emailHeading: "New message on Sportiner",
+            emailMessage,
+            ctaUrl,
+            sound: "sportiner-message.wav",
+            ctaLabel: "View Message",
+          }),
+        );
+
+        return {
+          notificationId: notification.id,
+          pushSent: pushAccepted,
+          pushAttemptCount: 1,
+        };
+      }),
     );
 
     let notificationCount = 0;
     let pushAttemptCount = 0;
     let pushSentCount = 0;
+    let duplicateCount = 0;
     let failedCount = 0;
 
     results.forEach((result, index) => {
       if (result.status === "fulfilled") {
+        if (!result.value.notificationId) {
+          duplicateCount += 1;
+          return;
+        }
         notificationCount += 1;
         pushAttemptCount += result.value.pushAttemptCount;
         if (result.value.pushSent) pushSentCount += 1;
@@ -196,6 +358,7 @@ Deno.serve(async (req: Request) => {
       notificationCount,
       pushAttemptCount,
       pushSentCount,
+      duplicateCount,
       failedCount,
     });
 
@@ -206,6 +369,7 @@ Deno.serve(async (req: Request) => {
         notificationCount,
         pushAttemptCount,
         pushSentCount,
+        duplicateCount,
         failedCount,
       },
       failedCount === recipientUserIds.length ? 500 : 200,

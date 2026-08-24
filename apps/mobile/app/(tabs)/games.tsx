@@ -29,13 +29,7 @@ import {
   getAddToCalendarErrorMessage,
 } from '@/lib/gameCalendar';
 import { shareGame } from '@/lib/gameShare';
-
-interface GameRequest {
-  game_id: string;
-  game_title: string;
-  requester_user_id: string;
-  status: string;
-}
+import { useHostedGameJoins } from '@/context/HostedGameJoinsContext';
 
 const { width, height } = Dimensions.get('window');
 const CARD_WIDTH = width - 32; 
@@ -54,7 +48,10 @@ type GameCard = {
   hostId: string;
   title: string;
   level?: string;
-  type?: string;
+  type: Game['gameType'];
+  startsAt: string;
+  capacity: number;
+  playersEnrolled: number;
   distance?: string;
   address?: string;
   cost?: string;
@@ -83,16 +80,15 @@ export default function Games() {
     getMyGames,
     getMyPlayingGames,
     getPastGames,
-    getIncomingRequests,
     joinedGameIds,
     pendingGameIds,
   } = useGames();
   const { user } = useAuth();
+  const { setGamesTabFocused } = useHostedGameJoins();
   const [myGames, setMyGames] = useState<Game[]>([]);
   const [myPlayingGames, setMyPlayingGames] = useState<Game[]>([]);
   const [myHostedGames, setMyHostedGames] = useState<Game[]>([]);
   const [myPlayedGames, setMyPlayedGames] = useState<Game[]>([]);
-  const [incomingRequests, setIncomingRequests] = useState<GameRequest[]>([]);
   const [verifiedGames, setVerifiedGames] = useState<Set<string>>(new Set());
   const [playersMap, setPlayersMap] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
@@ -186,6 +182,8 @@ export default function Games() {
 
   useFocusEffect(
     useCallback(() => {
+      setGamesTabFocused(true);
+
       const loadData = async () => {
         
         setLoading(true);
@@ -194,17 +192,15 @@ export default function Games() {
           await refreshGames();
 
           if (user?.id && isSupabaseConfigured) {
-            const [myGamesList, playingList, pastGames, requests] = await Promise.all([
+            const [myGamesList, playingList, pastGames] = await Promise.all([
               getMyGames(),
               getMyPlayingGames(),
               getPastGames(),
-              getIncomingRequests(),
             ]);
             setMyGames(myGamesList);
             setMyPlayingGames(playingList);
             setMyHostedGames(pastGames.hosted);
             setMyPlayedGames(pastGames.played);
-            setIncomingRequests(requests);
 
             // Check verification status for past games
             const verifiedSet = new Set<string>();
@@ -224,8 +220,12 @@ export default function Games() {
         }
       };
 
-      loadData();
-    }, [refreshGames, user?.id, getMyGames, getMyPlayingGames, getPastGames, getIncomingRequests, isSupabaseConfigured])
+      void loadData();
+
+      return () => {
+        setGamesTabFocused(false);
+      };
+    }, [refreshGames, user?.id, getMyGames, getMyPlayingGames, getPastGames, isSupabaseConfigured, setGamesTabFocused])
   );
 
   useEffect(() => {
@@ -324,6 +324,9 @@ export default function Games() {
       title: game.title,
       level: game.skillLevel,
       type: game.gameType,
+      startsAt: game.date,
+      capacity: game.capacity,
+      playersEnrolled: game.players_enrolled,
       distance:
         nearbyOrigin && game.locationCoords
           ? `${getDistanceKm(
@@ -429,11 +432,6 @@ export default function Games() {
     [myPlayingGames, gameToCard]
   );
 
-  const pendingRequestCount = useMemo(
-    () => incomingRequests.length,
-    [incomingRequests]
-  );
-
   const getLevelColor = (level: string) => {
     switch (level.toLowerCase()) {
       case 'advanced':
@@ -502,6 +500,7 @@ export default function Games() {
       reportedUserId: reportTarget.hostId,
       reportedPostId: reportTarget.id,
       reason,
+      details,
     });
     setSubmittingReport(false);
 
@@ -670,10 +669,12 @@ export default function Games() {
         {
           publicId: selectedGame.publicId,
           title: selectedGame.title,
-          time: selectedGame.time,
+          gameType: selectedGame.type,
+          startsAt: selectedGame.startsAt,
           location: selectedGame.location ?? selectedGame.address,
           level: selectedGame.level,
-          cost: selectedGame.cost,
+          capacity: selectedGame.capacity,
+          playersEnrolled: selectedGame.playersEnrolled,
         },
         'native_sheet',
       );
@@ -686,11 +687,6 @@ export default function Games() {
     }
     setShowMenu(false);
     setSelectedGame(null);
-  };
-
-  const openChatForGame = async (game: GameCard) => {
-    closeAllPopups();
-    await handleOnMessage(game.id, game.type);
   };
 
   async function handleOnMessage(
@@ -1118,9 +1114,15 @@ export default function Games() {
               <Text style={styles.sectionTitle}>Games You&apos;re Hosting</Text>
               <View style={styles.horizontalScrollContainer}>
                 {hostingGamesList.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No games hosted</Text>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.emptyState}
+                    onPress={() => router.push('/(tabs)/CreateGame')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Create a game"
+                  >
+                    <Text style={styles.emptyStateText}>Anyone can create a game</Text>
+                    <Text style={styles.emptyStateCta}>Create a game</Text>
+                  </TouchableOpacity>
                 ) : (
                   <>
                     {hostingScrollIndex > 0 && (
@@ -1254,10 +1256,12 @@ export default function Games() {
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.menuContainer}>
-                <TouchableOpacity style={styles.menuItem} onPress={handleShareGame}>
-                  <Ionicons name="share-outline" size={20} color="#000" />
-                  <Text style={styles.menuText}>Share Game</Text>
-                </TouchableOpacity>
+                {selectedGame?.section !== 'pastHosted' && selectedGame?.section !== 'pastPlayed' && (
+                  <TouchableOpacity style={styles.menuItem} onPress={handleShareGame}>
+                    <Ionicons name="share-outline" size={20} color="#000" />
+                    <Text style={styles.menuText}>Share Game</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity style={styles.menuItem} onPress={() => selectedGame && handleViewPlayers(selectedGame)}>
                   <Ionicons name="people-outline" size={20} color="#000" />
                   <Text style={styles.menuText}>View Players</Text>
@@ -1305,41 +1309,6 @@ export default function Games() {
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.playersModalContainer}>
-                <View style={styles.requestsHeader}>
-                <Ionicons name="file-tray" size={30}></Ionicons>
-                <Text style={styles.playersTitle}>Requests</Text>
-                </View>
-                <View style={styles.requestsContent}>
-                  {selectedGame?.players?.map((player, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      onPress={() => {
-                        if (selectedGame) {
-                          openChatForGame(selectedGame);
-                        }
-                      }}
-                    >
-                      <View style={styles.playerItem}>
-                        {player.avatar ? <Image source={{ uri: player.avatar }} style={styles.playerAvatarLarge} /> : <View style={styles.playerAvatarLarge} />}
-                        <View style={styles.playerInfo}>
-                          <Text style={styles.playerName}>{player.name || 'Unknown Player'}</Text>
-                          <Text style={styles.playerSkill}>{player.skillLevel || 'Unknown Level'}</Text>
-                        </View>
-
-                        <View style={styles.requestActions}>
-                          <TouchableOpacity style={styles.declineButton}>
-                            <Ionicons name="close" size={18} color="#EF4444" />
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.approveButton}>
-                            <Ionicons name="checkmark" size={18} color="#19E675" />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-
                 <View style={styles.playersHeader}>
                 <Ionicons name="people" size={30}></Ionicons>
                 <Text style={styles.playersTitle}>Players</Text>
@@ -1741,12 +1710,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  requestsHeader: {
-    padding: 15,
-    flexDirection: 'row',
-    marginTop: 3,
-    marginBottom: -10
-  },
   playersHeader: {
     padding: 15,
     flexDirection: 'row',
@@ -1757,9 +1720,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     marginTop: -10
-  },
-  requestsContent: {
-    paddingHorizontal: 20,
   },
   playersTitle: {
     fontSize: 24,
@@ -1796,33 +1756,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#666',
-  },
-  requestActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  declineButton: {
-    maxWidth: 43,
-    height: 43,
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#EF4444",
-    borderRadius: 43,
-  },
-  approveButton: {
-    maxWidth: 43,
-    height: 43,
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderRadius: 43,
-    borderColor: "#19E675",
-
   },
   feedbackModal: {
     flex: 1,
@@ -1888,28 +1821,11 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
-  requestsContainer: {
-    paddingHorizontal: 16,
-  },
-  requestItem: {
-    backgroundColor: '#F9FAFB',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  requestContent: {
-    flex: 1,
-  },
-  requestGameTitle: {
+  emptyStateCta: {
+    marginTop: 8,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 4,
-  },
-  requestStatus: {
-    fontSize: 14,
-    color: '#666',
+    fontWeight: '800',
+    color: '#19E675',
+    textAlign: 'center',
   },
 });

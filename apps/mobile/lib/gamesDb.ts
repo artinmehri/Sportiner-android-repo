@@ -1,6 +1,7 @@
 import { parseGameMeta } from '@/lib/gameMeta';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { findCourtByName, type GeoCoords } from '@/lib/courtSuggestions';
+import { isUpcomingGameTime } from '@/lib/gameTime';
 
 export type JoinResult =
   | 'joined'
@@ -24,6 +25,8 @@ export type GameRow = {
   public_id: string | null;
   created_at: string;
   host_id: string | null;
+  status?: 'scheduled' | 'cancelled' | 'completed' | 'expired' | null;
+  duration_minutes?: number | null;
   title: string | null;
   description: string | null;
   type: string | null;
@@ -218,22 +221,47 @@ export function formatCourtShare(
 }
 
 export async function fetchAllGameRows(): Promise<GameRow[]> {
+  const now = new Date();
   const { data, error } = await supabase
     .from('games')
     .select('*')
-    .order('created_at', { ascending: false });
+    .gte('time', now.toISOString())
+    .order('time', { ascending: true });
 
   if (error) {
     throw new Error(error.message);
   }
-  return (data ?? []) as GameRow[];
+  return ((data ?? []) as GameRow[]).filter((row) =>
+    isUpcomingGameTime(row.time, now)
+  );
+}
+
+export async function fetchGameRowById(gameId: string): Promise<GameRow | null> {
+  const normalizedId = gameId.trim();
+  if (!normalizedId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('games')
+    .select('*')
+    .eq('id', normalizedId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as GameRow | null) ?? null;
 }
 
 export async function fetchGameRowsForHost(hostId: string): Promise<GameRow[]> {
+  const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('games')
     .select('*')
     .eq('host_id', hostId)
+    .gte('time', now)
     .order('time', { ascending: true });
 
   if (error) {

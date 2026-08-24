@@ -1,5 +1,7 @@
-import { Share } from 'react-native';
+import { Platform, Share } from 'react-native';
+import { buildGameShareMessage, getGameShareSpotsLeft } from '@/lib/gameShareMessage';
 import { gameShareUrl } from '@/lib/gameShareUrl';
+import { buildSingleLinkShareContent } from '@/lib/nativeShareContent';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type GameShareSurface =
@@ -14,11 +16,13 @@ export type GameShareSurface =
 type ShareableGame = {
   publicId?: string | null;
   title: string;
-  time?: string | null;
+  gameType: '1v1' | 'Group';
+  startsAt?: string | null;
   location?: string | null;
   address?: string | null;
   level?: string | null;
-  cost?: string | null;
+  capacity: number;
+  playersEnrolled: number;
 };
 
 async function resolveGameShareUrl(
@@ -55,32 +59,27 @@ export async function shareGame(
   game: ShareableGame,
   surface: GameShareSurface = 'native_sheet',
 ): Promise<boolean> {
+  const spotsLeft = getGameShareSpotsLeft(game.capacity, game.playersEnrolled);
+  if (!spotsLeft) return false;
+
   const url = await resolveGameShareUrl(game.publicId, surface);
   if (!url) return false;
 
   const place = game.location?.trim() || game.address?.trim() || null;
-  const detailLines = [
-    game.time?.trim() ? `📅 ${game.time.trim()}` : null,
-    place ? `📍 ${place}` : null,
-    game.level?.trim() ? `⚡ ${game.level.trim()}` : null,
-    game.cost?.trim() ? `💰 ${game.cost.trim()}` : null,
-  ].filter((value): value is string => Boolean(value));
+  const message = buildGameShareMessage({
+    gameType: game.gameType,
+    startsAt: game.startsAt,
+    location: place,
+    level: game.level,
+    spotsLeft,
+  });
 
-  // Put the URL in the message body so Android (which often ignores `url`) still
-  // shares a real game link, not a generic app marketing URL.
-  const message = [
-    `Come play tennis with me 🎾`,
-    game.title.trim() || null,
-    detailLines.length ? detailLines.join('\n') : null,
-    `Open the game on Sportiner:\n${url}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-
-  await Share.share({
+  await Share.share(buildSingleLinkShareContent({
     title: `${game.title.trim() || 'Tennis game'} · Sportiner`,
     message,
     url,
-  });
+    platform: Platform.OS,
+    androidLinkText: `Open the game on Sportiner:\n${url}`,
+  }));
   return true;
 }

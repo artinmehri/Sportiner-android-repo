@@ -72,17 +72,6 @@ export default function SixthOnbPage({
     );
   };
 
-  const handleSkip = async () => {
-    if (isBusy) return;
-
-    changeData((current: Record<string, unknown>) => ({
-      ...current,
-      notifications_permission: 'skipped',
-    }));
-
-    await continueOnboarding();
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
@@ -113,8 +102,8 @@ export default function SixthOnbPage({
             <Ionicons name="tennisball-outline" size={20} color="#19E675" />
             <Text style={styles.infoText}>
               {parkShortName
-                ? `Get alerted when a game is created at ${parkShortName}`
-                : 'Get alerted when a game is created at your favorite park'}
+                ? `Anyone can create a game at ${parkShortName}. We’ll alert you about new ones.`
+                : 'Anyone can create a game. We’ll alert you about new ones nearby.'}
             </Text>
           </View>
           <View style={styles.infoRow}>
@@ -132,7 +121,7 @@ export default function SixthOnbPage({
           <View style={styles.infoRow}>
             <Ionicons name="shield-checkmark-outline" size={20} color="#19E675" />
             <Text style={styles.infoText}>
-              Skip now and enable later in Settings anytime
+              Choose your preference in the iOS permission prompt
             </Text>
           </View>
         </View>
@@ -147,15 +136,8 @@ export default function SixthOnbPage({
           {isBusy ? (
             <ActivityIndicator color="#002000" />
           ) : (
-            <Text style={styles.primaryButtonText}>Enable Notifications</Text>
+            <Text style={styles.primaryButtonText}>Continue</Text>
           )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => void handleSkip()}
-          disabled={isBusy}
-        >
-          <Text style={styles.secondaryButtonText}>Not Now</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -238,20 +220,6 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#002000',
     fontSize: 16,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    minHeight: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-  },
-  secondaryButtonText: {
-    color: '#333',
-    fontSize: 15,
     fontWeight: '700',
   },
 });

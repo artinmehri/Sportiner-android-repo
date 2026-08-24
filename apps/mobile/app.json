@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sportiner",
     "slug": "sportiner",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sportiner",
@@ -16,18 +16,16 @@
     "ios": {
       "bundleIdentifier": "com.sportiner.app",
       "usesAppleSignIn": true,
-      "buildNumber": "67",
-      "simulator": {
-        "device": "iPhone 17 Pro"
-      },
+      "buildNumber": "83",
       "supportsTablet": false,
       "requireFullScreen": true,
-      "appleTeamId": "6YMBF7XTQC",
+      "appleTeamId": "59KMT4ND4U",
       "associatedDomains": [
         "applinks:sportiner.com"
       ],
       "infoPlist": {
         "UIRequiresFullScreen": true,
+        "ITSAppUsesNonExemptEncryption": false,
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Sportiner uses your location only when you choose nearby discovery to show nearby tennis games and courts. Sportiner does not track your location in the background.",
         "NSLocationWhenInUseUsageDescription": "Sportiner uses your location to show nearby tennis games and courts when you choose to use nearby discovery.",
         "NSUserNotificationsUsageDescription": "Sportiner sends you notifications about nearby tennis games, new chat messages, and when someone joins your game.",
@@ -63,6 +61,10 @@
         {
           "color": "#19E675",
           "defaultChannel": "default",
+          "sounds": [
+            "./assets/sounds/sportiner-message.wav",
+            "./assets/sounds/sportiner-game.wav"
+          ],
           "enableBackgroundRemoteNotifications": true
         }
       ],
@@ -112,7 +114,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Sportiner uses your photo library when you choose a profile photo.",
+          "photosPermission": "Allow Sportiner to access photos you choose for your profile or to share with other players in private and group chats.",
           "cameraPermission": false,
           "microphonePermission": false
         }
@@ -120,7 +122,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Sportiner uses your photo library when you choose a profile photo.",
+          "photosPermission": "Allow Sportiner to access photos you choose for your profile or to share with other players in private and group chats.",
           "savePhotosPermission": false
         }
       ],
