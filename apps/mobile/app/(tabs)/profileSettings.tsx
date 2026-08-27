@@ -17,6 +17,7 @@ import {
   isUgcTextRejectedError,
   UGC_TEXT_REJECTED_COPY,
 } from '@/lib/ugcModeration';
+import NotificationPreferencesScreen from '@/components/NotificationPreferencesScreen';
 
 type ProfileSettingsData = {
   displayName?: string;
@@ -58,6 +59,7 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
   const [userId, setUserId] = useState<string | undefined>()
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showNotificationPreferences, setShowNotificationPreferences] = useState(false);
   const logoutInFlight = useRef(false);
   const router = useRouter()
   const {
@@ -620,6 +622,17 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
               <Ionicons name="chevron-forward" size={20} color="#666" />
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => setShowNotificationPreferences(true)}
+          >
+            <View style={styles.menuLeft}>
+              <Ionicons name="options-outline" size={24} color="#666" />
+              <Text style={styles.menuText}>Notification Preferences</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
         </View>
 
         {/* Support & Legal Section */}
@@ -820,6 +833,17 @@ export default function ProfileSettingsScreen({ onClose, onSave }: ProfileSettin
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      {/* Notification Preferences Modal */}
+      <Modal
+        visible={showNotificationPreferences}
+        animationType="slide"
+        onRequestClose={() => setShowNotificationPreferences(false)}
+      >
+        <NotificationPreferencesScreen
+          onClose={() => setShowNotificationPreferences(false)}
+        />
       </Modal>
 
       {/* Web Content Modal */}
