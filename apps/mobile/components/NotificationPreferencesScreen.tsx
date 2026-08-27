@@ -230,8 +230,11 @@ export default function NotificationPreferencesScreen({ onClose }: NotificationP
                     {row.label}
                   </Text>
                 </View>
+                {/* Display-only: a locked row renders off so it never looks active.
+                    The stored value is untouched and comes back as-is when the
+                    master toggle is turned on again. */}
                 <Switch
-                  value={preferences[row.key]}
+                  value={notificationsEnabled && preferences[row.key]}
                   onValueChange={() => togglePreference(row.key)}
                   disabled={!notificationsEnabled}
                   trackColor={{ false: '#E0E0E0', true: '#19E675' }}
