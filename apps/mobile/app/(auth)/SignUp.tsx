@@ -1,5 +1,5 @@
 import React, { useMemo, useRef } from 'react';
-import { Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, Alert } from 'react-native';
+import { Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, Alert, Linking } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
@@ -310,6 +310,20 @@ export default function SignUp() {
               <Text style={styles.loginTxt}>Already a member? <Text onPress={() => router.replace('/(auth)/login')} style={styles.login}>Log in</Text></Text>
             </View>
 
+            <View style={styles.disclaimerContainer}>
+              <Text style={styles.disclaimerTxt}>
+                By continuing, you agree to Sportiner's{' '}
+                <Text onPress={() => Linking.openURL('https://sportiner.com/terms')} style={styles.disclaimerLink}>
+                  Terms of Use
+                </Text>
+                {' '}and acknowledge the{' '}
+                <Text onPress={() => Linking.openURL('https://sportiner.com/privacy')} style={styles.disclaimerLink}>
+                  Privacy Policy
+                </Text>
+                .
+              </Text>
+            </View>
+
           </BottomSheetView>
         </BottomSheet>
       </SafeAreaFrameContext>
@@ -376,6 +390,25 @@ const styles = StyleSheet.create({
   },
   login: {
     fontSize: 14,
+    fontWeight: '600',
+    color: '#19E675',
+    textDecorationLine: 'underline'
+  },
+  disclaimerContainer: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  disclaimerTxt: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  disclaimerLink: {
+    fontSize: 12,
     fontWeight: '600',
     color: '#19E675',
     textDecorationLine: 'underline'
