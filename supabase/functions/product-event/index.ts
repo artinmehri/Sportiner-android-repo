@@ -69,7 +69,35 @@ const DEVICE_TYPES = new Set(["mobile", "tablet", "desktop", "unknown"]);
 const CONNECTION_TYPES = new Set(["slow-2g", "2g", "3g", "4g", "unknown"]);
 const SCREEN_RESOLUTION_RE = /^\d{1,5}x\d{1,5}$/;
 const LANGUAGE_RE = /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
-const IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
+const IPV4_OCTET = "(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])";
+const IPV4_RE = new RegExp(`^${IPV4_OCTET}(\\.${IPV4_OCTET}){3}$`);
+
+/**
+ * Full IPv6 grammar including compressed (`::`) and IPv4-mapped forms. Postgres
+ * `inet` rejects anything looser, and a value that passes here but fails the
+ * cast would take the whole insert down with it.
+ */
+const IPV6_RE = new RegExp(
+  "^(" +
+    "([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|" +
+    "([0-9a-fA-F]{1,4}:){1,7}:|" +
+    "([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|" +
+    "([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|" +
+    "([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|" +
+    "([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|" +
+    "([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|" +
+    "[0-9a-fA-F]{1,4}:(:[0-9a-fA-F]{1,4}){1,6}|" +
+    ":((:[0-9a-fA-F]{1,4}){1,7}|:)|" +
+    `::(ffff(:0{1,4})?:)?${IPV4_OCTET}(\\.${IPV4_OCTET}){3}|` +
+    `([0-9a-fA-F]{1,4}:){1,4}:${IPV4_OCTET}(\\.${IPV4_OCTET}){3}` +
+    ")$",
+);
+
+/** A malformed forwarded IP is skipped here rather than failing an insert later. */
+function isIpAddress(value: string): boolean {
+  if (!value || value.length > 45) return false;
+  return IPV4_RE.test(value) || IPV6_RE.test(value);
+}
 
 /** Device-signal acquisition matching (Task 4). */
 const MATCH_WINDOW_MS = 5 * 60 * 1000;
@@ -253,8 +281,7 @@ type CandidateRow = {
 
 function requestIp(request: Request): string | null {
   const first = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
-  if (!first || first.length > 45) return null;
-  return IP_RE.test(first) ? first : null;
+  return isIpAddress(first) ? first : null;
 }
 
 /** Orientation-independent: a landscape web visit still matches a portrait signup. */
@@ -951,7 +978,7 @@ Deno.serve(async (request) => {
 
   const claimedIp = safeText(body.ip_address ?? body.ipAddress, 45);
   const ipAddress = landingTrusted && platform === "web" && claimedIp &&
-      IP_RE.test(claimedIp)
+      isIpAddress(claimedIp)
     ? claimedIp
     : null;
 
