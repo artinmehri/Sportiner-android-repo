@@ -123,9 +123,9 @@ describe('resolveStartupRoute', () => {
     expect(resolveStartupRoute('tabs', 'game-link', false)).toBe('game-link');
   });
 
-  it('never skips terms or auth gates for a pending game link', () => {
-    expect(resolveStartupRoute('agreement-tabs', 'tabs', true)).toBe('agreement-tabs');
-    expect(resolveStartupRoute('agreement-signup', null, true)).toBe('agreement-signup');
+  it('never skips auth gates for a pending game link', () => {
+    expect(resolveStartupRoute('signup', 'tabs', true)).toBe('signup');
     expect(resolveStartupRoute('signup', null, true)).toBe('signup');
+    expect(resolveStartupRoute('password-reset', 'tabs', true)).toBe('password-reset');
   });
 });

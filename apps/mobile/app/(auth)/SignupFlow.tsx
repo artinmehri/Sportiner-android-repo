@@ -17,6 +17,7 @@ import { Alert } from "react-native";
 import { decode } from 'base64-arraybuffer';
 import { joinGame, type JoinResult } from "@/lib/gamesDb";
 import {
+    acceptTermsLocally,
     bindLocalTermsAcceptanceToUser,
     hasUnboundLocalTermsAcceptance,
     persistTermsAcceptanceForUser,
@@ -123,30 +124,29 @@ export default function SignupFlow() {
         let active = true;
         setTermsVerified(false);
 
-        const verifyAgreement = async () => {
+        // Consent is captured by the disclaimer on the sign-up screen. This only
+        // makes sure a record exists and is bound to the account — onboarding can
+        // be resumed on a device that has no local acceptance to bind.
+        const recordAgreement = async () => {
             const signupMethod = method ? String(method) : 'email';
-            let hasAcceptedTerms = await hasUnboundLocalTermsAcceptance();
-
-            if (signupMethod !== 'email') {
-                const { data } = await supabase.auth.getUser();
-                hasAcceptedTerms = data.user
-                    ? await bindLocalTermsAcceptanceToUser(data.user.id)
-                    : false;
-            }
+            const userId =
+                signupMethod === 'email'
+                    ? null
+                    : (await supabase.auth.getUser()).data.user?.id ?? null;
 
             if (!active) {
                 return;
             }
 
-            if (!hasAcceptedTerms) {
-                router.replace({
-                    pathname: '/(auth)/user-agreement' as never,
-                    params: {
-                        ...(method ? { method: String(method) } : {}),
-                        ...(providerName ? { providerName: String(providerName) } : {}),
-                        ...(providerEmail ? { providerEmail: String(providerEmail) } : {}),
-                    },
-                });
+            const alreadyRecorded = userId
+                ? await bindLocalTermsAcceptanceToUser(userId)
+                : await hasUnboundLocalTermsAcceptance();
+
+            if (!alreadyRecorded) {
+                await acceptTermsLocally(userId);
+            }
+
+            if (!active) {
                 return;
             }
 
@@ -154,13 +154,13 @@ export default function SignupFlow() {
             isOnboarding.current = true;
         };
 
-        verifyAgreement();
+        recordAgreement();
 
         return () => {
             active = false;
             isOnboarding.current = false;
         };
-    }, [method, providerName, providerEmail, router]);
+    }, [method]);
 
     useEffect(() => {
         if (method === 'apple') {

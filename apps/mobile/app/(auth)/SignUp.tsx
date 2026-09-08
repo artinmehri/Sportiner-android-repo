@@ -16,6 +16,7 @@ import {
 } from '@/context/AuthContext';
 import * as Crypto from 'expo-crypto'
 import {
+  acceptTermsLocally,
   bindLocalTermsAcceptanceToUser,
   hasUnboundLocalTermsAcceptance,
   persistTermsAcceptanceForUser,
@@ -57,13 +58,6 @@ export default function SignUp() {
     Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
   };
 
-  const routeToAgreement = (params: Record<string, string>) => {
-    router.replace({
-      pathname: '/(auth)/user-agreement' as never,
-      params,
-    });
-  };
-
   const routeToSignupFlow = (params: Record<string, string>) => {
     router.replace({
       pathname: '/(auth)/SignupFlow' as never,
@@ -82,17 +76,19 @@ export default function SignUp() {
     }
   };
 
-  const finishAuthenticatedTermsCheck = async (
+  const ensureTermsAccepted = async (
     userId: string,
     provider: OnboardingProvider
   ) => {
     try {
       if (await userHasAcceptedCurrentTerms(userId)) {
-        return true;
+        return;
       }
 
+      // Tapping a sign-up button under the disclaimer is the acceptance, so
+      // record one when this device has nothing to bind.
       if (!(await bindTermsForUser(userId, provider))) {
-        return false;
+        await acceptTermsLocally(userId);
       }
 
       if (!(await persistTermsAcceptanceForUser(userId))) {
@@ -102,8 +98,6 @@ export default function SignUp() {
           source: 'terms.users.persist',
         });
       }
-
-      return true;
     } catch (error) {
       throw toOnboardingError(
         { failure: 'terms_save', provider, source: 'terms.acceptance.check' },
@@ -118,29 +112,19 @@ export default function SignUp() {
     params: Record<string, string>,
   ) => {
     const status = await getOnboardingStatus(userId);
-    const acceptedTerms = await finishAuthenticatedTermsCheck(userId, provider);
+    await ensureTermsAccepted(userId, provider);
 
     if (status === 'Completed') {
       isOnboarding.current = false;
-      if (acceptedTerms) {
-        router.replace('/(tabs)');
-      } else {
-        routeToAgreement({ ...params, next: 'tabs' });
-      }
+      router.replace('/(tabs)');
       return;
     }
 
     isOnboarding.current = true;
-    const onboardingParams = {
+    routeToSignupFlow({
       ...params,
       resumeStep: String(onboardingStatusToStep(status)),
-    };
-
-    if (acceptedTerms) {
-      routeToSignupFlow(onboardingParams);
-    } else {
-      routeToAgreement(onboardingParams);
-    }
+    });
   };
 
 
@@ -263,12 +247,13 @@ export default function SignUp() {
 
 
   const handleEmailSignUp = async () => {
-    if (await hasUnboundLocalTermsAcceptance()) {
-      routeToSignupFlow({ method: 'email' });
-      return;
+    // No account exists yet, so the acceptance is recorded unbound and gets
+    // bound to the user once the email sign-up produces one.
+    if (!(await hasUnboundLocalTermsAcceptance())) {
+      await acceptTermsLocally();
     }
 
-    routeToAgreement({ method: 'email' });
+    routeToSignupFlow({ method: 'email' });
   };
 
   // renders
@@ -312,7 +297,7 @@ export default function SignUp() {
 
             <View style={styles.disclaimerContainer}>
               <Text style={styles.disclaimerTxt}>
-                By continuing, you agree to Sportiner's{' '}
+                By continuing, you agree to Sportiner&apos;s{' '}
                 <Text onPress={() => Linking.openURL('https://sportiner.com/terms')} style={styles.disclaimerLink}>
                   Terms of Use
                 </Text>
