@@ -9,6 +9,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@6";
 import {
+  ACQUISITION_EVENTS,
   ALLOWED_ENVIRONMENTS,
   ALLOWED_PLATFORMS,
   CLOCK_SKEW_MS,
@@ -46,7 +47,12 @@ const SHARE_CODE_RE = /^[A-Za-z0-9_-]{16,128}$/;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/** Manually tagged game-link acquisition channels (`?ch=`). */
+/**
+ * Canonical acquisition channels. The first seven come from a manual `?ch=` tag;
+ * `app` is stamped server-side from platform and `unknown` marks a tag we do not
+ * publish. Queries that mean "marketing traffic" must name the seven explicitly
+ * rather than testing `channel_hint is not null`.
+ */
 const ALLOWED_CHANNEL_HINTS = new Set([
   "reddit",
   "facebook",
@@ -55,7 +61,15 @@ const ALLOWED_CHANNEL_HINTS = new Set([
   "instagram",
   "linkedin",
   "whatsapp",
+  "app",
+  "unknown",
 ]);
+
+const DEVICE_TYPES = new Set(["mobile", "tablet", "desktop", "unknown"]);
+const CONNECTION_TYPES = new Set(["slow-2g", "2g", "3g", "4g", "unknown"]);
+const SCREEN_RESOLUTION_RE = /^\d{1,5}x\d{1,5}$/;
+const LANGUAGE_RE = /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
+const IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
@@ -82,7 +96,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return {
     ...(origin ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {}),
     "Access-Control-Allow-Headers":
-      "Authorization, Content-Type, apikey, x-client-info, x-sportiner-anonymous-id",
+      "Authorization, Content-Type, apikey, x-client-info, x-sportiner-anonymous-id, x-sportiner-landing-secret",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Type": "application/json",
@@ -110,6 +124,39 @@ function normalizeChannelHint(value: unknown): string | null {
   const text = safeText(value, 80)?.toLowerCase() ?? null;
   if (!text) return null;
   return ALLOWED_CHANNEL_HINTS.has(text) ? text : null;
+}
+
+/**
+ * Device/network context written to real columns rather than metadata. Every
+ * field is best-effort browser data, so anything unrecognised is dropped instead
+ * of failing the event — the DB check constraints cover the same vocabularies.
+ */
+function deviceContext(body: Record<string, unknown>): Record<string, string> {
+  const context: Record<string, string> = {};
+
+  const deviceType = safeText(body.device_type ?? body.deviceType, 32)?.toLowerCase();
+  if (deviceType && DEVICE_TYPES.has(deviceType)) context.device_type = deviceType;
+
+  const connectionType = safeText(
+    body.connection_type ?? body.connectionType,
+    32,
+  )?.toLowerCase();
+  if (connectionType && CONNECTION_TYPES.has(connectionType)) {
+    context.connection_type = connectionType;
+  }
+
+  const resolution = safeText(
+    body.screen_resolution ?? body.screenResolution,
+    16,
+  )?.toLowerCase();
+  if (resolution && SCREEN_RESOLUTION_RE.test(resolution)) {
+    context.screen_resolution = resolution;
+  }
+
+  const language = safeText(body.device_language ?? body.deviceLanguage, 35);
+  if (language && LANGUAGE_RE.test(language)) context.device_language = language;
+
+  return context;
 }
 
 function isUuid(value: unknown): value is string {
@@ -597,9 +644,25 @@ Deno.serve(async (request) => {
 
   const resolved = await resolveShareAndGame(supabase, shareCode, gamePublicId);
 
-  // Persist only columns that exist on the slim product_events table.
+  // Only the game-landing hop may assert a visitor IP: it is the one caller that
+  // still sees the real x-forwarded-for. Everyone else's is ignored, and the IP
+  // is kept to the web landing surface this attribution work is about.
+  const landingSecret = Deno.env.get("LANDING_INGEST_SECRET") ?? "";
+  const presentedSecret = request.headers.get("x-sportiner-landing-secret") ?? "";
+  const landingTrusted = Boolean(landingSecret) &&
+    secretsEqual(presentedSecret, landingSecret);
+
+  const claimedIp = safeText(body.ip_address ?? body.ipAddress, 45);
+  const ipAddress = landingTrusted && platform === "web" && claimedIp &&
+      IP_RE.test(claimedIp)
+    ? claimedIp
+    : null;
+
+  const context = deviceContext(body);
+
   // Request-level fields (anonymous_id, event_version, environment, share
-  // resolution, etc.) stay in the API contract / metadata when useful.
+  // resolution, etc.) stay in metadata; only device/network context was promoted
+  // to real columns.
   const metadata: Record<string, unknown> = { ...sanitized.properties };
   if (anonymousId) metadata.anonymous_id = anonymousId;
   metadata.event_version = eventVersion;
@@ -617,7 +680,16 @@ Deno.serve(async (request) => {
       game_id: resolved.publicId,
       session_id: sessionId,
       platform: platform ?? (actor.provider === "anonymous" ? "web" : null),
-      channel_hint: normalizeChannelHint(body.channelHint ?? body.channel_hint),
+      // An untagged open from the app is organic acquisition, not absent data —
+      // but only on events that describe an open. Routine in-app activity keeps
+      // a null channel_hint.
+      channel_hint: normalizeChannelHint(body.channelHint ?? body.channel_hint) ??
+        ((platform === "ios" || platform === "android") &&
+            ACQUISITION_EVENTS.has(eventName)
+          ? "app"
+          : null),
+      ...context,
+      ...(ipAddress ? { ip_address: ipAddress } : {}),
       metadata,
       occurred_at: occurredAt.toISOString(),
       received_at: new Date().toISOString(),

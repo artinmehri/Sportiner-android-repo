@@ -28,6 +28,18 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const PRODUCT_EVENT_URL = `${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/product-event`;
 
+/**
+ * Lets product-event trust the visitor IP this function forwards. Without it the
+ * only IP product-event can see is this function's own hop, and a forwarded one
+ * from an anonymous caller would be indistinguishable from a spoofed one.
+ */
+const LANDING_INGEST_SECRET = Deno.env.get("LANDING_INGEST_SECRET") ?? "";
+
+const ANONYMOUS_COOKIE = "sp_aid";
+const ANONYMOUS_COOKIE_MAX_AGE = 60 * 60 * 24 * 90;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
 
@@ -38,6 +50,11 @@ Deno.serve(async (req) => {
   // POST /install — validate, emit analytics, return redirect target (no secrets).
   if (req.method === "POST" && url.pathname.endsWith("/install")) {
     return handleInstallPost(req);
+  }
+
+  // POST /context — browser-only device fields the SSR pass cannot see.
+  if (req.method === "POST" && url.pathname.endsWith("/context")) {
+    return handleContextPost(req);
   }
 
   if (req.method !== "GET") {
@@ -52,9 +69,14 @@ Deno.serve(async (req) => {
     return htmlResponse(renderUnavailablePage(null), 404);
   }
 
+  // One id for the whole visit: read the cookie, mint only when it is missing.
+  const existingAnonymousId = readAnonymousId(req);
+  const anonymousId = existingAnonymousId ?? crypto.randomUUID();
+
   const resolved = await resolvePublicGame(publicId, shareCode);
-  void emitLandingViewed(req, publicId, resolved.state, channel, Boolean(shareCode));
-  void emitGameLinkOpened(req, publicId, channel, Boolean(shareCode));
+  const viewEventId = crypto.randomUUID();
+  void emitLandingViewed(anonymousId, viewEventId, publicId, resolved.state, channel, Boolean(shareCode));
+  void emitGameLinkOpened(req, anonymousId, publicId, channel, Boolean(shareCode));
 
   return htmlResponse(
     renderLandingPage({
@@ -65,9 +87,36 @@ Deno.serve(async (req) => {
       title: resolved.title,
       parkName: resolved.parkName,
       localWhen: resolved.localWhen,
+      viewEventId,
     }),
+    200,
+    existingAnonymousId ? null : anonymousCookie(anonymousId),
   );
 });
+
+function readAnonymousId(req: Request): string | null {
+  const header = req.headers.get("cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== ANONYMOUS_COOKIE) continue;
+    const value = part.slice(eq + 1).trim();
+    return UUID_RE.test(value) ? value : null;
+  }
+  return null;
+}
+
+function anonymousCookie(id: string): string {
+  return `${ANONYMOUS_COOKIE}=${id}; Path=/; Max-Age=${ANONYMOUS_COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+/** First hop of x-forwarded-for, shape-checked so we never forward junk. */
+function clientIp(req: Request): string | null {
+  const first = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
+  if (!first || first.length > 45) return null;
+  return /^[0-9a-fA-F:.]+$/.test(first) ? first : null;
+}
 
 function corsHeaders(req: Request): HeadersInit {
   const origin = req.headers.get("Origin") ?? "";
@@ -162,12 +211,14 @@ async function handleInstallPost(req: Request): Promise<Response> {
     );
   }
 
+  const anonymousId = readAnonymousId(req) ?? crypto.randomUUID();
+
   // Re-validate live state — terminal games still get App Store, without restore claims.
   const resolved = await resolvePublicGame(publicId, shareCode);
   const canonical = canonicalGameUrl(publicId, shareCode, channel?.code ?? null);
 
   if (requestedMethod === "copy_link") {
-    void emitAppStoreRedirect(req, publicId, "copy_link", shareCode, channel);
+    void emitAppStoreRedirect(anonymousId, publicId, "copy_link", shareCode, channel);
     return Response.json(
       {
         ok: true,
@@ -191,7 +242,7 @@ async function handleInstallPost(req: Request): Promise<Response> {
     country,
   });
 
-  void emitAppStoreRedirect(req, publicId, redirect.method, shareCode, channel);
+  void emitAppStoreRedirect(anonymousId, publicId, redirect.method, shareCode, channel);
 
   return Response.json(
     {
@@ -207,41 +258,44 @@ async function handleInstallPost(req: Request): Promise<Response> {
   );
 }
 
-function newAnonymousIds(): { event_id: string; anonymous_id: string } {
-  return {
-    event_id: crypto.randomUUID(),
-    anonymous_id: crypto.randomUUID(),
-  };
-}
-
 async function postAnonymousEvent(
   eventName: string,
+  anonymousId: string,
   properties: Record<string, unknown>,
   options?: {
+    eventId?: string;
     shareCode?: string | null;
     channel?: ParsedGameLinkChannel | null;
+    /** Written to the device/network columns rather than into metadata. */
+    context?: Record<string, unknown>;
+    ipAddress?: string | null;
   },
 ): Promise<void> {
   if (!SUPABASE_ANON_KEY || !PRODUCT_EVENT_URL) return;
-  const ids = newAnonymousIds();
   const channel = options?.channel ?? null;
   const shareCode = options?.shareCode ?? null;
+  const ipAddress = LANDING_INGEST_SECRET ? options?.ipAddress ?? null : null;
   try {
     await fetch(PRODUCT_EVENT_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: SUPABASE_ANON_KEY,
+        ...(LANDING_INGEST_SECRET
+          ? { "x-sportiner-landing-secret": LANDING_INGEST_SECRET }
+          : {}),
       },
       body: JSON.stringify({
         event_name: eventName,
-        event_id: ids.event_id,
-        anonymous_id: ids.anonymous_id,
+        event_id: options?.eventId ?? crypto.randomUUID(),
+        anonymous_id: anonymousId,
         platform: "web",
         properties: {
           ...properties,
-          ...(channel ? { channel_code: channel.code } : {}),
+          ...(channel?.code ? { channel_code: channel.code } : {}),
         },
+        ...(options?.context ?? {}),
+        ...(ipAddress ? { ip_address: ipAddress } : {}),
         ...(shareCode ? { share_code: shareCode } : {}),
         ...(channel ? { channel_hint: channel.channel } : {}),
       }),
@@ -253,26 +307,28 @@ async function postAnonymousEvent(
 }
 
 async function emitLandingViewed(
-  req: Request,
+  anonymousId: string,
+  eventId: string,
   publicId: string,
   state: GameLandingState,
   channel: ParsedGameLinkChannel | null,
   shareCodePresent: boolean,
 ): Promise<void> {
-  void req;
   await postAnonymousEvent(
     "shared_game_landing_viewed",
+    anonymousId,
     {
       game_public_id: publicId,
       game_state: state,
       share_code_present: shareCodePresent,
     },
-    { channel },
+    { eventId, channel },
   );
 }
 
 async function emitGameLinkOpened(
   req: Request,
+  anonymousId: string,
   publicId: string,
   channel: ParsedGameLinkChannel | null,
   shareCodePresent: boolean,
@@ -288,6 +344,7 @@ async function emitGameLinkOpened(
   })();
   await postAnonymousEvent(
     "game_link_opened",
+    anonymousId,
     {
       game_public_id: publicId,
       entry_surface: "web_landing",
@@ -299,15 +356,15 @@ async function emitGameLinkOpened(
 }
 
 async function emitAppStoreRedirect(
-  req: Request,
+  anonymousId: string,
   publicId: string,
   method: HandoffMethod,
   shareCode?: string | null,
   channel?: ParsedGameLinkChannel | null,
 ): Promise<void> {
-  void req;
   await postAnonymousEvent(
     "app_store_redirect_started",
+    anonymousId,
     {
       game_public_id: publicId,
       handoff_method: method,
@@ -317,12 +374,109 @@ async function emitAppStoreRedirect(
   );
 }
 
-function htmlResponse(html: string, status = 200): Response {
+/**
+ * Companion row for a landing view. The view itself is emitted during SSR, before
+ * any of this exists in the browser; product_events rows are immutable
+ * (`ignoreDuplicates` on event_id), so this lands as its own event joined to the
+ * view by anonymous_id rather than trying to backfill that row.
+ */
+async function handleContextPost(req: Request): Promise<Response> {
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+
+  const publicId = normalizePublicId(
+    typeof body.public_id === "string" ? body.public_id : null,
+  );
+  if (!publicId) {
+    return Response.json(
+      { ok: false, error: "invalid_public_id" },
+      { status: 400, headers: corsHeaders(req) },
+    );
+  }
+
+  const shareCode = normalizeShareCode(
+    typeof body.share_code === "string" ? body.share_code : null,
+  );
+  const channel = parseGameLinkChannel(
+    typeof body.ch === "string" ? body.ch : null,
+  );
+  const existingAnonymousId = readAnonymousId(req);
+  const anonymousId = existingAnonymousId ?? crypto.randomUUID();
+
+  await postAnonymousEvent(
+    "landing_client_context",
+    anonymousId,
+    {
+      game_public_id: publicId,
+      share_code_present: Boolean(shareCode),
+      ...(typeof body.view_event_id === "string" && UUID_RE.test(body.view_event_id)
+        ? { view_event_id: body.view_event_id }
+        : {}),
+    },
+    {
+      shareCode,
+      channel,
+      context: normalizeDeviceContext(body),
+      ipAddress: clientIp(req),
+    },
+  );
+
+  return Response.json(
+    { ok: true },
+    {
+      headers: {
+        ...corsHeaders(req),
+        "Content-Type": "application/json",
+        ...(existingAnonymousId ? {} : { "Set-Cookie": anonymousCookie(anonymousId) }),
+      },
+    },
+  );
+}
+
+const DEVICE_TYPES = new Set(["mobile", "tablet", "desktop", "unknown"]);
+const CONNECTION_TYPES = new Set(["slow-2g", "2g", "3g", "4g", "unknown"]);
+const SCREEN_RESOLUTION_RE = /^\d{1,5}x\d{1,5}$/;
+const LANGUAGE_RE = /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
+
+/** Everything here is best-effort; a field we cannot vouch for is simply omitted. */
+function normalizeDeviceContext(body: Record<string, unknown>): Record<string, string> {
+  const context: Record<string, string> = {};
+
+  const deviceType = typeof body.device_type === "string"
+    ? body.device_type.trim().toLowerCase()
+    : "";
+  if (DEVICE_TYPES.has(deviceType)) context.device_type = deviceType;
+
+  const connectionType = typeof body.connection_type === "string"
+    ? body.connection_type.trim().toLowerCase()
+    : "";
+  if (CONNECTION_TYPES.has(connectionType)) context.connection_type = connectionType;
+
+  const resolution = typeof body.screen_resolution === "string"
+    ? body.screen_resolution.trim().toLowerCase()
+    : "";
+  if (SCREEN_RESOLUTION_RE.test(resolution)) context.screen_resolution = resolution;
+
+  const language = typeof body.device_language === "string"
+    ? body.device_language.trim()
+    : "";
+  if (LANGUAGE_RE.test(language)) context.device_language = language;
+
+  return context;
+}
+
+function htmlResponse(html: string, status = 200, setCookie: string | null = null): Response {
   return new Response(html, {
     status,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
+      // Never shared cache: this response can carry a per-visitor Set-Cookie.
       "Cache-Control": "private, max-age=60",
+      ...(setCookie ? { "Set-Cookie": setCookie } : {}),
       "Content-Security-Policy": [
         "default-src 'none'",
         "style-src 'unsafe-inline'",
@@ -362,6 +516,7 @@ function renderLandingPage(input: {
   title: string | null;
   parkName: string | null;
   localWhen: string | null;
+  viewEventId: string;
 }): string {
   const channelCode = input.channel?.code ?? null;
   const canonical = canonicalGameUrl(input.publicId, input.shareCode, channelCode);
@@ -421,9 +576,13 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
   var publicId = ${JSON.stringify(input.publicId)};
   var shareCode = ${JSON.stringify(input.shareCode)};
   var channelCode = ${JSON.stringify(channelCode)};
-  var installPath = location.pathname.replace(/\\/?$/, "") + "/install";
+  var viewEventId = ${JSON.stringify(input.viewEventId)};
+  var basePath = location.pathname.replace(/\\/?$/, "");
+  var installPath = basePath + "/install";
+  var contextPath = basePath + "/context";
   if (installPath.indexOf("/install") === -1) {
     installPath = "/functions/v1/game-landing/install";
+    contextPath = "/functions/v1/game-landing/context";
   }
   var statusEl = document.getElementById("status");
   var noteEl = document.getElementById("installNote");
@@ -478,6 +637,40 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
       keepalive: true
     }).catch(function () {});
   });
+
+  // iPadOS reports itself as Macintosh, so touch points decide tablet vs desktop.
+  function deviceType() {
+    var ua = navigator.userAgent || "";
+    var touch = navigator.maxTouchPoints || 0;
+    if (/iPad/i.test(ua) || (/Macintosh/.test(ua) && touch > 1)) return "tablet";
+    if (/Android/i.test(ua) && !/Mobi/i.test(ua)) return "tablet";
+    if (/Mobi|Android|iPhone|iPod/i.test(ua)) return "mobile";
+    if (/Windows|Macintosh|Linux|CrOS/i.test(ua)) return "desktop";
+    return "unknown";
+  }
+
+  // Companion row for the landing view, which was emitted server-side before any
+  // of this existed. Chromium-only for connection type; absent elsewhere.
+  (function sendClientContext() {
+    var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    var body = {
+      public_id: publicId,
+      share_code: shareCode,
+      view_event_id: viewEventId,
+      device_type: deviceType(),
+      device_language: navigator.language || "",
+      screen_resolution: (screen.width || 0) + "x" + (screen.height || 0),
+      connection_type: (conn && conn.effectiveType) || "unknown"
+    };
+    if (channelCode) body.ch = channelCode;
+    fetch(contextPath, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+      keepalive: true
+    }).catch(function () {});
+  })();
 })();
 </script>
 </body>
