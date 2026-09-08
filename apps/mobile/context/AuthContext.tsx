@@ -116,6 +116,19 @@ export async function setOnboardingStatus(
         return false;
     }
 
+    // Single hook point for all three onboarding exits (create game / browse /
+    // join). Imported lazily: lib/supabase re-exports this module's client and
+    // evaluates isSupabaseConfigured at module init, so a static import here
+    // would resolve that against a half-initialized module and break signup.
+    // Fire-and-forget — attribution must never block finishing onboarding.
+    if (status === 'Completed') {
+        void import('@/lib/productEvent')
+            .then(({ requestAcquisitionDeviceMatch }) => requestAcquisitionDeviceMatch())
+            .catch((matchError) => {
+                console.warn('Unable to run acquisition match:', matchError);
+            });
+    }
+
     return true;
 }
 

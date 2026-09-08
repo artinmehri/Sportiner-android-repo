@@ -71,6 +71,12 @@ const SCREEN_RESOLUTION_RE = /^\d{1,5}x\d{1,5}$/;
 const LANGUAGE_RE = /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
 const IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
 
+/** Device-signal acquisition matching (Task 4). */
+const MATCH_WINDOW_MS = 5 * 60 * 1000;
+const MATCH_CANDIDATE_LIMIT = 200;
+const MATCH_THRESHOLD = 3;
+const MATCH_POINTS = { ip: 3, resolution: 2, language: 1 } as const;
+
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -226,6 +232,115 @@ function sanitizeProperties(
   }
 
   return { ok: true, properties };
+}
+
+type MatchSignals = {
+  deviceType: string;
+  language: string | null;
+  resolution: string | null;
+  ip: string | null;
+};
+
+type CandidateRow = {
+  occurred_at: string;
+  game_id: string | null;
+  device_type: string | null;
+  device_language: string | null;
+  screen_resolution: string | null;
+  ip_address: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+function requestIp(request: Request): string | null {
+  const first = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
+  if (!first || first.length > 45) return null;
+  return IP_RE.test(first) ? first : null;
+}
+
+/** Orientation-independent: a landscape web visit still matches a portrait signup. */
+function normalizeResolution(value: unknown): string | null {
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!SCREEN_RESOLUTION_RE.test(text)) return null;
+  const [a, b] = text.split("x").map(Number);
+  return `${Math.min(a, b)}x${Math.max(a, b)}`;
+}
+
+/** `en-US`, `en_GB` and `en` all compare equal — full tags would rarely match. */
+function primaryLanguage(value: unknown): string | null {
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!text) return null;
+  const primary = text.replace(/_/g, "-").split("-")[0];
+  return /^[a-z]{2,8}$/.test(primary) ? primary : null;
+}
+
+function scoreCandidate(row: CandidateRow, signals: MatchSignals): number {
+  let score = 0;
+  if (signals.ip && row.ip_address && String(row.ip_address) === signals.ip) {
+    score += MATCH_POINTS.ip;
+  }
+  if (
+    signals.resolution &&
+    normalizeResolution(row.screen_resolution) === signals.resolution
+  ) {
+    score += MATCH_POINTS.resolution;
+  }
+  if (signals.language && primaryLanguage(row.device_language) === signals.language) {
+    score += MATCH_POINTS.language;
+  }
+  return score;
+}
+
+/**
+ * Rows stamped at the same instant with the same device signature are one visit
+ * recorded twice, not two people. Collapsing them stops a duplicate from
+ * outranking a genuinely distinct candidate.
+ */
+function dedupeCandidates(rows: CandidateRow[]): CandidateRow[] {
+  const seen = new Set<string>();
+  const unique: CandidateRow[] = [];
+  for (const row of rows) {
+    const key = [
+      row.occurred_at,
+      row.device_type ?? "",
+      normalizeResolution(row.screen_resolution) ?? "",
+      primaryLanguage(row.device_language) ?? "",
+      row.ip_address ?? "",
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+  return unique;
+}
+
+/**
+ * Best score wins; recency breaks ties because rows arrive newest-first and a
+ * later row only displaces on a strictly higher score. Aggregate channel totals
+ * stay correct even when two lookalike visitors are swapped.
+ */
+function pickBestCandidate(
+  rows: CandidateRow[],
+  signals: MatchSignals,
+): { row: CandidateRow; score: number; anonymousId: string } | null {
+  let best: { row: CandidateRow; score: number; anonymousId: string } | null = null;
+
+  for (const row of rows) {
+    // Hard gate: a desktop web visit is not a phone signup. Cross-device
+    // journeys are out of reach with these signals either way.
+    if ((row.device_type ?? "") !== signals.deviceType) continue;
+
+    // The RPC requires a public_id; a visit we could not resolve is unusable.
+    if (!row.game_id) continue;
+
+    const anonymousId = row.metadata?.anonymous_id;
+    if (typeof anonymousId !== "string" || !UUID_RE.test(anonymousId)) continue;
+
+    const score = scoreCandidate(row, signals);
+    if (score < MATCH_THRESHOLD) continue;
+    if (!best || score > best.score) best = { row, score, anonymousId };
+  }
+
+  return best;
 }
 
 async function verifyFirebaseToken(token: string): Promise<Actor | null> {
@@ -514,6 +629,188 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: error.message, code: error.code }, status, origin);
     }
     return jsonResponse({ ok: true, ...((data as object) ?? {}) }, 200, origin);
+  }
+
+  // ---- Device-signal acquisition match ------------------------------------
+  if (action === "match_acquisition") {
+    if (!actor.userId) {
+      return jsonResponse(
+        { error: "Authentication is required for matching." },
+        401,
+        origin,
+      );
+    }
+    if (!anonKey || !authorization.startsWith("Bearer ")) {
+      return jsonResponse({ error: "The event service is not configured." }, 503, origin);
+    }
+
+    const deviceType = safeText(body.device_type ?? body.deviceType, 32)?.toLowerCase();
+    if (!deviceType || !DEVICE_TYPES.has(deviceType)) {
+      return jsonResponse({ error: "device_type is required." }, 400, origin);
+    }
+
+    const rawLanguage = safeText(body.device_language ?? body.deviceLanguage, 35);
+    const rawResolution = safeText(
+      body.screen_resolution ?? body.screenResolution,
+      16,
+    );
+    const matchPlatform = safeText(body.platform, 32);
+    if (matchPlatform && !ALLOWED_PLATFORMS.has(matchPlatform)) {
+      return jsonResponse({ error: "Invalid platform." }, 400, origin);
+    }
+
+    const signals: MatchSignals = {
+      deviceType,
+      language: primaryLanguage(rawLanguage),
+      resolution: normalizeResolution(rawResolution),
+      ip: requestIp(request),
+    };
+
+    if (!allowRequest(abuseKey(request, actor.userId))) {
+      return jsonResponse({ error: "Rate limit exceeded." }, 429, origin);
+    }
+
+    const since = new Date(Date.now() - MATCH_WINDOW_MS).toISOString();
+    const { data: candidateRows, error: candidateError } = await supabase
+      .from("product_events")
+      .select(
+        "occurred_at, game_id, device_type, device_language, screen_resolution, ip_address, metadata",
+      )
+      .eq("event_name", "landing_client_context")
+      .gte("occurred_at", since)
+      .not("game_id", "is", null)
+      .order("occurred_at", { ascending: false })
+      .limit(MATCH_CANDIDATE_LIMIT);
+
+    if (candidateError) {
+      console.error("Acquisition candidate lookup failed", {
+        operation: "product_events.select",
+        code: candidateError.code,
+        message: candidateError.message,
+      });
+      return jsonResponse({ error: "Candidate lookup failed." }, 502, origin);
+    }
+
+    const candidates = dedupeCandidates((candidateRows ?? []) as CandidateRow[]);
+    const best = pickBestCandidate(candidates, signals);
+    const confidence = best && best.score >= 5 ? "high" : "medium";
+
+    let recorded: Record<string, unknown> | null = null;
+    let recordError: string | null = null;
+
+    if (best) {
+      const rpcClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authorization } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+
+      const shareCodeRaw = typeof best.row.metadata?.share_id === "string"
+        ? best.row.metadata.share_id
+        : null;
+      const shareCode = shareCodeRaw && SHARE_CODE_RE.test(shareCodeRaw)
+        ? shareCodeRaw
+        : null;
+
+      // Known low-priority edge case: the RPC's idempotency key omits user_id,
+      // so if two people match the same visit on the same day the second gets
+      // `already_recorded` and no row of its own. Left as-is deliberately.
+      const callRpc = (code: string | null) =>
+        rpcClient.rpc("record_acquisition_attribution_v1", {
+          p_anonymous_id: best.anonymousId,
+          p_public_id: best.row.game_id,
+          p_share_code: code,
+          p_provider: "device_match",
+          p_match_type: "device_signal",
+          p_touch_type: "signup",
+          p_confidence: confidence,
+          p_idempotency_key: null,
+          p_metadata: {
+            source_surface: "onboarding_completed",
+            touch_hint: "device_signal",
+          },
+        });
+
+      let { data: rpcData, error: rpcError } = await callRpc(shareCode);
+
+      // A revoked or expired code records nothing at all; fall back to a
+      // game-level match rather than losing the attribution entirely.
+      if (
+        !rpcError && shareCode &&
+        (rpcData as Record<string, unknown> | null)?.code === "share_code_invalid"
+      ) {
+        ({ data: rpcData, error: rpcError } = await callRpc(null));
+      }
+
+      if (rpcError) {
+        recordError = rpcError.message;
+        console.error("Acquisition attribution record failed", {
+          operation: "record_acquisition_attribution_v1",
+          code: rpcError.code,
+          message: rpcError.message,
+        });
+      } else {
+        recorded = (rpcData as Record<string, unknown> | null) ?? null;
+      }
+    }
+
+    // Debugging trail while this logic is new and unproven. The IP stored here
+    // is server-derived from this request, never client-asserted; the ingest
+    // path's web-landing-only gate is unchanged and still rejects claimed IPs.
+    const { error: trailError } = await supabase.from("product_events").upsert(
+      {
+        event_id: crypto.randomUUID(),
+        event_name: "acquisition_device_match_attempted",
+        user_id: actor.userId,
+        game_id: best?.row.game_id ?? null,
+        platform: matchPlatform ?? null,
+        device_type: deviceType,
+        ...(rawLanguage && LANGUAGE_RE.test(rawLanguage)
+          ? { device_language: rawLanguage }
+          : {}),
+        ...(rawResolution && SCREEN_RESOLUTION_RE.test(rawResolution.toLowerCase())
+          ? { screen_resolution: rawResolution.toLowerCase() }
+          : {}),
+        ...(signals.ip ? { ip_address: signals.ip } : {}),
+        metadata: {
+          candidates_considered: candidates.length,
+          matched: Boolean(best),
+          match_score: best?.score ?? 0,
+          confidence: best ? confidence : null,
+          ip_matched: Boolean(
+            best && signals.ip && String(best.row.ip_address ?? "") === signals.ip,
+          ),
+          matched_anonymous_id: best?.anonymousId ?? null,
+          recorded: recorded?.ok === true,
+          already_recorded: recorded?.already_recorded === true,
+          record_error: recordError,
+        },
+        occurred_at: new Date().toISOString(),
+      },
+      { onConflict: "event_id", ignoreDuplicates: true },
+    );
+
+    if (trailError) {
+      // The trail is diagnostic only; never fail the match because of it.
+      console.warn("Acquisition match trail not written", trailError.message);
+    }
+
+    return jsonResponse(
+      {
+        ok: true,
+        matched: Boolean(best),
+        candidates_considered: candidates.length,
+        ...(best
+          ? {
+            match_score: best.score,
+            confidence,
+            game_public_id: best.row.game_id,
+            recorded: recorded?.ok === true,
+          }
+          : {}),
+      },
+      200,
+      origin,
+    );
   }
 
   // ---- Ingest -------------------------------------------------------------
