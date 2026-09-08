@@ -692,7 +692,6 @@ Deno.serve(async (request) => {
       ...(ipAddress ? { ip_address: ipAddress } : {}),
       metadata,
       occurred_at: occurredAt.toISOString(),
-      received_at: new Date().toISOString(),
     },
     { onConflict: "event_id", ignoreDuplicates: true },
   );
