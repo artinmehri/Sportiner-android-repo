@@ -13,12 +13,6 @@ import {
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto'
-import {
-  acceptTermsLocally,
-  bindLocalTermsAcceptanceToUser,
-  persistTermsAcceptanceForUser,
-  userHasAcceptedCurrentTerms,
-} from '@/lib/termsAcceptance';
 import { storeAppleAuthorizationCode } from '@/lib/appleAuth';
 import { LEGAL_LINKS } from '@/constants/legal';
 
@@ -30,31 +24,6 @@ GoogleSignin.configure({
   iosClientId: '939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7.apps.googleusercontent.com',
   scopes: ['profile', 'email'],
 });
-
-/**
- * Signing in under the disclaimer is the acceptance, so this records one when
- * the account has none — that is also how an existing user re-accepts after a
- * terms version bump, since there is no separate agreement screen.
- */
-async function recordTermsForCurrentUser(): Promise<void> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  const userId = userData?.user?.id;
-
-  if (userError || !userId) {
-    console.log('Unable to record accepted terms: missing user session', userError?.message);
-    return;
-  }
-
-  if (await userHasAcceptedCurrentTerms(userId)) {
-    return;
-  }
-
-  if (!(await bindLocalTermsAcceptanceToUser(userId))) {
-    await acceptTermsLocally(userId);
-  }
-
-  await persistTermsAcceptanceForUser(userId);
-}
 
 export default function Login () {
   const router = useRouter();
@@ -76,7 +45,6 @@ export default function Login () {
 
   const routeAuthenticatedUser = async (userId: string) => {
     const status = await getOnboardingStatus(userId);
-    await recordTermsForCurrentUser();
 
     if (status === 'Completed') {
       isOnboarding.current = false;

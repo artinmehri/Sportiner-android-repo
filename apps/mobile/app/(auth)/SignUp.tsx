@@ -16,16 +16,8 @@ import {
 } from '@/context/AuthContext';
 import * as Crypto from 'expo-crypto'
 import {
-  acceptTermsLocally,
-  bindLocalTermsAcceptanceToUser,
-  hasUnboundLocalTermsAcceptance,
-  persistTermsAcceptanceForUser,
-  userHasAcceptedCurrentTerms,
-} from '@/lib/termsAcceptance';
-import {
   logOnboardingError,
   onboardingErrorCopy,
-  OnboardingFlowError,
   toOnboardingError,
   type OnboardingProvider,
 } from '@/lib/onboardingErrors';
@@ -65,54 +57,11 @@ export default function SignUp() {
     });
   };
 
-  const bindTermsForUser = async (userId: string, provider: OnboardingProvider) => {
-    try {
-      return await bindLocalTermsAcceptanceToUser(userId);
-    } catch (error) {
-      throw toOnboardingError(
-        { failure: 'terms_save', provider, source: 'terms.local.bind_user' },
-        error
-      );
-    }
-  };
-
-  const ensureTermsAccepted = async (
-    userId: string,
-    provider: OnboardingProvider
-  ) => {
-    try {
-      if (await userHasAcceptedCurrentTerms(userId)) {
-        return;
-      }
-
-      // Tapping a sign-up button under the disclaimer is the acceptance, so
-      // record one when this device has nothing to bind.
-      if (!(await bindTermsForUser(userId, provider))) {
-        await acceptTermsLocally(userId);
-      }
-
-      if (!(await persistTermsAcceptanceForUser(userId))) {
-        throw new OnboardingFlowError({
-          failure: 'terms_save',
-          provider,
-          source: 'terms.users.persist',
-        });
-      }
-    } catch (error) {
-      throw toOnboardingError(
-        { failure: 'terms_save', provider, source: 'terms.acceptance.check' },
-        error
-      );
-    }
-  };
-
   const routeAuthenticatedUser = async (
     userId: string,
-    provider: OnboardingProvider,
     params: Record<string, string>,
   ) => {
     const status = await getOnboardingStatus(userId);
-    await ensureTermsAccepted(userId, provider);
 
     if (status === 'Completed') {
       isOnboarding.current = false;
@@ -156,7 +105,7 @@ export default function SignUp() {
           return;
         }
 
-        await routeAuthenticatedUser(authData.user.id, 'google', { method: 'google' });
+        await routeAuthenticatedUser(authData.user.id, { method: 'google' });
     } catch (error) {
       isOnboarding.current = false;
       showSocialAuthError('google', 'auth.google.sign_up', error);
@@ -238,7 +187,7 @@ export default function SignUp() {
         providerEmail: appleEmail,
       };
 
-      await routeAuthenticatedUser(authData.user.id, 'apple', appleParams);
+      await routeAuthenticatedUser(authData.user.id, appleParams);
     } catch (error: any) {
       isOnboarding.current = false;
       showSocialAuthError('apple', 'auth.apple.sign_up', error);
@@ -246,13 +195,7 @@ export default function SignUp() {
   };
 
 
-  const handleEmailSignUp = async () => {
-    // No account exists yet, so the acceptance is recorded unbound and gets
-    // bound to the user once the email sign-up produces one.
-    if (!(await hasUnboundLocalTermsAcceptance())) {
-      await acceptTermsLocally();
-    }
-
+  const handleEmailSignUp = () => {
     routeToSignupFlow({ method: 'email' });
   };
 

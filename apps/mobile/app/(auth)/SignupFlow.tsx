@@ -17,12 +17,6 @@ import { Alert } from "react-native";
 import { decode } from 'base64-arraybuffer';
 import { joinGame, type JoinResult } from "@/lib/gamesDb";
 import {
-    acceptTermsLocally,
-    bindLocalTermsAcceptanceToUser,
-    hasUnboundLocalTermsAcceptance,
-    persistTermsAcceptanceForUser,
-} from "@/lib/termsAcceptance";
-import {
     logOnboardingError,
     onboardingErrorCopy,
     OnboardingFlowError,
@@ -112,7 +106,6 @@ export default function SignupFlow() {
         method: method as string | undefined,
         location: null,
     })
-    const [termsVerified, setTermsVerified] = useState(false);
     const [joinConfirmation, setJoinConfirmation] =
         useState<OnboardingJoinConfirmation | null>(null);
     const preparedUserId = useRef<string | null>(null);
@@ -121,46 +114,12 @@ export default function SignupFlow() {
     const signupProvider = providerFromMethod(method ?? 'email');
 
     useEffect(() => {
-        let active = true;
-        setTermsVerified(false);
-
-        // Consent is captured by the disclaimer on the sign-up screen. This only
-        // makes sure a record exists and is bound to the account — onboarding can
-        // be resumed on a device that has no local acceptance to bind.
-        const recordAgreement = async () => {
-            const signupMethod = method ? String(method) : 'email';
-            const userId =
-                signupMethod === 'email'
-                    ? null
-                    : (await supabase.auth.getUser()).data.user?.id ?? null;
-
-            if (!active) {
-                return;
-            }
-
-            const alreadyRecorded = userId
-                ? await bindLocalTermsAcceptanceToUser(userId)
-                : await hasUnboundLocalTermsAcceptance();
-
-            if (!alreadyRecorded) {
-                await acceptTermsLocally(userId);
-            }
-
-            if (!active) {
-                return;
-            }
-
-            setTermsVerified(true);
-            isOnboarding.current = true;
-        };
-
-        recordAgreement();
+        isOnboarding.current = true;
 
         return () => {
-            active = false;
             isOnboarding.current = false;
         };
-    }, [method]);
+    }, []);
 
     useEffect(() => {
         if (method === 'apple') {
@@ -179,7 +138,7 @@ export default function SignupFlow() {
     }, [method, providerName, providerEmail]);
 
     useEffect(() => {
-        if (!termsVerified || step < 1 || step > 7) return;
+        if (step < 1 || step > 7) return;
 
         let active = true;
         const saveCurrentPage = async () => {
@@ -209,7 +168,7 @@ export default function SignupFlow() {
         return () => {
             active = false;
         };
-    }, [router, step, termsVerified]);
+    }, [router, step]);
 
     const handleBack = () => {
         if (step === 1) {
@@ -553,29 +512,6 @@ export default function SignupFlow() {
                 );
             }
 
-            try {
-                if (!(await bindLocalTermsAcceptanceToUser(user.id))) {
-                    throw new OnboardingFlowError({
-                        failure: 'terms_save',
-                        provider: signupProvider,
-                        source: 'terms.local.bind_user',
-                    });
-                }
-
-                if (!(await persistTermsAcceptanceForUser(user.id))) {
-                    throw new OnboardingFlowError({
-                        failure: 'terms_save',
-                        provider: signupProvider,
-                        source: 'terms.users.persist',
-                    });
-                }
-            } catch (error) {
-                throw toOnboardingError(
-                    { failure: 'terms_save', provider: signupProvider, source: 'terms.acceptance.persist' },
-                    error
-                );
-            }
-
             // Only upload if it's a base64 string (user uploaded), not a default URL
             if (formData.profile_picture && !formData.profile_picture.startsWith('http')) {
                 console.log('about to upload the image...');
@@ -873,10 +809,6 @@ export default function SignupFlow() {
             return next;
         });
     };
-
-    if (!termsVerified) {
-        return null;
-    }
 
     if (joinConfirmation) {
         return (

@@ -10,7 +10,6 @@ import {
     supabase,
 } from '@/context/AuthContext';
 import { Stack, useRouter } from 'expo-router';
-import type { Session } from '@supabase/supabase-js';
 import { GameTicketsProvider } from '@/context/GameTicketsContext';
 import { GameProvider } from '@/context/GameContext';
 import { LatestLocationProvider } from '@/context/LatestLocationContext';
@@ -20,10 +19,6 @@ import { MessagesProvider } from '@/context/MessagesContext';
 import { HostedGameJoinsProvider } from '@/context/HostedGameJoinsContext';
 import { OnlinePresenceProvider } from '@/context/OnlinePresenceContext';
 import * as SplashScreen from 'expo-splash-screen';
-import {
-    hasLocalTermsAcceptanceForUser,
-    persistTermsAcceptanceForUser,
-} from '@/lib/termsAcceptance';
 import { inboundDeepLinkPath, resolveStartupRoute } from '@/lib/startupDeepLink';
 import { isAppUpdateAvailable, shouldStartUpdateCheck } from '@/lib/appUpdate';
 import { APP_STORE_URL } from '@/constants/appStore';
@@ -126,22 +121,6 @@ async function handlePasswordResetUrl(url: string | null): Promise<boolean> {
     return false;
 }
 
-/**
- * Consent is captured inline on the sign-up and log-in screens, so startup no
- * longer gates on it. This only flushes an acceptance that was recorded locally
- * but never reached the database — an offline sign-up, or a failed write — so
- * accepted_terms_version catches up on the next launch.
- */
-async function syncTermsAcceptance(session: Session | null): Promise<void> {
-    const userId = session?.user?.id;
-
-    if (!userId || !(await hasLocalTermsAcceptanceForUser(userId))) {
-        return;
-    }
-
-    await withTimeout(persistTermsAcceptanceForUser(userId), STARTUP_STEP_TIMEOUT_MS);
-}
-
 export default function RootLayout() {
     const [initialRoute, setInitialRoute] = useState<InitialRoute | null>(null);
     const [initialNavigationComplete, setInitialNavigationComplete] = useState(false);
@@ -239,7 +218,6 @@ export default function RootLayout() {
                 }
 
                 setAuthUserId(session.user.id);
-                void syncTermsAcceptance(session);
                 const onboardingStatus = await getOnboardingStatus(session.user.id);
                 if (onboardingStatus === 'Completed') {
                     chooseInitialRoute(
@@ -289,7 +267,6 @@ export default function RootLayout() {
                 if (isOnboarding.current || isPasswordRecovery.current) return;
 
                 setTimeout(async () => {
-                    void syncTermsAcceptance(session);
                     const onboardingStatus = session?.user?.id
                         ? await getOnboardingStatus(session.user.id)
                         : 'Not Started';
