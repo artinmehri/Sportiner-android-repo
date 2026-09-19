@@ -47,7 +47,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 })
 
 const USER_PROFILE_SELECT =
-    'id, created_at, name, profile_picture, age_group, level, availability, city, last_active_at, elo, gamesPlayed, reliability_score, updated_at, accepted_terms, onboarding_version, onboarding_stage, onboarding_completed_at, favorite_park' as const
+    'id, created_at, name, profile_picture, age_group, level, availability, city, last_active_at, elo, gamesPlayed, reliability_score, updated_at, onboarding_version, onboarding_stage, onboarding_completed_at, favorite_park' as const
 
 export const ONBOARDING_STATUSES = [
     'Not Started',

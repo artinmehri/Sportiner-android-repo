@@ -91,14 +91,13 @@ values
   ('92000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'join-outsider@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
 on conflict (id) do nothing;
 
-insert into public.users (id, name, accepted_terms, age_group, level)
+insert into public.users (id, name, age_group, level)
 values
-  ('92000000-0000-4000-8000-000000000001', 'Join Host', true, '18-25', 'Intermediate'),
-  ('92000000-0000-4000-8000-000000000002', 'Join Player', true, '18-25', 'Intermediate'),
-  ('92000000-0000-4000-8000-000000000003', 'Join Outsider', true, '18-25', 'Intermediate')
+  ('92000000-0000-4000-8000-000000000001', 'Join Host', '18-25', 'Intermediate'),
+  ('92000000-0000-4000-8000-000000000002', 'Join Player', '18-25', 'Intermediate'),
+  ('92000000-0000-4000-8000-000000000003', 'Join Outsider', '18-25', 'Intermediate')
 on conflict (id) do update
 set name = excluded.name,
-    accepted_terms = excluded.accepted_terms,
     age_group = excluded.age_group,
     level = excluded.level;
 

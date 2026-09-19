@@ -497,7 +497,6 @@ export default function SignupFlow() {
                     last_active_at: new Date().toISOString(),
                     gamesPlayed: 0,
                     reliability_score: 75,
-                    accepted_terms: true,
                     onboarding_stage: '5',
                     onboarding_version: 2,
                     onboarding_completed_at: null,
