@@ -51,6 +51,19 @@ const ACTIVE_EVENTS: EventDefinition[] = [
     ],
   },
   {
+    // Companion to shared_game_landing_viewed, carrying browser-only device data
+    // the server-rendered view event cannot see. Joined by anonymous_id.
+    name: "landing_client_context",
+    auth: "anonymous",
+    allowedProperties: [
+      "game_public_id",
+      "share_code_present",
+      "channel_code",
+      "view_event_id",
+    ],
+    requiredProperties: ["game_public_id"],
+  },
+  {
     name: "game_viewed",
     auth: "either",
     allowedProperties: ["game_public_id", "view_surface"],
@@ -98,6 +111,19 @@ const ACTIVE_EVENTS: EventDefinition[] = [
 export const EVENT_REGISTRY: Map<string, EventDefinition> = new Map(
   ACTIVE_EVENTS.map((def) => [def.name, def]),
 );
+
+/**
+ * Events where an untagged open says something about acquisition, so an absent
+ * channel_hint is defaulted to 'app' on ios/android. Ordinary in-app activity
+ * (game_viewed and the server_only lifecycle events) is deliberately excluded —
+ * defaulting those would report routine usage as an acquisition channel.
+ */
+export const ACQUISITION_EVENTS = new Set([
+  "game_link_opened",
+  "shared_game_landing_viewed",
+  "app_store_redirect_started",
+  "landing_client_context",
+]);
 
 export const MAX_BODY_BYTES = 8_192;
 export const MAX_PROPERTIES = 24;
