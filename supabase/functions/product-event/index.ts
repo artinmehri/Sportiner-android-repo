@@ -620,7 +620,6 @@ Deno.serve(async (request) => {
       channel_hint: normalizeChannelHint(body.channelHint ?? body.channel_hint),
       metadata,
       occurred_at: occurredAt.toISOString(),
-      received_at: new Date().toISOString(),
     },
     { onConflict: "event_id", ignoreDuplicates: true },
   );
