@@ -8,7 +8,6 @@ export type OnboardingFailure =
   | 'email_confirmation'
   | 'session'
   | 'profile_save'
-  | 'terms_save'
   | 'location'
   | 'nearby_games'
   | 'game_join'
@@ -207,11 +206,6 @@ export function onboardingErrorCopy(error: OnboardingFlowError): {
       return {
         title: 'Profile not saved',
         message: 'Your account was created, but we couldn’t save your profile yet. Please try again.',
-      };
-    case 'terms_save':
-      return {
-        title: 'Agreement not saved',
-        message: 'We couldn’t save your agreement yet. Please try again.',
       };
     case 'location':
       return {

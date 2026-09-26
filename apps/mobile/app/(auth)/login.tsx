@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, TextInput, Alert, Modal } from 'react-native';
+import { ActivityIndicator, Image, Text, StyleSheet, StatusBar, TouchableOpacity, View, TextInput, Alert, Modal, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,12 +13,8 @@ import {
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto'
-import {
-  bindLocalTermsAcceptanceToUser,
-  persistTermsAcceptanceForUser,
-  userHasAcceptedCurrentTerms,
-} from '@/lib/termsAcceptance';
 import { storeAppleAuthorizationCode } from '@/lib/appleAuth';
+import { LEGAL_LINKS } from '@/constants/legal';
 
 const PASSWORD_RESET_REDIRECT_URL = 'sportiner://reset-password';
 const PASSWORD_RESET_CONFIRMATION_COPY = 'If an account exists for this email, we sent password reset instructions.';
@@ -28,26 +24,6 @@ GoogleSignin.configure({
   iosClientId: '939148334598-8al463kq6ov8gr46v932pdl98vnjd3r7.apps.googleusercontent.com',
   scopes: ['profile', 'email'],
 });
-
-async function hasAcceptedTermsForCurrentUser(): Promise<boolean> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  const userId = userData?.user?.id;
-
-  if (userError || !userId) {
-    console.log('Unable to check accepted terms: missing user session', userError?.message);
-    return false;
-  }
-
-  if (await userHasAcceptedCurrentTerms(userId)) {
-    return true;
-  }
-
-  if (!(await bindLocalTermsAcceptanceToUser(userId))) {
-    return false;
-  }
-
-  return persistTermsAcceptanceForUser(userId);
-}
 
 export default function Login () {
   const router = useRouter();
@@ -60,13 +36,6 @@ export default function Login () {
   const [resetPending, setResetPending] = useState(false);
   const [resetConfirmation, setResetConfirmation] = useState('');
 
-  const routeToAgreement = (params: Record<string, string>) => {
-    router.replace({
-      pathname: '/(auth)/user-agreement' as never,
-      params,
-    });
-  };
-
   const routeToSignupFlow = (params: Record<string, string>) => {
     router.replace({
       pathname: '/(auth)/SignupFlow' as never,
@@ -76,30 +45,15 @@ export default function Login () {
 
   const routeAuthenticatedUser = async (userId: string) => {
     const status = await getOnboardingStatus(userId);
-    const acceptedTerms = await hasAcceptedTermsForCurrentUser();
 
     if (status === 'Completed') {
-      if (!acceptedTerms) {
-        isOnboarding.current = true;
-        routeToAgreement({ next: 'tabs' });
-        return;
-      }
-
       isOnboarding.current = false;
       router.replace('/(tabs)');
       return;
     }
 
     isOnboarding.current = true;
-    const params = {
-      resumeStep: String(onboardingStatusToStep(status)),
-    };
-
-    if (acceptedTerms) {
-      routeToSignupFlow(params);
-    } else {
-      routeToAgreement({ ...params, next: 'onboarding' });
-    }
+    routeToSignupFlow({ resumeStep: String(onboardingStatusToStep(status)) });
   };
   
 
@@ -329,6 +283,20 @@ export default function Login () {
               <Text style={styles.loginTxt}>Do not have an account? <Text onPress={() => router.replace('/(auth)/SignUp')} style={styles.login}>Sign up</Text></Text>
             </View>
 
+            <View style={styles.disclaimerContainer}>
+              <Text style={styles.disclaimerTxt}>
+                By continuing, you agree to Sportiner&apos;s{' '}
+                <Text onPress={() => Linking.openURL(LEGAL_LINKS.terms)} style={styles.disclaimerLink}>
+                  Terms of Use
+                </Text>
+                {' '}and acknowledge the{' '}
+                <Text onPress={() => Linking.openURL(LEGAL_LINKS.privacy)} style={styles.disclaimerLink}>
+                  Privacy Policy
+                </Text>
+                .
+              </Text>
+            </View>
+
         </View>
         <Modal
           animationType="fade"
@@ -437,6 +405,25 @@ const styles = StyleSheet.create({
     marginTop: 20,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  disclaimerContainer: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  disclaimerTxt: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  disclaimerLink: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#19E675',
+    textDecorationLine: 'underline'
   },
   loginTxt: {
     fontSize: 14,

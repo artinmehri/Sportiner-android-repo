@@ -1,7 +1,4 @@
 export type StartupRouteCandidate =
-  | 'agreement-signup'
-  | 'agreement-tabs'
-  | 'agreement-onboarding'
   | 'signup'
   | 'onboarding'
   | 'tabs'
@@ -14,7 +11,7 @@ function pathSegments(pathname: string): string[] {
 
 /**
  * Keep a pending shared-game URL from being overwritten by the default tabs
- * landing route during auth/startup races. Never upgrade terms/auth gates.
+ * landing route during auth/startup races. Never upgrade auth gates.
  */
 export function resolveStartupRoute(
   requestedRoute: StartupRouteCandidate,
@@ -33,14 +30,8 @@ export function resolveStartupRoute(
     return 'game-link';
   }
 
-  // Auth/terms gates must replace a premature tabs choice from SIGNED_IN races.
-  if (
-    requestedRoute === 'agreement-tabs' ||
-    requestedRoute === 'agreement-onboarding' ||
-    requestedRoute === 'agreement-signup' ||
-    requestedRoute === 'signup' ||
-    requestedRoute === 'password-reset'
-  ) {
+  // Auth gates must replace a premature tabs choice from SIGNED_IN races.
+  if (requestedRoute === 'signup' || requestedRoute === 'password-reset') {
     return requestedRoute;
   }
 
