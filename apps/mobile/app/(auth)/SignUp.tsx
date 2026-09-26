@@ -16,15 +16,8 @@ import {
 } from '@/context/AuthContext';
 import * as Crypto from 'expo-crypto'
 import {
-  bindLocalTermsAcceptanceToUser,
-  hasUnboundLocalTermsAcceptance,
-  persistTermsAcceptanceForUser,
-  userHasAcceptedCurrentTerms,
-} from '@/lib/termsAcceptance';
-import {
   logOnboardingError,
   onboardingErrorCopy,
-  OnboardingFlowError,
   toOnboardingError,
   type OnboardingProvider,
 } from '@/lib/onboardingErrors';
@@ -57,13 +50,6 @@ export default function SignUp() {
     Alert.alert(copy.title, copy.message, [{ text: 'Try Again' }]);
   };
 
-  const routeToAgreement = (params: Record<string, string>) => {
-    router.replace({
-      pathname: '/(auth)/user-agreement' as never,
-      params,
-    });
-  };
-
   const routeToSignupFlow = (params: Record<string, string>) => {
     router.replace({
       pathname: '/(auth)/SignupFlow' as never,
@@ -71,76 +57,23 @@ export default function SignUp() {
     });
   };
 
-  const bindTermsForUser = async (userId: string, provider: OnboardingProvider) => {
-    try {
-      return await bindLocalTermsAcceptanceToUser(userId);
-    } catch (error) {
-      throw toOnboardingError(
-        { failure: 'terms_save', provider, source: 'terms.local.bind_user' },
-        error
-      );
-    }
-  };
-
-  const finishAuthenticatedTermsCheck = async (
-    userId: string,
-    provider: OnboardingProvider
-  ) => {
-    try {
-      if (await userHasAcceptedCurrentTerms(userId)) {
-        return true;
-      }
-
-      if (!(await bindTermsForUser(userId, provider))) {
-        return false;
-      }
-
-      if (!(await persistTermsAcceptanceForUser(userId))) {
-        throw new OnboardingFlowError({
-          failure: 'terms_save',
-          provider,
-          source: 'terms.users.persist',
-        });
-      }
-
-      return true;
-    } catch (error) {
-      throw toOnboardingError(
-        { failure: 'terms_save', provider, source: 'terms.acceptance.check' },
-        error
-      );
-    }
-  };
-
   const routeAuthenticatedUser = async (
     userId: string,
-    provider: OnboardingProvider,
     params: Record<string, string>,
   ) => {
     const status = await getOnboardingStatus(userId);
-    const acceptedTerms = await finishAuthenticatedTermsCheck(userId, provider);
 
     if (status === 'Completed') {
       isOnboarding.current = false;
-      if (acceptedTerms) {
-        router.replace('/(tabs)');
-      } else {
-        routeToAgreement({ ...params, next: 'tabs' });
-      }
+      router.replace('/(tabs)');
       return;
     }
 
     isOnboarding.current = true;
-    const onboardingParams = {
+    routeToSignupFlow({
       ...params,
       resumeStep: String(onboardingStatusToStep(status)),
-    };
-
-    if (acceptedTerms) {
-      routeToSignupFlow(onboardingParams);
-    } else {
-      routeToAgreement(onboardingParams);
-    }
+    });
   };
 
 
@@ -172,7 +105,7 @@ export default function SignUp() {
           return;
         }
 
-        await routeAuthenticatedUser(authData.user.id, 'google', { method: 'google' });
+        await routeAuthenticatedUser(authData.user.id, { method: 'google' });
     } catch (error) {
       isOnboarding.current = false;
       showSocialAuthError('google', 'auth.google.sign_up', error);
@@ -254,7 +187,7 @@ export default function SignUp() {
         providerEmail: appleEmail,
       };
 
-      await routeAuthenticatedUser(authData.user.id, 'apple', appleParams);
+      await routeAuthenticatedUser(authData.user.id, appleParams);
     } catch (error: any) {
       isOnboarding.current = false;
       showSocialAuthError('apple', 'auth.apple.sign_up', error);
@@ -262,13 +195,8 @@ export default function SignUp() {
   };
 
 
-  const handleEmailSignUp = async () => {
-    if (await hasUnboundLocalTermsAcceptance()) {
-      routeToSignupFlow({ method: 'email' });
-      return;
-    }
-
-    routeToAgreement({ method: 'email' });
+  const handleEmailSignUp = () => {
+    routeToSignupFlow({ method: 'email' });
   };
 
   // renders
@@ -312,7 +240,7 @@ export default function SignUp() {
 
             <View style={styles.disclaimerContainer}>
               <Text style={styles.disclaimerTxt}>
-                By continuing, you agree to Sportiner's{' '}
+                By continuing, you agree to Sportiner&apos;s{' '}
                 <Text onPress={() => Linking.openURL('https://sportiner.com/terms')} style={styles.disclaimerLink}>
                   Terms of Use
                 </Text>

@@ -10,7 +10,6 @@ import {
     supabase,
 } from '@/context/AuthContext';
 import { Stack, useRouter } from 'expo-router';
-import type { Session } from '@supabase/supabase-js';
 import { GameTicketsProvider } from '@/context/GameTicketsContext';
 import { GameProvider } from '@/context/GameContext';
 import { LatestLocationProvider } from '@/context/LatestLocationContext';
@@ -20,12 +19,6 @@ import { MessagesProvider } from '@/context/MessagesContext';
 import { HostedGameJoinsProvider } from '@/context/HostedGameJoinsContext';
 import { OnlinePresenceProvider } from '@/context/OnlinePresenceContext';
 import * as SplashScreen from 'expo-splash-screen';
-import {
-    hasCurrentLocalTermsAcceptance,
-    hasLocalTermsAcceptanceForUser,
-    persistTermsAcceptanceForUser,
-    userHasAcceptedCurrentTerms,
-} from '@/lib/termsAcceptance';
 import { inboundDeepLinkPath, resolveStartupRoute } from '@/lib/startupDeepLink';
 import { isAppUpdateAvailable, shouldStartUpdateCheck } from '@/lib/appUpdate';
 import { APP_STORE_URL } from '@/constants/appStore';
@@ -35,9 +28,6 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 const STARTUP_STEP_TIMEOUT_MS = 5_000;
 const STARTUP_FALLBACK_TIMEOUT_MS = 8_000;
 type InitialRoute =
-    | 'agreement-signup'
-    | 'agreement-tabs'
-    | 'agreement-onboarding'
     | 'signup'
     | 'onboarding'
     | 'tabs'
@@ -131,26 +121,6 @@ async function handlePasswordResetUrl(url: string | null): Promise<boolean> {
     return false;
 }
 
-async function userHasAcceptedTerms(session: Session | null): Promise<boolean> {
-    const userId = session?.user?.id;
-
-    if (!userId) {
-        return false;
-    }
-
-    const backendAcceptance = await withTimeout(
-        userHasAcceptedCurrentTerms(userId),
-        STARTUP_STEP_TIMEOUT_MS,
-    );
-
-    if (backendAcceptance === true) return true;
-
-    const localAcceptance = await hasLocalTermsAcceptanceForUser(userId);
-    if (!localAcceptance) return false;
-
-    return persistTermsAcceptanceForUser(userId);
-}
-
 export default function RootLayout() {
     const [initialRoute, setInitialRoute] = useState<InitialRoute | null>(null);
     const [initialNavigationComplete, setInitialNavigationComplete] = useState(false);
@@ -199,8 +169,8 @@ export default function RootLayout() {
         };
 
         startupFallback = setTimeout(() => {
-            console.warn('Startup timed out; continuing to the agreement screen.');
-            chooseInitialRoute('agreement-signup');
+            console.warn('Startup timed out; continuing to the sign-up screen.');
+            chooseInitialRoute('signup');
         }, STARTUP_FALLBACK_TIMEOUT_MS);
 
         const restoreInitialRoute = async () => {
@@ -229,42 +199,27 @@ export default function RootLayout() {
 
                 if (!sessionResult) {
                     console.warn('Session restoration timed out.');
-                    chooseInitialRoute('agreement-signup');
+                    chooseInitialRoute('signup');
                     return;
                 }
 
                 if (sessionResult.error) {
                     console.warn('Unable to restore session:', sessionResult.error.message);
-                    chooseInitialRoute('agreement-signup');
+                    chooseInitialRoute('signup');
                     return;
                 }
 
                 const session = sessionResult.data.session;
                 if (!session) {
                     setAuthUserId(null);
-                    const hasSeenTerms = await hasCurrentLocalTermsAcceptance();
                     // Keep /g/[id] when Expo Router already opened the shared link for a signed-out user.
-                    chooseInitialRoute(
-                        startupHasGameLink.current
-                            ? 'game-link'
-                            : hasSeenTerms
-                              ? 'signup'
-                              : 'agreement-signup',
-                    );
+                    chooseInitialRoute(startupHasGameLink.current ? 'game-link' : 'signup');
                     return;
                 }
 
                 setAuthUserId(session.user.id);
-                const acceptedTerms = await userHasAcceptedTerms(session);
                 const onboardingStatus = await getOnboardingStatus(session.user.id);
-                if (!acceptedTerms) {
-                    setOnboardingStep(onboardingStatusToStep(onboardingStatus));
-                    chooseInitialRoute(
-                        onboardingStatus === 'Completed'
-                            ? 'agreement-tabs'
-                            : 'agreement-onboarding',
-                    );
-                } else if (onboardingStatus === 'Completed') {
+                if (onboardingStatus === 'Completed') {
                     chooseInitialRoute(
                         startupHasGameLink.current ? 'game-link' : 'tabs',
                     );
@@ -273,7 +228,7 @@ export default function RootLayout() {
                 }
             } catch (error) {
                 console.warn('Unable to initialize the app:', error);
-                chooseInitialRoute('agreement-signup');
+                chooseInitialRoute('signup');
             }
         };
 
@@ -312,20 +267,9 @@ export default function RootLayout() {
                 if (isOnboarding.current || isPasswordRecovery.current) return;
 
                 setTimeout(async () => {
-                    const acceptedTerms = await userHasAcceptedTerms(session);
                     const onboardingStatus = session?.user?.id
                         ? await getOnboardingStatus(session.user.id)
                         : 'Not Started';
-
-                    if (!acceptedTerms) {
-                        setOnboardingStep(onboardingStatusToStep(onboardingStatus));
-                        setInitialRoute(
-                            onboardingStatus === 'Completed'
-                                ? 'agreement-tabs'
-                                : 'agreement-onboarding',
-                        );
-                        return;
-                    }
 
                     if (onboardingStatus !== 'Completed') {
                         setOnboardingStep(onboardingStatusToStep(onboardingStatus));
@@ -431,20 +375,7 @@ export default function RootLayout() {
                         params: { resumeStep: String(onboardingStep) },
                     });
                 } else {
-                    router.replace({
-                        pathname: '/(auth)/user-agreement' as never,
-                        params: {
-                            next:
-                                initialRoute === 'agreement-tabs'
-                                    ? 'tabs'
-                                    : initialRoute === 'agreement-onboarding'
-                                      ? 'onboarding'
-                                      : 'signup',
-                            ...(initialRoute === 'agreement-onboarding'
-                                ? { resumeStep: String(onboardingStep) }
-                                : {}),
-                        },
-                    });
+                    router.replace('/(auth)/SignUp');
                 }
 
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));

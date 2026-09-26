@@ -17,11 +17,6 @@ import { Alert } from "react-native";
 import { decode } from 'base64-arraybuffer';
 import { joinGame, type JoinResult } from "@/lib/gamesDb";
 import {
-    bindLocalTermsAcceptanceToUser,
-    hasUnboundLocalTermsAcceptance,
-    persistTermsAcceptanceForUser,
-} from "@/lib/termsAcceptance";
-import {
     logOnboardingError,
     onboardingErrorCopy,
     OnboardingFlowError,
@@ -111,7 +106,6 @@ export default function SignupFlow() {
         method: method as string | undefined,
         location: null,
     })
-    const [termsVerified, setTermsVerified] = useState(false);
     const [joinConfirmation, setJoinConfirmation] =
         useState<OnboardingJoinConfirmation | null>(null);
     const preparedUserId = useRef<string | null>(null);
@@ -120,47 +114,12 @@ export default function SignupFlow() {
     const signupProvider = providerFromMethod(method ?? 'email');
 
     useEffect(() => {
-        let active = true;
-        setTermsVerified(false);
-
-        const verifyAgreement = async () => {
-            const signupMethod = method ? String(method) : 'email';
-            let hasAcceptedTerms = await hasUnboundLocalTermsAcceptance();
-
-            if (signupMethod !== 'email') {
-                const { data } = await supabase.auth.getUser();
-                hasAcceptedTerms = data.user
-                    ? await bindLocalTermsAcceptanceToUser(data.user.id)
-                    : false;
-            }
-
-            if (!active) {
-                return;
-            }
-
-            if (!hasAcceptedTerms) {
-                router.replace({
-                    pathname: '/(auth)/user-agreement' as never,
-                    params: {
-                        ...(method ? { method: String(method) } : {}),
-                        ...(providerName ? { providerName: String(providerName) } : {}),
-                        ...(providerEmail ? { providerEmail: String(providerEmail) } : {}),
-                    },
-                });
-                return;
-            }
-
-            setTermsVerified(true);
-            isOnboarding.current = true;
-        };
-
-        verifyAgreement();
+        isOnboarding.current = true;
 
         return () => {
-            active = false;
             isOnboarding.current = false;
         };
-    }, [method, providerName, providerEmail, router]);
+    }, []);
 
     useEffect(() => {
         if (method === 'apple') {
@@ -179,7 +138,7 @@ export default function SignupFlow() {
     }, [method, providerName, providerEmail]);
 
     useEffect(() => {
-        if (!termsVerified || step < 1 || step > 7) return;
+        if (step < 1 || step > 7) return;
 
         let active = true;
         const saveCurrentPage = async () => {
@@ -209,7 +168,7 @@ export default function SignupFlow() {
         return () => {
             active = false;
         };
-    }, [router, step, termsVerified]);
+    }, [router, step]);
 
     const handleBack = () => {
         if (step === 1) {
@@ -538,7 +497,6 @@ export default function SignupFlow() {
                     last_active_at: new Date().toISOString(),
                     gamesPlayed: 0,
                     reliability_score: 75,
-                    accepted_terms: true,
                     onboarding_stage: '5',
                     onboarding_version: 2,
                     onboarding_completed_at: null,
@@ -550,29 +508,6 @@ export default function SignupFlow() {
                 throw toOnboardingError(
                     { failure: 'profile_save', provider: signupProvider, source: 'profile.users.upsert' },
                     dbError
-                );
-            }
-
-            try {
-                if (!(await bindLocalTermsAcceptanceToUser(user.id))) {
-                    throw new OnboardingFlowError({
-                        failure: 'terms_save',
-                        provider: signupProvider,
-                        source: 'terms.local.bind_user',
-                    });
-                }
-
-                if (!(await persistTermsAcceptanceForUser(user.id))) {
-                    throw new OnboardingFlowError({
-                        failure: 'terms_save',
-                        provider: signupProvider,
-                        source: 'terms.users.persist',
-                    });
-                }
-            } catch (error) {
-                throw toOnboardingError(
-                    { failure: 'terms_save', provider: signupProvider, source: 'terms.acceptance.persist' },
-                    error
                 );
             }
 
@@ -873,10 +808,6 @@ export default function SignupFlow() {
             return next;
         });
     };
-
-    if (!termsVerified) {
-        return null;
-    }
 
     if (joinConfirmation) {
         return (
