@@ -21,6 +21,7 @@ import {
   type AuthMode,
 } from "./eventRegistry.ts";
 import { resolveUserAgentClass } from "./userAgentClass.ts";
+import { sanitizeChannelRaw } from "../_shared/channelRaw.ts";
 import { deviceContext } from "../_shared/deviceContext.ts";
 import { toJsonObject } from "../_shared/jsonBody.ts";
 
@@ -627,9 +628,23 @@ Deno.serve(async (request) => {
 
   const context = deviceContext(body);
 
+  // An untagged open from the app is organic acquisition, not absent data — but
+  // only on events that describe an open. Routine in-app activity keeps a null
+  // channel_hint.
+  const channelHint = normalizeChannelHint(body.channelHint ?? body.channel_hint) ??
+    ((platform === "ios" || platform === "android") && ACQUISITION_EVENTS.has(eventName)
+      ? "app"
+      : null);
+  // Raw tag text only means something next to an unrecognised channel. It goes to
+  // its own column, re-sanitized here because any caller can send properties.
+  const channelRaw = channelHint === "unknown"
+    ? sanitizeChannelRaw(sanitized.properties.channel_raw)
+    : null;
+  delete sanitized.properties.channel_raw;
+
   // Request-level fields (anonymous_id, event_version, environment, share
-  // resolution, etc.) stay in metadata; only device/network context was promoted
-  // to real columns.
+  // resolution, etc.) stay in metadata; only device/network context and
+  // channel_raw were promoted to real columns.
   const metadata: Record<string, unknown> = { ...sanitized.properties };
   if (anonymousId) metadata.anonymous_id = anonymousId;
   metadata.event_version = eventVersion;
@@ -647,14 +662,8 @@ Deno.serve(async (request) => {
       game_id: resolved.publicId,
       session_id: sessionId,
       platform: platform ?? (actor.provider === "anonymous" ? "web" : null),
-      // An untagged open from the app is organic acquisition, not absent data —
-      // but only on events that describe an open. Routine in-app activity keeps
-      // a null channel_hint.
-      channel_hint: normalizeChannelHint(body.channelHint ?? body.channel_hint) ??
-        ((platform === "ios" || platform === "android") &&
-            ACQUISITION_EVENTS.has(eventName)
-          ? "app"
-          : null),
+      channel_hint: channelHint,
+      ...(channelRaw ? { channel_raw: channelRaw } : {}),
       ...context,
       ...(ipAddress ? { ip_address: ipAddress } : {}),
       metadata,

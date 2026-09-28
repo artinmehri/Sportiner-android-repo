@@ -130,3 +130,17 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+/**
+ * JSON for embedding inside an inline <script>. JSON.stringify alone lets a value
+ * containing "</script>" close the tag; escaping <, > and & (plus the two line
+ * separators older engines treat as newlines) keeps any string inert.
+ */
+export function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
+}

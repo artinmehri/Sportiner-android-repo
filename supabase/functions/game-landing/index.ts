@@ -11,7 +11,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { deviceContext } from "../_shared/deviceContext.ts";
 import { readJsonObject } from "../_shared/jsonBody.ts";
-import { parseGameLinkChannel, type ParsedGameLinkChannel } from "./channel.ts";
+import {
+  browserChannelTag,
+  linkChannelTag,
+  parseGameLinkChannel,
+  type ParsedGameLinkChannel,
+} from "./channel.ts";
 import {
   appStoreUrl,
   canonicalGameUrl,
@@ -19,6 +24,7 @@ import {
   installPromiseCopy,
   isDeferredWebHandoffEnabled,
   isJoinableState,
+  jsonForScript,
   normalizePublicId,
   normalizeShareCode,
   resolveInstallRedirect,
@@ -212,7 +218,7 @@ async function handleInstallPost(req: Request): Promise<Response> {
 
   // Re-validate live state — terminal games still get App Store, without restore claims.
   const resolved = await resolvePublicGame(publicId, shareCode);
-  const canonical = canonicalGameUrl(publicId, shareCode, channel?.code ?? null);
+  const canonical = canonicalGameUrl(publicId, shareCode, linkChannelTag(channel));
 
   if (requestedMethod === "copy_link") {
     void emitAppStoreRedirect(anonymousId, publicId, "copy_link", shareCode, channel);
@@ -290,6 +296,7 @@ async function postAnonymousEvent(
         properties: {
           ...properties,
           ...(channel?.code ? { channel_code: channel.code } : {}),
+          ...(channel?.raw ? { channel_raw: channel.raw } : {}),
         },
         ...(options?.context ?? {}),
         ...(ipAddress ? { ip_address: ipAddress } : {}),
@@ -481,6 +488,9 @@ function renderLandingPage(input: {
   const channelCode = input.channel?.code ?? null;
   const canonical = canonicalGameUrl(input.publicId, input.shareCode, channelCode);
   const openHref = canonical;
+  // The copied link keeps an unrecognised tag; the open-in-app link does not.
+  const copyTag = linkChannelTag(input.channel);
+  const copyUrl = canonicalGameUrl(input.publicId, input.shareCode, copyTag);
   const store = appStoreUrl();
   const joinable = isJoinableState(input.state);
   const headline = input.title?.trim() || "Open this tennis game in Sportiner";
@@ -533,10 +543,10 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
 </main>
 <script>
 (function () {
-  var publicId = ${JSON.stringify(input.publicId)};
-  var shareCode = ${JSON.stringify(input.shareCode)};
-  var channelCode = ${JSON.stringify(channelCode)};
-  var viewEventId = ${JSON.stringify(input.viewEventId)};
+  var publicId = ${jsonForScript(input.publicId)};
+  var shareCode = ${jsonForScript(input.shareCode)};
+  var channelTag = ${jsonForScript(browserChannelTag(input.channel))};
+  var viewEventId = ${jsonForScript(input.viewEventId)};
   var basePath = location.pathname.replace(/\\/?$/, "");
   var installPath = basePath + "/install";
   var contextPath = basePath + "/context";
@@ -548,13 +558,13 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
   var noteEl = document.getElementById("installNote");
   var getBtn = document.getElementById("getApp");
   var copyBtn = document.getElementById("copyLink");
-  var canonical = ${JSON.stringify(canonical)};
-  var storeFallback = ${JSON.stringify(store)};
+  var copyUrl = ${jsonForScript(copyUrl)};
+  var storeFallback = ${jsonForScript(store)};
 
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg || ""; }
   function installBody(extra) {
     var body = { public_id: publicId, share_code: shareCode };
-    if (channelCode) body.ch = channelCode;
+    if (channelTag) body.ch = channelTag;
     if (extra) {
       for (var key in extra) body[key] = extra[key];
     }
@@ -582,12 +592,12 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
   copyBtn.addEventListener("click", function () {
     var done = function () { setStatus("Game link copied. Reopen it after you install Sportiner."); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(canonical).then(done).catch(function () {
-        window.prompt("Copy this game link", canonical);
+      navigator.clipboard.writeText(copyUrl).then(done).catch(function () {
+        window.prompt("Copy this game link", copyUrl);
         done();
       });
     } else {
-      window.prompt("Copy this game link", canonical);
+      window.prompt("Copy this game link", copyUrl);
       done();
     }
     fetch(installPath, {
@@ -622,7 +632,7 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
       screen_resolution: (screen.width || 0) + "x" + (screen.height || 0),
       connection_type: (conn && conn.effectiveType) || "unknown"
     };
-    if (channelCode) body.ch = channelCode;
+    if (channelTag) body.ch = channelTag;
     fetch(contextPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

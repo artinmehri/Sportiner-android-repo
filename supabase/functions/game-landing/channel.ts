@@ -1,3 +1,5 @@
+import { sanitizeChannelRaw } from "../_shared/channelRaw.ts";
+
 export type GameLinkChannelCode = "r" | "f" | "l" | "e" | "i" | "lin" | "w";
 
 export type GameLinkChannel =
@@ -17,6 +19,8 @@ export type ParsedGameLinkChannel = {
   /** Null for `unknown` — there is no code to echo back into a canonical URL. */
   code: GameLinkChannelCode | null;
   channel: GameLinkChannel;
+  /** Sanitized tag text for `unknown`; null for known channels or when nothing safe is left. */
+  raw: string | null;
 };
 
 const CHANNEL_BY_CODE: Record<GameLinkChannelCode, GameLinkChannel> = {
@@ -29,7 +33,16 @@ const CHANNEL_BY_CODE: Record<GameLinkChannelCode, GameLinkChannel> = {
   w: "whatsapp",
 };
 
-const UNKNOWN_CHANNEL: ParsedGameLinkChannel = { code: null, channel: "unknown" };
+/** Own keys only: `in` would also accept inherited names like "constructor". */
+function isChannelCode(value: string): value is GameLinkChannelCode {
+  return Object.hasOwn(CHANNEL_BY_CODE, value);
+}
+
+/**
+ * Sent back by the page when the tag was unrecognised but nothing safe survived
+ * sanitizing. Outside the safe alphabet, so it re-parses as `unknown` with no raw.
+ */
+export const UNKNOWN_WITHOUT_RAW_TAG = "?";
 
 /**
  * Parse a manually tagged `ch=` game-link channel code.
@@ -41,7 +54,29 @@ export function parseGameLinkChannel(
 ): ParsedGameLinkChannel | null {
   const normalized = value?.trim().toLowerCase() ?? "";
   if (!normalized) return null;
-  if (!(normalized in CHANNEL_BY_CODE)) return UNKNOWN_CHANNEL;
-  const code = normalized as GameLinkChannelCode;
-  return { code, channel: CHANNEL_BY_CODE[code] };
+  if (!isChannelCode(normalized)) {
+    const raw = sanitizeChannelRaw(normalized);
+    // "r!" cleans to "r": keeping it would make the tag re-parse as reddit.
+    return {
+      code: null,
+      channel: "unknown",
+      raw: raw && !isChannelCode(raw) ? raw : null,
+    };
+  }
+  return { code: normalized, channel: CHANNEL_BY_CODE[normalized], raw: null };
+}
+
+/** The `ch=` value to put in a shareable URL: the code, or the sanitized unknown tag. */
+export function linkChannelTag(channel: ParsedGameLinkChannel | null): string | null {
+  return channel?.code ?? channel?.raw ?? null;
+}
+
+/**
+ * The `ch` the landing page's script sends back on /context and /install, so
+ * those events carry the same channel as the server-rendered view. Always
+ * non-empty when a tag was present, so `unknown` never silently becomes no tag.
+ */
+export function browserChannelTag(channel: ParsedGameLinkChannel | null): string | null {
+  if (!channel) return null;
+  return linkChannelTag(channel) ?? UNKNOWN_WITHOUT_RAW_TAG;
 }
