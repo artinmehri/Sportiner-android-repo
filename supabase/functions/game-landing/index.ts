@@ -9,6 +9,7 @@
  */
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { readJsonObject } from "../_shared/jsonBody.ts";
 import { parseGameLinkChannel, type ParsedGameLinkChannel } from "./channel.ts";
 import {
   appStoreUrl,
@@ -184,12 +185,7 @@ async function resolvePublicGame(
 }
 
 async function handleInstallPost(req: Request): Promise<Response> {
-  let body: Record<string, unknown> = {};
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    body = {};
-  }
+  const body = await readJsonObject(req);
 
   const publicId = normalizePublicId(
     typeof body.public_id === "string" ? body.public_id : null,
@@ -381,12 +377,7 @@ async function emitAppStoreRedirect(
  * view by anonymous_id rather than trying to backfill that row.
  */
 async function handleContextPost(req: Request): Promise<Response> {
-  let body: Record<string, unknown> = {};
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    body = {};
-  }
+  const body = await readJsonObject(req);
 
   const publicId = normalizePublicId(
     typeof body.public_id === "string" ? body.public_id : null,

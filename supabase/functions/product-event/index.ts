@@ -21,6 +21,7 @@ import {
   type AuthMode,
 } from "./eventRegistry.ts";
 import { resolveUserAgentClass } from "./userAgentClass.ts";
+import { toJsonObject } from "../_shared/jsonBody.ts";
 
 const FIREBASE_PROJECT_ID = "sportiner-1";
 const FIREBASE_JWKS = createRemoteJWKSet(
@@ -354,7 +355,9 @@ Deno.serve(async (request) => {
 
   let body: Record<string, unknown>;
   try {
-    body = JSON.parse(rawBody) as Record<string, unknown>;
+    // Valid JSON that is not an object (null, [], 5, "x") would crash on the
+    // first field read; as {} it fails the normal validation with a 400 instead.
+    body = toJsonObject(JSON.parse(rawBody));
   } catch {
     return jsonResponse({ error: "A valid JSON request body is required." }, 400, origin);
   }
