@@ -21,6 +21,7 @@ import {
   type AuthMode,
 } from "./eventRegistry.ts";
 import { resolveUserAgentClass } from "./userAgentClass.ts";
+import { deviceContext } from "../_shared/deviceContext.ts";
 import { toJsonObject } from "../_shared/jsonBody.ts";
 
 const FIREBASE_PROJECT_ID = "sportiner-1";
@@ -66,10 +67,6 @@ const ALLOWED_CHANNEL_HINTS = new Set([
   "unknown",
 ]);
 
-const DEVICE_TYPES = new Set(["mobile", "tablet", "desktop", "unknown"]);
-const CONNECTION_TYPES = new Set(["slow-2g", "2g", "3g", "4g", "unknown"]);
-const SCREEN_RESOLUTION_RE = /^\d{1,5}x\d{1,5}$/;
-const LANGUAGE_RE = /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
 const IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -125,39 +122,6 @@ function normalizeChannelHint(value: unknown): string | null {
   const text = safeText(value, 80)?.toLowerCase() ?? null;
   if (!text) return null;
   return ALLOWED_CHANNEL_HINTS.has(text) ? text : null;
-}
-
-/**
- * Device/network context written to real columns rather than metadata. Every
- * field is best-effort browser data, so anything unrecognised is dropped instead
- * of failing the event — the DB check constraints cover the same vocabularies.
- */
-function deviceContext(body: Record<string, unknown>): Record<string, string> {
-  const context: Record<string, string> = {};
-
-  const deviceType = safeText(body.device_type ?? body.deviceType, 32)?.toLowerCase();
-  if (deviceType && DEVICE_TYPES.has(deviceType)) context.device_type = deviceType;
-
-  const connectionType = safeText(
-    body.connection_type ?? body.connectionType,
-    32,
-  )?.toLowerCase();
-  if (connectionType && CONNECTION_TYPES.has(connectionType)) {
-    context.connection_type = connectionType;
-  }
-
-  const resolution = safeText(
-    body.screen_resolution ?? body.screenResolution,
-    16,
-  )?.toLowerCase();
-  if (resolution && SCREEN_RESOLUTION_RE.test(resolution)) {
-    context.screen_resolution = resolution;
-  }
-
-  const language = safeText(body.device_language ?? body.deviceLanguage, 35);
-  if (language && LANGUAGE_RE.test(language)) context.device_language = language;
-
-  return context;
 }
 
 function isUuid(value: unknown): value is string {

@@ -9,6 +9,7 @@
  */
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { deviceContext } from "../_shared/deviceContext.ts";
 import { readJsonObject } from "../_shared/jsonBody.ts";
 import { parseGameLinkChannel, type ParsedGameLinkChannel } from "./channel.ts";
 import {
@@ -411,7 +412,7 @@ async function handleContextPost(req: Request): Promise<Response> {
     {
       shareCode,
       channel,
-      context: normalizeDeviceContext(body),
+      context: deviceContext(body),
       ipAddress: clientIp(req),
     },
   );
@@ -426,38 +427,6 @@ async function handleContextPost(req: Request): Promise<Response> {
       },
     },
   );
-}
-
-const DEVICE_TYPES = new Set(["mobile", "tablet", "desktop", "unknown"]);
-const CONNECTION_TYPES = new Set(["slow-2g", "2g", "3g", "4g", "unknown"]);
-const SCREEN_RESOLUTION_RE = /^\d{1,5}x\d{1,5}$/;
-const LANGUAGE_RE = /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
-
-/** Everything here is best-effort; a field we cannot vouch for is simply omitted. */
-function normalizeDeviceContext(body: Record<string, unknown>): Record<string, string> {
-  const context: Record<string, string> = {};
-
-  const deviceType = typeof body.device_type === "string"
-    ? body.device_type.trim().toLowerCase()
-    : "";
-  if (DEVICE_TYPES.has(deviceType)) context.device_type = deviceType;
-
-  const connectionType = typeof body.connection_type === "string"
-    ? body.connection_type.trim().toLowerCase()
-    : "";
-  if (CONNECTION_TYPES.has(connectionType)) context.connection_type = connectionType;
-
-  const resolution = typeof body.screen_resolution === "string"
-    ? body.screen_resolution.trim().toLowerCase()
-    : "";
-  if (SCREEN_RESOLUTION_RE.test(resolution)) context.screen_resolution = resolution;
-
-  const language = typeof body.device_language === "string"
-    ? body.device_language.trim()
-    : "";
-  if (LANGUAGE_RE.test(language)) context.device_language = language;
-
-  return context;
 }
 
 function htmlResponse(html: string, status = 200, setCookie: string | null = null): Response {
