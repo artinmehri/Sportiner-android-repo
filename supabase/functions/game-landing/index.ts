@@ -12,10 +12,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { deviceContext } from "../_shared/deviceContext.ts";
 import { readJsonObject } from "../_shared/jsonBody.ts";
 import {
-  browserChannelTag,
-  linkChannelTag,
+  landingPageLinks,
   parseGameLinkChannel,
   type ParsedGameLinkChannel,
+  taggedGameUrl,
 } from "./channel.ts";
 import {
   appStoreUrl,
@@ -218,7 +218,7 @@ async function handleInstallPost(req: Request): Promise<Response> {
 
   // Re-validate live state — terminal games still get App Store, without restore claims.
   const resolved = await resolvePublicGame(publicId, shareCode);
-  const canonical = canonicalGameUrl(publicId, shareCode, linkChannelTag(channel));
+  const canonical = taggedGameUrl(publicId, shareCode, channel);
 
   if (requestedMethod === "copy_link") {
     void emitAppStoreRedirect(anonymousId, publicId, "copy_link", shareCode, channel);
@@ -484,12 +484,7 @@ function renderLandingPage(input: {
   localWhen: string | null;
   viewEventId: string;
 }): string {
-  const channelCode = input.channel?.code ?? null;
-  const canonical = canonicalGameUrl(input.publicId, input.shareCode, channelCode);
-  const openHref = canonical;
-  // The copied link keeps an unrecognised tag; the open-in-app link does not.
-  const copyTag = linkChannelTag(input.channel);
-  const copyUrl = canonicalGameUrl(input.publicId, input.shareCode, copyTag);
+  const links = landingPageLinks(input.publicId, input.shareCode, input.channel);
   const store = appStoreUrl();
   const joinable = isJoinableState(input.state);
   const headline = input.title?.trim() || "Open this tennis game in Sportiner";
@@ -533,7 +528,7 @@ button,a.button{display:block;width:100%;text-align:center;text-decoration:none;
 ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
 <p>${escapeHtml(stateNote)}</p>
 <div class="actions">
-  <a class="button primary" id="openApp" href="${escapeHtml(openHref)}">Open in Sportiner</a>
+  <a class="button primary" id="openApp" href="${escapeHtml(links.openHref)}">Open in Sportiner</a>
   <button type="button" class="button secondary" id="getApp">Get Sportiner</button>
   <button type="button" class="tertiary" id="copyLink">Copy game link</button>
 </div>
@@ -544,7 +539,7 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
 (function () {
   var publicId = ${jsonForScript(input.publicId)};
   var shareCode = ${jsonForScript(input.shareCode)};
-  var channelTag = ${jsonForScript(browserChannelTag(input.channel))};
+  var channelTag = ${jsonForScript(links.browserTag)};
   var viewEventId = ${jsonForScript(input.viewEventId)};
   var basePath = location.pathname.replace(/\\/?$/, "");
   var installPath = basePath + "/install";
@@ -557,7 +552,7 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
   var noteEl = document.getElementById("installNote");
   var getBtn = document.getElementById("getApp");
   var copyBtn = document.getElementById("copyLink");
-  var copyUrl = ${jsonForScript(copyUrl)};
+  var copyUrl = ${jsonForScript(links.copyUrl)};
   var storeFallback = ${jsonForScript(store)};
 
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg || ""; }
