@@ -9,7 +9,14 @@
  */
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { parseGameLinkChannel, type ParsedGameLinkChannel } from "./channel.ts";
+import { deviceContext } from "../_shared/deviceContext.ts";
+import { readJsonObject } from "../_shared/jsonBody.ts";
+import {
+  landingPageLinks,
+  parseGameLinkChannel,
+  type ParsedGameLinkChannel,
+  taggedGameUrl,
+} from "./channel.ts";
 import {
   appStoreUrl,
   canonicalGameUrl,
@@ -17,6 +24,7 @@ import {
   installPromiseCopy,
   isDeferredWebHandoffEnabled,
   isJoinableState,
+  jsonForScript,
   normalizePublicId,
   normalizeShareCode,
   resolveInstallRedirect,
@@ -184,12 +192,7 @@ async function resolvePublicGame(
 }
 
 async function handleInstallPost(req: Request): Promise<Response> {
-  let body: Record<string, unknown> = {};
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    body = {};
-  }
+  const body = await readJsonObject(req);
 
   const publicId = normalizePublicId(
     typeof body.public_id === "string" ? body.public_id : null,
@@ -215,7 +218,7 @@ async function handleInstallPost(req: Request): Promise<Response> {
 
   // Re-validate live state — terminal games still get App Store, without restore claims.
   const resolved = await resolvePublicGame(publicId, shareCode);
-  const canonical = canonicalGameUrl(publicId, shareCode, channel?.code ?? null);
+  const canonical = taggedGameUrl(publicId, shareCode, channel);
 
   if (requestedMethod === "copy_link") {
     void emitAppStoreRedirect(anonymousId, publicId, "copy_link", shareCode, channel);
@@ -381,12 +384,7 @@ async function emitAppStoreRedirect(
  * view by anonymous_id rather than trying to backfill that row.
  */
 async function handleContextPost(req: Request): Promise<Response> {
-  let body: Record<string, unknown> = {};
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    body = {};
-  }
+  const body = await readJsonObject(req);
 
   const publicId = normalizePublicId(
     typeof body.public_id === "string" ? body.public_id : null,
@@ -420,7 +418,7 @@ async function handleContextPost(req: Request): Promise<Response> {
     {
       shareCode,
       channel,
-      context: normalizeDeviceContext(body),
+      context: deviceContext(body),
       ipAddress: clientIp(req),
     },
   );
@@ -435,38 +433,6 @@ async function handleContextPost(req: Request): Promise<Response> {
       },
     },
   );
-}
-
-const DEVICE_TYPES = new Set(["mobile", "tablet", "desktop", "unknown"]);
-const CONNECTION_TYPES = new Set(["slow-2g", "2g", "3g", "4g", "unknown"]);
-const SCREEN_RESOLUTION_RE = /^\d{1,5}x\d{1,5}$/;
-const LANGUAGE_RE = /^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8}){0,4}$/;
-
-/** Everything here is best-effort; a field we cannot vouch for is simply omitted. */
-function normalizeDeviceContext(body: Record<string, unknown>): Record<string, string> {
-  const context: Record<string, string> = {};
-
-  const deviceType = typeof body.device_type === "string"
-    ? body.device_type.trim().toLowerCase()
-    : "";
-  if (DEVICE_TYPES.has(deviceType)) context.device_type = deviceType;
-
-  const connectionType = typeof body.connection_type === "string"
-    ? body.connection_type.trim().toLowerCase()
-    : "";
-  if (CONNECTION_TYPES.has(connectionType)) context.connection_type = connectionType;
-
-  const resolution = typeof body.screen_resolution === "string"
-    ? body.screen_resolution.trim().toLowerCase()
-    : "";
-  if (SCREEN_RESOLUTION_RE.test(resolution)) context.screen_resolution = resolution;
-
-  const language = typeof body.device_language === "string"
-    ? body.device_language.trim()
-    : "";
-  if (LANGUAGE_RE.test(language)) context.device_language = language;
-
-  return context;
 }
 
 function htmlResponse(html: string, status = 200, setCookie: string | null = null): Response {
@@ -518,9 +484,7 @@ function renderLandingPage(input: {
   localWhen: string | null;
   viewEventId: string;
 }): string {
-  const channelCode = input.channel?.code ?? null;
-  const canonical = canonicalGameUrl(input.publicId, input.shareCode, channelCode);
-  const openHref = canonical;
+  const links = landingPageLinks(input.publicId, input.shareCode, input.channel);
   const store = appStoreUrl();
   const joinable = isJoinableState(input.state);
   const headline = input.title?.trim() || "Open this tennis game in Sportiner";
@@ -564,7 +528,7 @@ button,a.button{display:block;width:100%;text-align:center;text-decoration:none;
 ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
 <p>${escapeHtml(stateNote)}</p>
 <div class="actions">
-  <a class="button primary" id="openApp" href="${escapeHtml(openHref)}">Open in Sportiner</a>
+  <a class="button primary" id="openApp" href="${escapeHtml(links.openHref)}">Open in Sportiner</a>
   <button type="button" class="button secondary" id="getApp">Get Sportiner</button>
   <button type="button" class="tertiary" id="copyLink">Copy game link</button>
 </div>
@@ -573,10 +537,10 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
 </main>
 <script>
 (function () {
-  var publicId = ${JSON.stringify(input.publicId)};
-  var shareCode = ${JSON.stringify(input.shareCode)};
-  var channelCode = ${JSON.stringify(channelCode)};
-  var viewEventId = ${JSON.stringify(input.viewEventId)};
+  var publicId = ${jsonForScript(input.publicId)};
+  var shareCode = ${jsonForScript(input.shareCode)};
+  var channelTag = ${jsonForScript(links.browserTag)};
+  var viewEventId = ${jsonForScript(input.viewEventId)};
   var basePath = location.pathname.replace(/\\/?$/, "");
   var installPath = basePath + "/install";
   var contextPath = basePath + "/context";
@@ -588,13 +552,13 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
   var noteEl = document.getElementById("installNote");
   var getBtn = document.getElementById("getApp");
   var copyBtn = document.getElementById("copyLink");
-  var canonical = ${JSON.stringify(canonical)};
-  var storeFallback = ${JSON.stringify(store)};
+  var copyUrl = ${jsonForScript(links.copyUrl)};
+  var storeFallback = ${jsonForScript(store)};
 
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg || ""; }
   function installBody(extra) {
     var body = { public_id: publicId, share_code: shareCode };
-    if (channelCode) body.ch = channelCode;
+    if (channelTag) body.ch = channelTag;
     if (extra) {
       for (var key in extra) body[key] = extra[key];
     }
@@ -622,12 +586,12 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
   copyBtn.addEventListener("click", function () {
     var done = function () { setStatus("Game link copied. Reopen it after you install Sportiner."); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(canonical).then(done).catch(function () {
-        window.prompt("Copy this game link", canonical);
+      navigator.clipboard.writeText(copyUrl).then(done).catch(function () {
+        window.prompt("Copy this game link", copyUrl);
         done();
       });
     } else {
-      window.prompt("Copy this game link", canonical);
+      window.prompt("Copy this game link", copyUrl);
       done();
     }
     fetch(installPath, {
@@ -662,7 +626,7 @@ ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ""}
       screen_resolution: (screen.width || 0) + "x" + (screen.height || 0),
       connection_type: (conn && conn.effectiveType) || "unknown"
     };
-    if (channelCode) body.ch = channelCode;
+    if (channelTag) body.ch = channelTag;
     fetch(contextPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
