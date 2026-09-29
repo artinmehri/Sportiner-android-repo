@@ -296,7 +296,6 @@ async function postAnonymousEvent(
         properties: {
           ...properties,
           ...(channel?.code ? { channel_code: channel.code } : {}),
-          ...(channel?.raw ? { channel_raw: channel.raw } : {}),
         },
         ...(options?.context ?? {}),
         ...(ipAddress ? { ip_address: ipAddress } : {}),
